@@ -68,10 +68,10 @@ Begin
     If (yyyy > 0) And
       (mm >= 1) And (mm <= 12) And
       (dd >= 1) And (dd <= 31) And (dd <= DateUtils.DaysInAMonth(yyyy, mm)) And
-      (h >= 0) And (h <= 24) And
-      (min >= 0) And (min <= 59) And
-      (sec >= 0) And (sec <= 59) And
-      (ms >= 0) And (ms < 1000) Then
+      (h <= 24) And
+      (min <= 59) And
+      (sec <= 59) And
+      (ms < 1000) Then
       Result := DateUtils.EncodeDateTime(yyyy, mm, dd, h, min, sec, ms);
   Except
     Result := 0;
