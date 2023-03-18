@@ -1,0 +1,3 @@
+﻿The delphi internal TStreamreader is quite slow.
+I decided to implement my own fast TStreamWriter replacement.
+It is a replacement for the TGpTextStream as well. The TMaxReader is much faster then TGpTextStream.
