@@ -343,6 +343,7 @@ begin
       Exit(TRUE);
     Except
       inc(RetryCounter);
+      sleep(aWaitBetweenRetries);
     end;
   until RetryCounter >= aRetryCount;
 end;
