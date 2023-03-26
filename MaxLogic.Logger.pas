@@ -2,14 +2,28 @@ Unit MaxLogic.Logger;
 
 { .$DEFINE DISABLE_PRLOGGER }
 
+{
+  Version: 1.1
+  History
+  2023-03-24: add possibility to disable json output
+  add madStackTrace and auto CallStack to errors of type ERROR
+  added MaxLogFileAgeInDays and deleting old log files
+}
+
 (*
   JSON has become the de facto standard format for capturing and storing log data - and for good reason. Structured logging with JSON reduces the cost and complexity of extracting valuable insights from log data.30 lis 2021
 
   this unit is based on the LoggerPro but it stores the data as json entries
   That allows us to include many properties into the log and still keep it as a simple one-line-per-log-entry file that can be interpreted both by humans and computers
 
-  The log will have the following format:
+  The log will have the following format depending on the format type:
+  ofkJson:
   '[%{DATETIME}] [%{LEVEL}] %{JsonMESSAGE}';
+  ofkPlainText:
+  '[%{DATETIME}] [%{LEVEL}] [...other tags...] %{Message}
+  ofkPlainOnNextLine:
+  '[%{DATETIME}] [%{LEVEL}] [...other tags...]
+  %{Message}
 
 
   ATTENTION:
@@ -21,9 +35,9 @@ Unit MaxLogic.Logger;
 Interface
 
 Uses
-{$IFDEF MSWINDOWS}
+  {$IFDEF MSWINDOWS}
   winapi.windows,
-{$ENDIF}
+  {$ENDIF}
   system.sysUtils, system.classes, system.Diagnostics,
   clFastList, syncObjs,
   LoggerPro, // LoggerPro core
@@ -37,6 +51,8 @@ Type
   TDoLogOnRelease = Class;
 
   TLogType = LoggerPro.TLogType;
+
+  TOutputFormatKind = (ofkJson, ofkPlainText, ofkPlainOnNextLine);
 
   { this class stores the data for a log entry
     some properties are mandatory, like the ThreadId }
@@ -65,7 +81,13 @@ Type
     Property LogType: TLogType Read GetLogType Write SetLogType;
 
     // properly combined and encoded text that will go to the log file
-    Function Text: String;
+    Function Text(aKind: TOutputFormatKind): String;
+
+    // if madExcept is used and the logType is error then this will hold the call stack
+    // you can also disable this using iMaxLog.AutoStackTraceForErrors:= false
+    procedure SetCallStack(const Value: String);
+    function GetCallStack: String;
+    property CallStack: String read GetCallStack write SetCallStack;
   End;
 
   TLogEntry = Class(TInterfacedObject, iLogEntry)
@@ -74,10 +96,13 @@ Type
     fTags: clFastList.TSortedList<String, String>;
     fThreadId: String;
     fLogType: TLogType;
+    FCallStack: String;
     Procedure Append(Var aText: String; Const aTagName, aTagValue: String);
     Procedure CaptureThreadId;
     Procedure SetLogType(Const Value: TLogType);
     Function GetLogType: TLogType;
+    procedure SetCallStack(const Value: String);
+    function GetCallStack: String;
   Public
     Constructor Create;
     Destructor Destroy; Override;
@@ -102,11 +127,15 @@ Type
 
     // properly combined and encoded text that will go to the log file
     // ATTENTION: this is also the time the "MsSinceAppStart " timestamp will be written to the text
-    Function Text: String;
+    Function Text(aKind: TOutputFormatKind): String;
 
     // default is etInfo
     // NOTE this is secondary to the maxLog.log() method
     Property LogType: TLogType Read GetLogType Write SetLogType;
+
+    // if madExcept is used and the logType is error then this will hold the call stack
+    // you can also disable this using iMaxLog.AutoStackTraceForErrors:= false
+    property CallStack: String read GetCallStack write SetCallStack;
   End;
 
   iMaxLog = Interface
@@ -151,6 +180,23 @@ Type
     // raw access to the underlying logger
     // if you do not like the predefined one, you always can reassign this value here
     Property LogWriter: ILogWriter Read GetLogWriter Write SetLogWriter;
+
+    function GetOutputFormatKind: TOutputFormatKind;
+    procedure SetOutputFormatKind(const Value: TOutputFormatKind);
+    property OutputFormatKind: TOutputFormatKind read GetOutputFormatKind write SetOutputFormatKind;
+
+    procedure SetAutoStackTraceForErrors(const Value: Boolean);
+    function GetAutoStackTraceForErrors: Boolean;
+    property AutoStackTraceForErrors: Boolean read GetAutoStackTraceForErrors write SetAutoStackTraceForErrors;
+
+    function GetLogDir: String;
+    property LogDir: String read GetLogDir;
+
+    // set this to auto-delete files older then n days
+    // NOTE: the log file usually has a pid in its name, that will be replaced by a * wildcard while deleting
+    procedure SetMaxLogFileAgeInDays(const Value: Integer);
+    function GetMaxLogFileAgeInDays: Integer;
+    property MaxLogFileAgeInDays: Integer read GetMaxLogFileAgeInDays write SetMaxLogFileAgeInDays;
   End;
 
   TMaxLog = Class(TInterfacedObject, iMaxLog)
@@ -159,10 +205,23 @@ Type
     FLogWriter: ILogWriter;
     fLogDir: String;
     fCs: TCriticalSection;
+    fOutputFormatKind: TOutputFormatKind;
+    FAutoStackTraceForErrors: Boolean;
+    FMaxLogFileAgeInDays: Integer;
+    fLastCheckOldLogFilesTimeStamp: TDateTime;
+    fFileMaskForDeletingOldLogFiles: String;
     Procedure SetDefaultTag(Const Value: String);
     Procedure SetLogWriter(Const Value: ILogWriter);
     Function GetLogWriter: ILogWriter;
     Function GetDefaultTag: String;
+    function GetOutputFormatKind: TOutputFormatKind;
+    procedure SetOutputFormatKind(const Value: TOutputFormatKind);
+    procedure SetAutoStackTraceForErrors(const Value: Boolean);
+    function GetAutoStackTraceForErrors: Boolean;
+    function GetLogDir: String;
+    procedure SetMaxLogFileAgeInDays(const Value: Integer);
+    function GetMaxLogFileAgeInDays: Integer;
+    procedure CheckDeleteOldLogFiles;
   Public
 
     // the final file name will be
@@ -204,10 +263,18 @@ Type
     // the the loggerPro saves a sufix to the file names, this is this Tag here
     // Default is Main
     Property DefaultTag: String Read GetDefaultTag Write SetDefaultTag;
+    property OutputFormatKind: TOutputFormatKind read GetOutputFormatKind write SetOutputFormatKind;
+    property AutoStackTraceForErrors: Boolean read GetAutoStackTraceForErrors write SetAutoStackTraceForErrors;
 
     // raw access to the underlying logger
     // if you do not like the predefined one, you always can reassign this value here
     Property LogWriter: ILogWriter Read GetLogWriter Write SetLogWriter;
+
+    property LogDir: String read GetLogDir;
+
+    // set this to auto-delete files older then n days
+    // NOTE: the log file usually has a pid in its name, that will be replaced by a * wildcard while deleting
+    property MaxLogFileAgeInDays: Integer read GetMaxLogFileAgeInDays write SetMaxLogFileAgeInDays;
   End;
 
   TDoLogOnRelease = Class(TLogEntry)
@@ -229,23 +296,38 @@ Var
   // but you should call SetGlobalMaxLog yourself
 Function maxLog: iMaxLog;
 Procedure SetGlobalMaxLog(aInstance: iMaxLog);
+// test if the global instance is already created
+Function GlobalMaxLogInstanceCreated: Boolean;
 // will free the global instance
 Procedure ShutDownMaxLog;
 
 // ToDo: maybe look for a faster alternative
-Function JsonEncode(Const RawText: String): String;
+Function JsonEncode(Const RawText: String): String; inline;
 
 Implementation
 
 Uses
+  {$IFDEF madExcept}
+  madStackTrace,
+  {$ENDIF}
   dateUtils, strUtils, system.Json,
   idGlobal, ioUtils,
-  MaxLogic.ioUtils;
+  MaxLogic.ioUtils,
+  system.Threading, system.Masks;
+
+const
+  cTagMsg = 'MSG';
+  CCallStackTag = 'CallStack';
 
 Var
   glFormatSettings: TFormatSettings;
   glCs: TCriticalSection;
   glDefaultMaxLog: iMaxLog;
+
+Function GlobalMaxLogInstanceCreated: Boolean;
+begin
+  Result := assigned(glDefaultMaxLog);
+end;
 
 Function maxLog: iMaxLog;
 Begin
@@ -336,11 +418,11 @@ Begin
   If fThreadId = '' Then
   Begin
 
-{$IFDEF MSWINDOWS}
+    {$IFDEF MSWINDOWS}
     tid := GetCurrentThreadId;
-{$ELSE}
+    {$ELSE}
     tid := TThread.CurrentThread.ThreadID;
-{$ENDIF}
+    {$ENDIF}
     If tid = glMainVclThreadId Then
       fThreadId := 'Main'
     Else
@@ -368,6 +450,11 @@ Begin
   Inherited;
 End;
 
+function TLogEntry.GetCallStack: String;
+begin
+  Result := FCallStack;
+end;
+
 Function TLogEntry.GetLogType: TLogType;
 Begin
   Result := fLogType;
@@ -375,7 +462,7 @@ End;
 
 Function TLogEntry.msg(Const aMsg: String): iLogEntry;
 Begin
-  Result := put('MSG', aMsg);
+  Result := put(cTagMsg, aMsg);
 End;
 
 Function TLogEntry.put(Const aTagName, aTagValue: String): iLogEntry;
@@ -429,7 +516,7 @@ Begin
     Begin
       prepend(
         ifThen(aComponent.Name <> '', aComponent.Name, '$' + IntToHex(NativeInt(aComponent), 1)) +
-        '(' + aComponent.ClassName + ')');
+          '(' + aComponent.ClassName + ')');
       aComponent := aComponent.Owner;
     End;
   Until aComponent = Nil;
@@ -437,14 +524,19 @@ Begin
   Result := put('COMP', s);
 End;
 
+procedure TLogEntry.SetCallStack(const Value: String);
+begin
+  FCallStack := Value;
+end;
+
 Procedure TLogEntry.SetLogType(Const Value: TLogType);
 Begin
   fLogType := Value;
 End;
 
-Function TLogEntry.Text: String;
+Function TLogEntry.Text(aKind: TOutputFormatKind): String;
 Var
-  x: Integer;
+  x, i: Integer;
   pid: Int64;
 Begin
   Result := '';
@@ -458,10 +550,37 @@ Begin
 
   put('MsSinceAppStart', GlobalAppStartTimer.ElapsedMilliseconds);
 
-  For x := 0 To fTags.count - 1 Do
-    Append(Result, fTags.items[x].iid, fTags.items[x].data);
+  if aKind = ofkJson then
+  begin
+    For x := 0 To fTags.count - 1 Do
+      Append(Result, fTags.items[x].iid, fTags.items[x].data);
 
-  Result := '{' + Result + '}'
+    // in case of errors
+    // add CallStack always as the last item
+    if FCallStack <> '' then
+      Append(Result, CCallStackTag, FCallStack);
+
+    Result := '{' + Result + '}'
+  end else begin
+    For x := 0 To fTags.count - 1 Do
+      if not(cTagMsg = fTags.items[x].iid) then
+        Result := Result + '[' +
+          fTags.items[x].iid + ': ' + fTags.items[x].data + '] ';
+
+    if fTags.find(cTagMsg, i) then
+    begin
+      if aKind = ofkPlainOnNextLine then
+        Result := Trim(Result) + sLineBreak + fTags[i]
+      else
+        Result := Result + fTags[i];
+    end;
+
+    if CallStack <> '' then
+      Result := Result + sLineBreak +
+        CCallStackTag + sLineBreak +
+        CallStack
+
+  end;
 End;
 
 { TMaxLog }
@@ -483,6 +602,11 @@ Begin
     Result.msg(aMsg);
 End;
 
+procedure TMaxLog.SetAutoStackTraceForErrors(const Value: Boolean);
+begin
+  FAutoStackTraceForErrors := Value;
+end;
+
 Procedure TMaxLog.SetDefaultTag(Const Value: String);
 Begin
   FDefaultTag := Value;
@@ -493,13 +617,74 @@ Begin
   FLogWriter := Value;
 End;
 
+procedure TMaxLog.SetMaxLogFileAgeInDays(const Value: Integer);
+begin
+  FMaxLogFileAgeInDays := Value;
+end;
+
+procedure TMaxLog.SetOutputFormatKind(const Value: TOutputFormatKind);
+begin
+  fOutputFormatKind := Value;
+end;
+
 Procedure TMaxLog.add(aMsg: iLogEntry; aLogType: TLogType);
 Begin
-  addRaw(aMsg.Text, aLogType);
+  if FAutoStackTraceForErrors and
+    (aLogType = TLogType.Error) then
+  begin
+    aMsg.CallStack :=
+      StackTrace(
+      false, // ide ugly
+      True, // showRelativeAddrs : boolean        = false;
+      True // showRelativeLines : boolean        = false;
+      );
+  end;
+  addRaw(aMsg.Text(OutputFormatKind), aLogType);
 End;
+
+Procedure TMaxLog.CheckDeleteOldLogFiles;
+var
+  lPattern, lLogDir: String;
+  dt: TDateTime;
+  lMaxAgeInDays: Integer;
+begin
+  if FMaxLogFileAgeInDays <= 0 then
+    Exit;
+  if dateUtils.HoursBetween(now, fLastCheckOldLogFilesTimeStamp) < 24 then
+    Exit;
+  dt := now;
+  TInterlocked.Exchange(Double(fLastCheckOldLogFilesTimeStamp), Double(dt));
+
+  // capture local variables
+  lLogDir := self.fLogDir;
+  lPattern := fFileMaskForDeletingOldLogFiles;
+  lMaxAgeInDays := FMaxLogFileAgeInDays;
+
+  // run async
+  TTask.Create(
+      procedure
+    var
+      fn: String;
+      fileDt: TDateTime;
+    begin
+      exit;
+      for fn in TDirectory.GetFiles(lLogDir, lPattern) do
+      begin
+        try
+          fileDt := TFile.GetLastWriteTime(fn);
+          if dateUtils.HoursBetween(now, fileDt) > 24 * lMaxAgeInDays then
+            TFile.Delete(fn);
+        except
+          // do nothing
+        end;
+      end;
+    end).Start;
+
+end;
 
 Procedure TMaxLog.addRaw(Const aJsonLogEntryText: String; aLogType: TLogType);
 Begin
+  CheckDeleteOldLogFiles;
   If LogWriter <> Nil Then
     self.LogWriter.Log(aLogType, aJsonLogEntryText, FDefaultTag);
 End;
@@ -510,6 +695,8 @@ Var
   pid: Int64;
 Begin
   Inherited Create;
+  fOutputFormatKind := ofkJson;
+  FAutoStackTraceForErrors := True;
 
   fCs := TCriticalSection.Create;
 
@@ -522,18 +709,27 @@ Begin
 
   pid := idGlobal.CurrentProcessId;
 
-{$IFNDEF DISABLE_PRLOGGER}
+  fFileMaskForDeletingOldLogFiles :=
+    ChangeFileExt(aLogFileNameFormat, '*.log');
+  fFileMaskForDeletingOldLogFiles := StringReplace(fFileMaskForDeletingOldLogFiles, '%s', '*', [rfReplaceAll, rfIgnoreCase]);
+  fFileMaskForDeletingOldLogFiles := StringReplace(fFileMaskForDeletingOldLogFiles, '%d', '*', [rfReplaceAll, rfIgnoreCase]);
+  fFileMaskForDeletingOldLogFiles := StringReplace(fFileMaskForDeletingOldLogFiles, '%2.2d', '*', [rfReplaceAll, rfIgnoreCase]);
+  fFileMaskForDeletingOldLogFiles := StringReplace(fFileMaskForDeletingOldLogFiles, '*.*', '*', [rfReplaceAll, rfIgnoreCase]);
+  fFileMaskForDeletingOldLogFiles := StringReplace(fFileMaskForDeletingOldLogFiles, '**', '*', [rfReplaceAll, rfIgnoreCase]);
+
+  {$IFNDEF DISABLE_PRLOGGER}
   fa := TLoggerProFileAppender.Create(aMaxFileCount, aMaxFileSizeInKb,
     fLogDir, [],
-    ChangeFileExt(aLogFileNameFormat, '-pid-' + IntToHex(pid, 1) + '.log'),
-    '%0:s [%2:s] %3:s',
+    // ChangeFileExt(aLogFileNameFormat, '-pid-' + IntToHex(pid, 1) + '.log'),
+    aLogFileNameFormat,
+    '[%0:s] [%2:s] %3:s',
     TEncoding.UTF8);
 
   FLogWriter := BuildLogWriter([
     fa
     // TLoggerProOutputDebugStringAppender.Create
     ]);
-{$ENDIF}
+  {$ENDIF}
   FDefaultTag := 'Main';
 End;
 
@@ -544,9 +740,7 @@ End;
 
 Procedure TMaxLog.add(Const aMsg: String; aLogType: TLogType);
 Begin
-  add(
-    LogENtry(aMsg),
-    aLogType);
+  add(LogENtry(aMsg), aLogType);
 End;
 
 Procedure TMaxLog.Debug(Const aMsg: String);
@@ -560,7 +754,7 @@ Begin
 End;
 
 Function TMaxLog.LogEnterExitProc(Const aProcName: String;
-  aLogType: TLogType = TLogType.Debug): iLogEntry;
+aLogType: TLogType = TLogType.Debug): iLogEntry;
 Var
   obj: TDoLogOnRelease;
   msg: TLogEntry;
@@ -588,8 +782,8 @@ Begin
 
   If FLogWriter <> Nil Then
   Begin
-    //While FLogWriter.AppendersCount <> 0 Do
-      //FLogWriter.DelAppender(FLogWriter.Appenders[0]);
+    // While FLogWriter.AppendersCount <> 0 Do
+    // FLogWriter.DelAppender(FLogWriter.Appenders[0]);
 
     FLogWriter := Nil;
   End;
@@ -597,22 +791,42 @@ Begin
   fCs.Free;
   Inherited;
 
-  End;
+End;
 
 Procedure TMaxLog.Error(aMsg: iLogEntry);
 Begin
   add(aMsg, TLogType.Error);
 End;
 
+function TMaxLog.GetAutoStackTraceForErrors: Boolean;
+begin
+  Result := FAutoStackTraceForErrors;
+end;
+
 Function TMaxLog.GetDefaultTag: String;
 Begin
   Result := FDefaultTag;
 End;
 
+function TMaxLog.GetLogDir: String;
+begin
+  Result := fLogDir;
+end;
+
 Function TMaxLog.GetLogWriter: ILogWriter;
 Begin
   Result := FLogWriter;
 End;
+
+function TMaxLog.GetMaxLogFileAgeInDays: Integer;
+begin
+  Result := FMaxLogFileAgeInDays;
+end;
+
+function TMaxLog.GetOutputFormatKind: TOutputFormatKind;
+begin
+  Result := fOutputFormatKind;
+end;
 
 Procedure TMaxLog.Info(aMsg: iLogEntry);
 Begin
@@ -637,37 +851,39 @@ Destructor TDoLogOnRelease.Destroy;
 Begin
   put('Duration', fStopWatch.ElapsedMilliseconds.ToString);
   If fMaxLog <> Nil Then
-    fMaxLog.addRaw(self.Text, self.LogType);
+    fMaxLog.addRaw(self.Text(fMaxLog.OutputFormatKind), self.LogType);
   Inherited;
 End;
 
 Initialization
-  GlobalAppStartTimer := TStopWatch.StartNew;
-  glFormatSettings := TFormatSettings.Create;
-  glFormatSettings.decimalSeparator := '.';
 
-  {$IFDEF MSWINDOWS}
-  glMainVclThreadId := GetCurrentThreadId;
-  {$ELSE}
-  glMainVclThreadId := TThread.CurrentThread.ThreadID;
-  {$ENDIF}
-  glPid := idGlobal.CurrentProcessId;
-  glPidAsHex := IntToHex(glPid, 1);
+GlobalAppStartTimer := TStopWatch.StartNew;
+glFormatSettings := TFormatSettings.Create;
+glFormatSettings.decimalSeparator := '.';
 
-  If Not assigned(glCs) Then
-  Begin
-    Var
-    lCs := TCriticalSection.Create;
-    If TInterlocked.CompareExchange(pointer(glCs), pointer(lCs), Nil) <> Nil Then
-      lCs.Free;
-  End;
+{$IFDEF MSWINDOWS}
+glMainVclThreadId := GetCurrentThreadId;
+{$ELSE}
+glMainVclThreadId := TThread.CurrentThread.ThreadID;
+{$ENDIF}
+glPid := idGlobal.CurrentProcessId;
+glPidAsHex := IntToHex(glPid, 1);
+
+If Not assigned(glCs) Then
+Begin
+  Var
+  lCs := TCriticalSection.Create;
+  If TInterlocked.CompareExchange(pointer(glCs), pointer(lCs), Nil) <> Nil Then
+    lCs.Free;
+End;
 
 Finalization
-  ShutDownMaxLog;
-  If assigned(glCs) Then
-  Begin
-    glCs.Free;
-    glCs := Nil;
-  End;
+
+ShutDownMaxLog;
+If assigned(glCs) Then
+Begin
+  glCs.Free;
+  glCs := Nil;
+End;
 
 End.
