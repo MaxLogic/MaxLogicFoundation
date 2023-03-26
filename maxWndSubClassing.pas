@@ -1,4 +1,4 @@
-unit utsWndSubClassing;
+unit maxWndSubClassing;
 
 { version: 2.2
   History:

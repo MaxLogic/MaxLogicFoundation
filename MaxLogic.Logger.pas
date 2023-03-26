@@ -39,7 +39,7 @@ Uses
   winapi.windows,
   {$ENDIF}
   system.sysUtils, system.classes, system.Diagnostics,
-  clFastList, syncObjs,
+  maxLogic.FastList, syncObjs,
   LoggerPro, // LoggerPro core
   LoggerPro.FileAppender, // File appender
   LoggerPro.OutputDebugStringAppender; // OutputDebugString appender
@@ -93,7 +93,7 @@ Type
   TLogEntry = Class(TInterfacedObject, iLogEntry)
   Private
     // tags are the message parts that will form the json object
-    fTags: clFastList.TSortedList<String, String>;
+    fTags: maxLogic.FastList.TSortedList<String, String>;
     fThreadId: String;
     fLogType: TLogType;
     FCallStack: String;

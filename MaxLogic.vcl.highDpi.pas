@@ -197,8 +197,8 @@ function sameScaleFactor(const v1, v2: Single): boolean;
 implementation
 
 uses
-  utsQuickPixel,
-  GDIPAPI, GDIPOBJ, ClipBrd, math, utsWndSubClassing, pngImage,
+  maxLogic.QuickPixel,
+  GDIPAPI, GDIPOBJ, ClipBrd, math, maxWndSubClassing, pngImage,
   maxCallMeLater, autoFree;
 
 type
@@ -545,11 +545,11 @@ procedure THighDpiAdjuster.DoConvertBmpToBlackWhite(bmp: TBitmap);
 var
   qp: TQuickPixel;
   x, y: integer;
-  c1, b, w: utsQuickPixel.TRGB;
+  c1, b, w: maxLogic.QuickPixel.TRGB;
   grey: byte;
 begin
-  b := utsQuickPixel.ColorToRgb(clBlack);
-  w := utsQuickPixel.ColorToRgb(clWhite);
+  b := maxLogic.QuickPixel.ColorToRgb(clBlack);
+  w := maxLogic.QuickPixel.ColorToRgb(clWhite);
 
   gc2(qp, TQuickPixel.Create(bmp));
   for y := 0 to bmp.Height - 1 do
@@ -573,11 +573,11 @@ procedure THighDpiAdjuster.DoConvertBmpToBlackWhite(bmp: TBitmap; aMaskColor: TC
 var
   qp: TQuickPixel;
   x, y: integer;
-  c1, b, w: utsQuickPixel.TRGB;
+  c1, b, w: maxLogic.QuickPixel.TRGB;
 begin
-  c1 := utsQuickPixel.ColorToRgb(aMaskColor);
-  b := utsQuickPixel.ColorToRgb(clBlack);
-  w := utsQuickPixel.ColorToRgb(clWhite);
+  c1 := maxLogic.QuickPixel.ColorToRgb(aMaskColor);
+  b := maxLogic.QuickPixel.ColorToRgb(clBlack);
+  w := maxLogic.QuickPixel.ColorToRgb(clWhite);
 
   gc2(qp, TQuickPixel.Create(bmp));
 
@@ -628,12 +628,12 @@ procedure THighDpiAdjuster.ApplyMask(bmp, mask: TBitmap; aNewColor,
 var
   MaskQp, DstQp: TQuickPixel;
   x, y: integer;
-  c1, c2: utsQuickPixel.TRGB;
-  rgba: utsQuickPixel.TRGBA;
+  c1, c2: maxLogic.QuickPixel.TRGB;
+  rgba: maxLogic.QuickPixel.TRGBA;
   alfa: byte;
 begin
-  c1 := utsQuickPixel.ColorToRgb(aMaskColor);
-  c2 := utsQuickPixel.ColorToRgb(aNewColor);
+  c1 := maxLogic.QuickPixel.ColorToRgb(aMaskColor);
+  c2 := maxLogic.QuickPixel.ColorToRgb(aNewColor);
 
   bmp.PixelFormat := pf32bit;
   gc2(DstQp, TQuickPixel.Create(bmp));
@@ -749,10 +749,10 @@ procedure THighDpiAdjuster.OverrideColor(bmp: TBitmap; aOldColor,
 var
   qp: TQuickPixel;
   x, y: integer;
-  c1, c2: utsQuickPixel.TRGB;
+  c1, c2: maxLogic.QuickPixel.TRGB;
 begin
-  c1 := utsQuickPixel.ColorToRgb(aOldColor);
-  c2 := utsQuickPixel.ColorToRgb(aNewColor);
+  c1 := maxLogic.QuickPixel.ColorToRgb(aOldColor);
+  c2 := maxLogic.QuickPixel.ColorToRgb(aNewColor);
   if c1.Equal(c2) then
     Exit; // nothing to do...
 
