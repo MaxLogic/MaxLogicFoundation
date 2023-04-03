@@ -1,8 +1,9 @@
 Unit maxCsv;
 
 { Copyright: pawel Piotrowski
-  Version: 1.0
+  Version: 1.1
   History:
+  2013-04-03: writer can now use different lineBreaks
   2016-09-12: update
 
   Info:
@@ -37,18 +38,16 @@ Type
   Private Const
     CR = #13 + #10;
   Private
-    fDelimiter: Byte;
-    FQuoteCharAsByte: Byte;
+    fDelimiter: ansichar;
+    FQuoteChar: ansichar;
     Procedure SetQuoteChar(Const Value: ansichar);
     Procedure SetSeparator(Const Value: ansichar);
-    function GetQuoteChar: ansichar;
-    function GetDelimiter: ansichar;
   Public
     Constructor Create;
     Destructor Destroy; Override;
 
-    Property QuoteChar: ansichar Read GetQuoteChar Write SetQuoteChar;
-    Property Delimiter: ansichar Read GetDelimiter Write SetSeparator;
+    Property QuoteChar: ansichar Read FQuoteChar Write SetQuoteChar;
+    Property Delimiter: ansichar Read fDelimiter Write SetSeparator;
   End;
 
   TCsvReader = Class(TCSVBase)
@@ -60,7 +59,6 @@ Type
 
     fMaxColCountFound: Integer;
     fForcedColCount: Integer;
-    fCsvFileSize: int64;
 
     Function GetEof: Boolean; {$IFDEF USE_INLINE}Inline; {$ENDIF}
     Procedure DetectBom;
@@ -72,10 +70,9 @@ Type
     Constructor Create;
     Destructor Destroy; Override;
 
-    // if aDelimiter = #0 then this will also call detect delimiter
-    Procedure Open(Const Filename: String; aShareMode: Cardinal = fmShareDenyWrite; aDelimiter: ansichar = #0); Overload;
-    Procedure Open(Const Filename: String; aDelimiter: char); Overload;
-    Procedure Open(aStream: TStream; aTakeOwnerShipOfStream: Boolean = False; aDelimiter: ansichar = #0); Overload;
+    // this also calls detect delimiter
+    Procedure Open(Const Filename: String; aShareMode: Cardinal = fmShareDenyWrite); Overload;
+    Procedure Open(aStream: TStream; aTakeOwnerShipOfStream: Boolean = False); Overload;
 
     Procedure Close;
 
@@ -90,15 +87,11 @@ Type
     Function ReadRow(Var row: TRawRow): Boolean; Overload; {$IFDEF USE_INLINE}Inline; {$ENDIF}
     // this will try to convert the rawByteStrings to unicode
     Function ReadRow(Var row: TRow): Boolean; Overload; {$IFDEF USE_INLINE}Inline; {$ENDIF}
-
     Property Eof: Boolean Read GetEof;
     Property Utf8BomDetected: Boolean Read fUtf8BomDetected;
     Property MaxColCountFound: Integer Read fMaxColCountFound;
     // you can force the CSV reader to always output that amount of columns
     Property ForcedColCount: Integer Read fForcedColCount Write fForcedColCount;
-
-    // sometimes you want to know the file of the file you just opened
-    Property CsvFileSize: int64 Read fCsvFileSize;
   End;
 
   TCsvWriter = Class(TCSVBase)
@@ -110,9 +103,11 @@ Type
     fOwnsStream: Boolean;
     fBuffer: TMemoryStream;
     fEncoding: TEncoding;
+    FLineBreak: AnsiString;
 
     Procedure WriteCell(Const Value: String); Overload;
     Procedure WriteCell(Const Value: rawByteString); Overload;
+    procedure SetLineBreak(const Value: AnsiString);
   Public
     Constructor Create(aStream: TStream; aEncoding: TEncoding = Nil; aBufferSize: Integer = cBufferSize); Overload;
     Constructor Create(Const aFilename: String; aEncoding: TEncoding = Nil; aBufferSize: Integer = cBufferSize); Overload;
@@ -127,14 +122,16 @@ Type
 
     // flushes the internal buffer to the file stream. will be called automatically when the buffer exceeds the defined buffer size and on destroy
     Procedure Flush;
+
+    property LineBreak: AnsiString read FLineBreak write SetLineBreak;
   End;
 
 Implementation
 
 Uses
-{$IFDEF MSWINDOWS}
+  {$IFDEF MSWINDOWS}
   maxInMemoryFile,
-{$ENDIF}
+  {$ENDIF}
   ioUtils, ansiStrings, System.WideStrUtils;
 
 { TCSVBase }
@@ -142,8 +139,8 @@ Uses
 Constructor TCSVBase.Create;
 Begin
   Inherited Create;
-  QuoteChar := '"';
-  Delimiter := ',';
+  FQuoteChar := '"';
+  fDelimiter := ',';
 End;
 
 Destructor TCSVBase.Destroy;
@@ -154,29 +151,20 @@ End;
 
 Procedure TCSVBase.SetQuoteChar(Const Value: ansichar);
 Begin
-  FQuoteCharAsByte:= byte(Value);
+  FQuoteChar := Value;
 End;
 
 Procedure TCSVBase.SetSeparator(Const Value: ansichar);
 Begin
-  fDelimiter := byte(Value);
+  fDelimiter := Value;
 End;
-
-function TCSVBase.GetQuoteChar: ansichar;
-begin
-result:=AnsiChar(FQuoteCharAsByte);
-end;
-
-function TCSVBase.GetDelimiter: ansichar;
-begin
-result:=ansiChar(fDelimiter );
-end;
 
 { TCsvWriter }
 
 Constructor TCsvWriter.Create(aStream: TStream; aEncoding: TEncoding = Nil; aBufferSize: Integer = cBufferSize);
 Begin
   Inherited Create;
+  self.FLineBreak := sLineBreak;
   fBuffer := TMemoryStream.Create;
   fStream := aStream;
   fOwnsStream := False;
@@ -209,19 +197,16 @@ Begin
   RequireQuote := False;
 
   For x := 1 To length(s) Do
-    If charInSet(s[x], [Char(FQuoteCharAsByte), char(fDelimiter), #10, #13]) Then
+    If charInSet(s[x], [FQuoteChar, fDelimiter, #10, #13]) Then
     Begin
       RequireQuote := True;
       Break;
     End;
 
   If RequireQuote Then
-    s := char(self.FQuoteCharAsByte) +
-      sysUtils.StringReplace(s, char(FQuoteCharAsByte), String(char(FQuoteCharAsByte)+ char(FQuoteCharAsByte)), [rfReplaceAll]) +
-      char(self.FQuoteCharAsByte) +
-      char(self.fDelimiter)
-  Else
-    s := s + char(self.fDelimiter);
+    s := self.FQuoteChar +
+      StringReplace(s, FQuoteChar, FQuoteChar + FQuoteChar, [rfReplaceAll]) +
+      self.FQuoteChar;;
 
   bytes := fEncoding.getbytes(s);
   If length(bytes) <> 0 Then
@@ -233,7 +218,12 @@ Var
   x: Integer;
 Begin
   For x := 0 To length(row) - 1 Do
+  begin
+    if x <> 0 then
+      fBuffer.Write(fDelimiter, 1);
     WriteCell(row[x]);
+  end;
+  fBuffer.Write(self.FLineBreak[1], length(self.FLineBreak));
   If fBuffer.Size > fBufferSize Then
     Flush;
 End;
@@ -242,11 +232,11 @@ Constructor TCsvWriter.Create(Const aFilename: String; aEncoding: TEncoding = Ni
 Var
   stream: TStream;
 Begin
-{$IFNDEF MSWINDOWS}
+  {$IFNDEF MSWINDOWS}
   stream := TFileStream.Create(aFilename, fmCreate);
-{$ELSE}
+  {$ELSE}
   stream := TMMFStream.Create(aFilename, mmfCreate);
-{$ENDIF}
+  {$ENDIF}
   Create(stream, aEncoding, aBufferSize);
   fOwnsStream := True;
 End;
@@ -256,7 +246,7 @@ Var
   b: TBytes;
 Begin
   b := TEncoding.UTF8.GetPreamble;
-  fStream.write(b[0], length(b));
+  fStream.Write(b[0], length(b));
 End;
 
 Procedure TCsvWriter.WriteRow(Const row: TRawRow);
@@ -264,7 +254,12 @@ Var
   x: Integer;
 Begin
   For x := 0 To length(row) - 1 Do
+  begin
+    if x <> 0 then
+      fBuffer.Write(fDelimiter, 1);
     WriteCell(row[x]);
+  end;
+  fBuffer.Write(self.FLineBreak[1], length(self.FLineBreak));
   If fBuffer.Size > fBufferSize Then
     Flush;
 End;
@@ -273,43 +268,45 @@ Procedure TCsvWriter.Flush;
 Begin
   If fBuffer.Position <> 0 Then
   Begin
-    fStream.write(fBuffer.Memory^, fBuffer.Position);
+    fStream.Write(fBuffer.Memory^, fBuffer.Position);
     fBuffer.Position := 0;
   End;
 End;
 
+procedure TCsvWriter.SetLineBreak(const Value: AnsiString);
+begin
+  FLineBreak := Value;
+end;
+
 Procedure TCsvWriter.WriteCell(Const Value: rawByteString);
 Var
-  raw: rawByteString;
+  s: rawByteString;
   RequireQuote: Boolean;
   x: Integer;
 Begin
-  raw := Value;
+  s := Value;
   RequireQuote := False;
 
-  For x := 1 To length(raw) Do
-    If raw[x] In [char(FQuoteCharAsByte), Delimiter, #10, #13] Then
+  For x := 1 To length(s) Do
+    If s[x] In [FQuoteChar, fDelimiter, #10, #13] Then
     Begin
       RequireQuote := True;
       Break;
     End;
 
   If RequireQuote Then
-    raw := self.QuoteChar+
-      ansiStrings.StringReplace(raw, QuoteChar, QuoteChar + QuoteChar , [rfReplaceAll]) +
-      self.QuoteChar +
-      self.Delimiter
-  Else
-    raw := raw + self.Delimiter;
+    s := self.FQuoteChar +
+      ansiStrings.StringReplace(s, FQuoteChar, FQuoteChar + FQuoteChar, [rfReplaceAll]) +
+      self.FQuoteChar;
 
-  fBuffer.WriteBuffer(raw[1], length(raw));
+  fBuffer.WriteBuffer(s[1], length(s));
 End;
 
 { TCsvReader }
 
 Procedure TCsvReader.Close;
 Begin
-  fCsvFileSize := 0;
+
   If assigned(fBuffer) Then
   Begin
     fBuffer.Free;
@@ -338,28 +335,21 @@ Begin
   result := fBuffer.Eof;
 End;
 
-Procedure TCsvReader.Open(Const Filename: String; aShareMode: Cardinal = fmShareDenyWrite; aDelimiter: ansichar = #0);
+Procedure TCsvReader.Open(Const Filename: String; aShareMode: Cardinal = fmShareDenyWrite);
 Var
   fs: TFileStream;
 Begin
   fs := TFileStream.Create(Filename, fmOpenRead, aShareMode);
-  Open(fs, True, aDelimiter);
+  Open(fs, True);
 End;
 
-Procedure TCsvReader.Open(aStream: TStream; aTakeOwnerShipOfStream: Boolean = False; aDelimiter: ansichar = #0);
-Const
-KB= 1024;
-MB = 1024*KB;
+Procedure TCsvReader.Open(aStream: TStream; aTakeOwnerShipOfStream: Boolean = False);
 Begin
   Close;
-  fCsvFileSize := aStream.Size;
-  fBuffer := TBufferedFile.Create(16*KB, MB, 16*KB, MB);
+  fBuffer := TBufferedFile.Create(cBufferSize);
   fBuffer.Open(aStream, aTakeOwnerShipOfStream);
   DetectBom;
-  If aDelimiter = #0 Then
-    Delimiter := DetectDelimiter
-  Else
-    Delimiter := aDelimiter;
+  fDelimiter := DetectDelimiter;
 End;
 
 Function TCsvReader.ReadRow(Var row: TRawRow): Boolean;
@@ -371,8 +361,6 @@ Var
 Begin
   If Eof Then
     exit(False);
-
-    fBuffer.TrimBuffer;
 
   LineEndDetected := False;
 
@@ -392,7 +380,7 @@ Begin
       colCapacity := colCapacity * 2;
       SetLength(row, colCapacity);
     End;
-    If (fBuffer.CursorByte<> FQuoteCharAsByte) Then
+    If (fBuffer.CharCursor <> FQuoteChar) Then
       ReadNonQuotedColValue(row[ColIndex], LineEndDetected)
     Else
       ReadQuotedColValue(row[ColIndex], LineEndDetected);
@@ -420,81 +408,56 @@ End;
 Function TCsvReader.DetectDelimiter: ansichar;
 Var
   x: Integer;
+  orgPos: Int64;
   LineEndDetected: Boolean;
   s: rawByteString;
-  lBuffer:RawByteString;
-  lBufferSize:Integer;
-  pc:PAnsiChar;
 Begin
   result := ',';
   LineEndDetected := False;
 
-  lBufferSize:=1024;
-  if lBufferSize> fBuffer.BytesRightOfCursor then
-  lBufferSize:=fBuffer.BytesRightOfCursor;
-
-
-  if lBufferSize=0 then
+  If fBuffer.Eof Then // do nothing if there is no data
     exit;
 
-  setLength(lbuffer,lBufferSize+1);
-  move(fBuffer.CursorPByte^, lBuffer[1], lBufferSize);
-  lBuffer[lBufferSize+1] :=#0;
-  pc:=@lBuffer[1];
+  orgPos := fBuffer.Position;
 
-
-                  // case 1: we have a quoted value, in this case find the closing ", the char after that is our delimiter... or end of buffer
-  if pc^='"' then
-  begin
-    var QuotaOpen:= True;
-    repeat
-    inc(pc);
-        if pc^ ='"' Then
-        QuotaOpen:=not QuotaOpen;
-    until (pc^=#0)or((not QuotaOpen ) and (pc^<>'"'));
-
-    if pc^<>#0 then
-    result:=pc^;
-
-
-  end else
-    while pc^<>#0 do
+  If fBuffer.CharCursor = '"' Then
+  Begin
+    ReadQuotedColValue(s, LineEndDetected);
+    // after reading, the cursor is moved to the next column start, so we need to go one back
+    fBuffer.Seek(-1);
+    If charInSet(fBuffer.CharCursor, [',', ';', '|', #9]) Then
+      result := fBuffer.CharCursor;
+  End Else Begin
+    For x := 1 To 1024 Do
     Begin
-      If pc^ in [',', ';', '|', #9] Then
+      fBuffer.NextByte;
+      If charInSet(fBuffer.CharCursor, [',', ';', '|', #9]) Then
       Begin
-        result := pc^;
+        result := fBuffer.CharCursor;
         Break;
       End;
-
-      inc(pc);
     End;
+  End;
+
+  // reset the position
+  fBuffer.Position := orgPos;
 End;
 
 Procedure TCsvReader.DetectBom;
 Var
   b1, b2: TBytes;
-  x, len:Integer;
 Begin
-fUtf8BomDetected := False;
-
   b1 := TEncoding.UTF8.GetPreamble;
-  len:=length(b1);
-  SetLength(b2, len);
-  if fBuffer.BytesRightOfCursor<len then
-  exit; // nothing to detect...
-
-move(fBuffer.Buffer[0], b2[0], len);
+  b2 := fBuffer.copyBytes(0, length(b1));
 
   If (length(b1) = length(b2))
     And CompareMem(@b1[0], @b2[0], length(b1)) Then
   Begin
     fUtf8BomDetected := True;
-    // skip bom
-    for x := 1 to len do
-      fBuffer.Next;
-  End;
-
-
+    fBuffer.Position := length(b1);
+  End
+  Else
+    fUtf8BomDetected := False;
 End;
 
 Function TCsvReader.ReadRow(Var row: TRow): Boolean;
@@ -510,75 +473,67 @@ End;
 
 Procedure TCsvReader.ReadNonQuotedColValue(Var aValue: rawByteString; Var LineEndDetected: Boolean);
 Var
-  StartPos, count: integer;
-  b:Byte;
+  start, count: Int64;
 Begin
-StartPos:=fBuffer.Cursor;
-
+  start := fBuffer.Position;
   While Not fBuffer.Eof Do
   Begin
-  b:=fBuffer.CursorByte;
-    If b= fDelimiter Then
+    If fBuffer.CharCursor = fDelimiter Then
     Begin
-
-fBuffer.CopyRawByteString(startPos, (fBuffer.Cursor-StartPos), aValue );
-      fBuffer.Next; // move to the start of the next value
+      count := (fBuffer.Position - start);
+      aValue := fBuffer.CopyRawByteString(start, count);
+      fBuffer.NextByte; // move to the start of the next value
       exit;
 
-    End Else If (b In [10, 13]) Then
+    End Else If fBuffer.Cursor^ In [10, 13] Then
     Begin
       LineEndDetected := True;
-      fBuffer.CopyRawByteString(startPos, (fBuffer.Cursor-StartPos), aValue );
 
+      count := (fBuffer.Position - start);
+      aValue := fBuffer.CopyRawByteString(start, count);
 
-      If b= 10 Then
-        fBuffer.Next // move to the start of the next value
-      Else If b = 13 Then // skip windows line break
-begin
-  fbuffer.next; fbuffer.next;
-end;
+      If fBuffer.Cursor^ = 10 Then
+        fBuffer.NextByte // move to the start of the next value
+      Else If fBuffer.Cursor^ = 13 Then // skip windows line break
+        fBuffer.Seek(2);
 
-      exit; // line detected nothing else to od
+      exit;
 
-    End Else
-      fBuffer.Next;
+    End
+    Else
+      fBuffer.NextByte;
+
   End;
 
   // if we are here, nothing was found, so retrive all
-  count := (fBuffer.Cursor- StartPos);
-fBuffer.CopyRawByteString(startPos, count, aValue );
+  count := (fBuffer.Position - start);
+  aValue := fBuffer.CopyRawByteString(start, count);
   LineEndDetected := True;
 End;
 
 Procedure TCsvReader.ReadQuotedColValue(Var aValue: rawByteString; Var LineEndDetected: Boolean);
 Var
-  startPos, count: integer;
-b:Byte;
-v:RawByteString;
+  start, count: Int64;
 Begin
-  fBuffer.Next; // move beyond the first quote
-  startPos := fBuffer.Cursor;
+  fBuffer.NextByte; // move beyond the first quote
+  start := fBuffer.Position;
   aValue := '';
-
 
   While Not fBuffer.Eof Do
   Begin
-  b:= fBuffer.CursorByte;
-
-
-    If b= FQuoteCharAsByte Then
+    If fBuffer.CharCursor = FQuoteChar Then
     Begin
-      fBuffer.CopyRawByteString(startPos, (fBuffer.Cursor-StartPos), v);
-      aValue := aValue + v; // copy all until before the quote
+      count := (fBuffer.Position - start);
+      aValue := aValue + fBuffer.CopyRawByteString(start, count); // copy all until before the quote
 
-      fBuffer.Next; // move either to the delimiter after the quote, an quote that makrs quote escape, or to a line break character
+      fBuffer.NextByte; // move either to the delimiter after the quote, an quote that makrs quote escape, or to a line break character
       // was this quote escaped?
-      If Not fBuffer.Eof And (fBuffer.CursorByte= FQuoteCharAsByte) Then
+      If Not fBuffer.Eof And (fBuffer.CharCursor = FQuoteChar) Then
       Begin
         // so this quote is escaped...
-        aValue := aValue + ansiChar(FQuoteCharAsByte);
-        fBuffer.Next;
-        startPos := fBuffer.Cursor; // next time we will copy from here
+        aValue := aValue + FQuoteChar;
+        fBuffer.NextByte;
+        start := fBuffer.Position; // next time we will copy from here
         Continue;
       End;
       // right now the cursor points just after the quote char that closes the column value
@@ -589,40 +544,29 @@ Begin
         exit;
       End;
 
-
-      b:=fBuffer.CursorByte;
-      If (Not fBuffer.Eof) And (b In [10, 13]) Then
+      If (Not fBuffer.Eof) And (fBuffer.Cursor^ In [10, 13]) Then
       Begin
         LineEndDetected := True;
-        If b = 10 Then
-          fBuffer.Next // move to the start of the next value
-        Else If b = 13 Then // skip windows line break
-begin
-  fBuffer.Next; fBuffer.Next;
-end;
+        If fBuffer.Cursor^ = 10 Then
+          fBuffer.NextByte // move to the start of the next value
+        Else If fBuffer.Cursor^ = 13 Then // skip windows line break
+          fBuffer.Seek(2);
       End
       Else
-        fBuffer.Next; // move to the start of the next value
+        fBuffer.NextByte; // move to the start of the next value
 
-      exit; // we are now either on the next cell value start or at the next line start. in both cases, let us exit
+      exit;
+
     End
     Else
-      fBuffer.Next;
+      fBuffer.NextByte;
 
   End;
 
-
   // if we are here, nothing was found, so retrive all
-  count := (fBuffer.Cursor- StartPos);
-fBuffer.CopyRawByteString(startPos, count, v);
-aValue:=aValue + v;
+  count := (fBuffer.Position - start) + 1;
+  aValue := aValue + fBuffer.CopyRawByteString(start, count);
   LineEndDetected := True;
-End;
-
-Procedure TCsvReader.Open(Const Filename: String; aDelimiter: char);
-Begin
-  Open(Filename, fmShareDenyWrite,
-    ansichar(aDelimiter));
 End;
 
 { TRawRowHelper }
