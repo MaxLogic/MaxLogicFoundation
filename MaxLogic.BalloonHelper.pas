@@ -24,7 +24,7 @@ interface
 
 uses
   windows, classes, sysUtils, controls, ExtCtrls,
-  StdCtrls, generics.collections, utsWndSubClassing, messages, forms,
+  StdCtrls, generics.collections, maxWndSubClassing, messages, forms,
   MaxLogic.BalloonDefaultImageList;
 
 Type

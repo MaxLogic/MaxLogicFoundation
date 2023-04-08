@@ -55,7 +55,7 @@ Type
     Function addAfterFree(aProc: TThreadProcedure): IGarbo;
   End;
 
-  Tproc = reference To Procedure;
+  Tproc = system.sysUtils.TProc;
 
   iCallProcOnDestroy = Interface
     ['{7D3DDF6A-3A2F-44F8-A83B-D7F66F66C559}']

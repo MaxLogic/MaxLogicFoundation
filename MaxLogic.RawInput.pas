@@ -8,7 +8,7 @@ interface
 
 uses
   windows, classes, sysUtils, controls, types, messages,
-  CnRawInput, diagnostics, forms, utsWndSubClassing;
+  CnRawInput, diagnostics, forms, maxWndSubClassing;
 
 Type
   TRawMouseEvent = procedure(sender: Tobject; const RawMouse: RawMouse; FromMouse: THandle) of object;

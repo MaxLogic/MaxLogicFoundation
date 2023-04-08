@@ -260,7 +260,7 @@ implementation
 uses
 
   GDIPOBJ, GDIPAPI,
-  pawel1, bsUTILS, Dialogs, zLib, math, max3DCollision, ClipBrd, XmlLibHelper, utsQuickPixel, mmsystem;
+  pawel1, bsUTILS, Dialogs, zLib, math, max3DCollision, ClipBrd, XmlLibHelper, MaxLogic.QuickPixel, mmsystem;
 
 function getViewpoint(ptBody, ptHead: Tpoint; const ptObjectCenter: TD3DXVector2): single;
 begin

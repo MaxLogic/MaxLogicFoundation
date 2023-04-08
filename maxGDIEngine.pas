@@ -9,7 +9,7 @@ interface
 uses
   windows, classes, sysUtils,
   graphics, jpeg, Direct3D9, D3DX9, clHPC, AdvancedShapes,
-  Generics.Collections, utsWndSubClassing,
+  Generics.Collections, maxWndSubClassing,
 {$IFNDEF DELPHI2009_UP}
   GDIPOBJ, GDIPAPI;
 {$ELSE}

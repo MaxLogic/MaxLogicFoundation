@@ -17,7 +17,7 @@ Unit maxInterOpCommunication;
 Interface
 
 Uses
-  windows, classes, sysUtils, forms, maxInMemoryFile, utsWndSubClassing, messages, SyncObjs, generics.collections;
+  windows, classes, sysUtils, forms, maxInMemoryFile, maxWndSubClassing, messages, SyncObjs, generics.collections;
 
 Type
 {$IFNDEF UNICODE}
