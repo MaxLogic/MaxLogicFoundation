@@ -1,8 +1,9 @@
 Unit maxCsv;
 
 { Copyright: pawel Piotrowski
-  Version: 1.1
+  Version: 1.2
   History:
+  2023-04-11: added property CloseRowWithDelimiter
   2013-04-03: writer can now use different lineBreaks
   2016-09-12: update
 
@@ -104,10 +105,12 @@ Type
     fBuffer: TMemoryStream;
     fEncoding: TEncoding;
     FLineBreak: AnsiString;
+    FCloseRowWithDelimiter: Boolean;
 
     Procedure WriteCell(Const Value: String); Overload;
     Procedure WriteCell(Const Value: rawByteString); Overload;
     procedure SetLineBreak(const Value: AnsiString);
+    procedure SetCloseRowWithDelimiter(const Value: Boolean);
   Public
     Constructor Create(aStream: TStream; aEncoding: TEncoding = Nil; aBufferSize: Integer = cBufferSize); Overload;
     Constructor Create(Const aFilename: String; aEncoding: TEncoding = Nil; aBufferSize: Integer = cBufferSize); Overload;
@@ -124,6 +127,7 @@ Type
     Procedure Flush;
 
     property LineBreak: AnsiString read FLineBreak write SetLineBreak;
+    property CloseRowWithDelimiter: Boolean read FCloseRowWithDelimiter write SetCloseRowWithDelimiter;
   End;
 
 Implementation
@@ -223,6 +227,8 @@ Begin
       fBuffer.Write(fDelimiter, 1);
     WriteCell(row[x]);
   end;
+  if CloseRowWithDelimiter then
+    fBuffer.Write(fDelimiter, 1);
   fBuffer.Write(self.FLineBreak[1], length(self.FLineBreak));
   If fBuffer.Size > fBufferSize Then
     Flush;
@@ -259,6 +265,8 @@ Begin
       fBuffer.Write(fDelimiter, 1);
     WriteCell(row[x]);
   end;
+  if CloseRowWithDelimiter then
+    fBuffer.Write(fDelimiter, 1);
   fBuffer.Write(self.FLineBreak[1], length(self.FLineBreak));
   If fBuffer.Size > fBufferSize Then
     Flush;
@@ -272,6 +280,11 @@ Begin
     fBuffer.Position := 0;
   End;
 End;
+
+procedure TCsvWriter.SetCloseRowWithDelimiter(const Value: Boolean);
+begin
+  FCloseRowWithDelimiter := Value;
+end;
 
 procedure TCsvWriter.SetLineBreak(const Value: AnsiString);
 begin

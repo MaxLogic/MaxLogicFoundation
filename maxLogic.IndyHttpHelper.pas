@@ -1,8 +1,10 @@
 unit maxLogic.IndyHttpHelper;
+
 {$I JEDI.INC}
 
+
 {
-  Version: 1.8
+  Version: 1.7
 
 }
 {
@@ -13,7 +15,7 @@ interface
 uses
 {$IFDEF MSWINDOWS}
   Windows,
-  {$ENDIF}
+{$ENDIF}
   classes, sysUtils,
   idHTTP, idComponent, idGlobal, idStream, IdMultipartFormData, IdZLibCompressorBase, IdCookieManager, IdGlobalProtocols, IdHTTPHeaderInfo, IdException, IdStack, IdCompressorZLib,
   IdSSLOpenSSLHeaders, IdSSLOpenSSL, // ssl
@@ -33,12 +35,12 @@ type
   private
     procedure SetTimeOut(const Value: Integer);
   public
-  // sets both ReadTimeOut and ConnectTimeout
-      property TimeOut: Integer write SetTimeOut;
+    // sets both ReadTimeOut and ConnectTimeout
+    property TimeOut: Integer write SetTimeOut;
   public
     Options: TCreateOptions;
     ReadTimeOut: Integer;
-    ConnectTimeout : Integer;
+    ConnectTimeout: Integer;
 
     // RETURNS THE MOST IMPORTANT AND default options
     class function New(const AdditionalOptions: TCreateOptions = []): TOptions; static;
@@ -60,33 +62,31 @@ procedure assignCustomHeaders(headers: TStringList; http: TIdHttp);
 // call this to make sure the CloseGracefuly error will cause no harm.
 procedure WalkAroundEIdConnClosedGracefully(const proc: TProc; http: TIdHttp);
 
+{$IFDEF MSWINDOWS}
 function SslDllsPresent: boolean;
-
-
+{$ENDIF}
 
 function downloadStream(const aurl: string; postParams: TStringList; response: TStream; const ProgressProc: TProgressProc = nil;
-// TimeOuts: -1 means use the defailt from the Toptions
-ConnectTimeOut:integer=-1; ReadTimeOut:Integer=-1): boolean;
-
+  // TimeOuts: -1 means use the defailt from the Toptions
+  ConnectTimeout: Integer = -1; ReadTimeOut: Integer = -1): boolean;
 
 function download(const aurl: string; out response: Tbytes; const ProgressProc: TProgressProc = nil;
-// TimeOuts: -1 means use the defailt from the Toptions
-ConnectTimeOut:integer=-1; ReadTimeOut:Integer=-1): boolean; overload;
-
+  // TimeOuts: -1 means use the defailt from the Toptions
+  ConnectTimeout: Integer = -1; ReadTimeOut: Integer = -1): boolean; overload;
 
 function download(const aurl: string; postParams: TStringList; out response: Tbytes; const ProgressProc: TProgressProc = nil;
-// TimeOuts: -1 means use the defailt from the Toptions
-ConnectTimeOut:integer=-1; ReadTimeOut:Integer=-1): boolean; overload;
+  // TimeOuts: -1 means use the defailt from the Toptions
+  ConnectTimeout: Integer = -1; ReadTimeOut: Integer = -1): boolean; overload;
 
 function download(const aurl: string; postParams: TStringList; out response: string; const ProgressProc: TProgressProc = nil;
-// TimeOuts: -1 means use the defailt from the Toptions
-ConnectTimeOut:integer=-1; ReadTimeOut:Integer=-1): boolean; overload;
+  // TimeOuts: -1 means use the defailt from the Toptions
+  ConnectTimeout: Integer = -1; ReadTimeOut: Integer = -1): boolean; overload;
 
 implementation
 
 uses
   MaxLogic.ioUtils,
-autoFree, maxLogic.AnonymousProcToEvent, strUtils;
+  autoFree, maxLogic.AnonymousProcToEvent, strUtils;
 
 type
   TEventToProcForIdHttp = class(TComponent)
@@ -172,8 +172,11 @@ begin
   if oNoCacheControl in Options.Options then
     LHTTP.request.CacheControl := 'no-cache';
 
-  if (oSSL in Options.Options) and
-    SslDllsPresent then
+  if (oSSL in Options.Options)
+{$IFDEF MSWINDOWS}
+    and SslDllsPresent
+{$ENDIF}
+  then
   begin
     LIO := TIdSSLIOHandlerSocketOpenSSL.Create(LHTTP);
 
@@ -181,7 +184,7 @@ begin
       EventHandler := TEventToProcForIdHttp.Create(LHTTP);
 
     LIO.OnVerifyPeer := EventHandler.SSLOnVerifyPeer;
-    LIO.SSLOptions.SSLVersions := [sslvTLSv1, sslvTLSv1_1, sslvTLSv1_2];
+    LIO.SSLOptions.SSLVersions := [sslvTLSv1_1, sslvTLSv1_2];
 
     LHTTP.IOHandler := LIO;
 
@@ -192,8 +195,8 @@ begin
     LIO.PassThrough := False;
   end;
 
-  LHTTP.ConnectTimeout := Options.ConnectTimeout ;
-    LHTTP.ReadTimeout:= Options.ReadTimeout;
+  LHTTP.ConnectTimeout := Options.ConnectTimeout;
+  LHTTP.ReadTimeOut := Options.ReadTimeOut;
 
   // assign the on progress events
   // LHTTP.OnWork := HttpWork;
@@ -242,17 +245,17 @@ end;
 
 class function TOptions.New(const AdditionalOptions: TCreateOptions): TOptions;
 begin
-  Result := Default(TOptions);
+  Result := Default (TOptions);
   Result.TimeOut := cDefaultTimeOut;
   Result.Options :=
     [oGZIP, oKeepAlive, oHandleRedirects, oCookieManager] +
-  AdditionalOptions;
+    AdditionalOptions;
 end;
 
 procedure TOptions.SetTimeOut(const Value: Integer);
 begin
-    ReadTimeOut:=value;
-    ConnectTimeout :=value;
+  ReadTimeOut := Value;
+  ConnectTimeout := Value;
 end;
 
 class function TOptions.DefaultSsl(const AdditionalOptions: TCreateOptions): TOptions;
@@ -263,6 +266,40 @@ end;
 
 var
   fglSslDllExists: byte = 0;
+{$IFDEF MSWINDOWS}
+
+
+Function GetBuildInfo(Const Filename: String; Out v1, v2, v3, v4: word): String;
+Var
+  VerInfoSize: dword;
+  VerInfo: Pointer;
+  VerValueSize: dword;
+  VerValue: PVSFixedFileInfo;
+  Dummy: dword;
+Begin
+  VerInfoSize := GetFileVersionInfoSize(PChar(Filename), Dummy);
+  If VerInfoSize = 0 Then
+  Begin
+    Dummy := GetLastError;
+
+    Result := '';
+    Exit;
+    // ShowMessage(IntToStr(Dummy));
+  End; { if }
+  getmem(VerInfo, VerInfoSize);
+  GetFileVersionInfo(PChar(Filename), 0, VerInfoSize, VerInfo);
+  VerQueryValue(VerInfo, '\', Pointer(VerValue), VerValueSize);
+  With VerValue^ Do
+  Begin
+    v1 := dwFileVersionMS Shr 16;
+    v2 := dwFileVersionMS And $FFFF;
+    v3 := dwFileVersionLS Shr 16;
+    v4 := dwFileVersionLS And $FFFF;
+  End;
+  freemem(VerInfo, VerInfoSize);
+  Result := IntToStr(v1) + '.' + IntToStr(v2) + '.' + IntToStr(v3) + '.' +
+    IntToStr(v4);
+End;
 
 function SslDllsPresent: boolean;
 
@@ -271,21 +308,21 @@ function SslDllsPresent: boolean;
     h: THandle;
     len: Integer;
     fn: string;
-    v: array[0..3] of word;
+    v: array [0 .. 3] of word;
   begin
     Result := False;
-    h := LoadLibrary(pChar(aName));
+    h := LoadLibrary(PChar(aName));
     if h <> 0 then
     begin
       SetLength(fn, MAX_PATH);
-      len := GetModuleFileName(h, pChar(fn), MAX_PATH);
+      len := GetModuleFileName(h, PChar(fn), MAX_PATH);
       if len < Length(fn) then
         SetLength(fn, len)
       else
       begin
         if len > Length(fn) then
           SetLength(fn, len + 1);
-        len := GetModuleFileName(h, pChar(fn), len);
+        len := GetModuleFileName(h, PChar(fn), len);
         SetLength(fn, len);
       end;
 
@@ -315,56 +352,55 @@ function SslDllsPresent: boolean;
 
 begin
 {$IFNDEF MSWINDOWS}
-needs implementation !
+  needs implementation !
+{$ENDIF}
+  // prevent double testing
+  if fglSslDllExists = 1 then
+    Exit(true);
+
+  Result := False;
+
+  Result := TestDll('libeay32.dll', [1, 0, 2, 18]) and
+    TestDll('ssleay32.dll', [1, 0, 2, 18]);
+
+  // cache the result
+  if Result then
+    fglSslDllExists := 1;
+end;
 {$ENDIF}
 
-// prevent double testing
-if fglSslDllExists = 1 then
-  Exit(true);
-
-Result := False;
-
-Result := TestDll('libeay32.dll', [1, 0, 2, 18]) and
-TestDll('ssleay32.dll', [1, 0, 2, 18]);
-
-// cache the result
-if Result then
-  fglSslDllExists := 1;
-end;
 
 function download(const aurl: string; out response: Tbytes; const ProgressProc: TProgressProc = nil;
-// TimeOuts: -1 means use the defailt from the Toptions
-ConnectTimeOut:integer=-1; ReadTimeOut:Integer=-1): boolean;
+  // TimeOuts: -1 means use the defailt from the Toptions
+  ConnectTimeout: Integer = -1; ReadTimeOut: Integer = -1): boolean;
 begin
-  Result := download(aurl, nil, response, ProgressProc, ConnectTimeOut, ReadTimeOut);
+  Result := download(aurl, nil, response, ProgressProc, ConnectTimeout, ReadTimeOut);
 end;
 
 function download(const aurl: string; postParams: TStringList; out response: Tbytes; const ProgressProc: TProgressProc = nil;
-// TimeOuts: -1 means use the defailt from the Toptions
-ConnectTimeOut:integer=-1; ReadTimeOut:Integer=-1): boolean;
+  // TimeOuts: -1 means use the defailt from the Toptions
+  ConnectTimeout: Integer = -1; ReadTimeOut: Integer = -1): boolean;
 var
-  ms:TMemoryStream;
+  ms: TMemoryStream;
 begin
   gc2(ms, TMemoryStream.Create);
 
-  result:= downloadStream(aurl, postParams, ms,
-ProgressProc,
-ConnectTimeOut, ReadTimeOut);
+  Result := downloadStream(aurl, postParams, ms,
+    ProgressProc,
+    ConnectTimeout, ReadTimeOut);
 
-
-    if ms.size = 0 then
-      response := []
-    else
-    begin
-      SetLength(response, ms.size);
-      move(ms.memory^, response[0], ms.size);
-    end;
+  if ms.size = 0 then
+    response := []
+  else
+  begin
+    SetLength(response, ms.size);
+    move(ms.memory^, response[0], ms.size);
+  end;
 end;
 
-
 function downloadStream(const aurl: string; postParams: TStringList; response: TStream; const ProgressProc: TProgressProc = nil;
-// TimeOuts: -1 means use the defailt from the Toptions
-ConnectTimeOut:integer=-1; ReadTimeOut:Integer=-1): boolean;
+  // TimeOuts: -1 means use the defailt from the Toptions
+  ConnectTimeout: Integer = -1; ReadTimeOut: Integer = -1): boolean;
 var
   http: TIdHttp;
   Options: TOptions;
@@ -372,6 +408,7 @@ var
 begin
   lUrl := aurl;
 
+{$IFDEF MSWINDOWS}
   if SslDllsPresent then
     Options := TOptions.DefaultSsl()
   else
@@ -380,23 +417,26 @@ begin
     if startsText('https://', aurl) then
       Delete(lUrl, 5, 1);
   end;
-
-  if ConnectTimeOut>=0  then
-  Options.ConnectTimeout:=ConnectTimeOut;
-if ReadTimeOut>=0 then
-options.ReadTimeOut:=ReadTimeOut;
+{$ELSE}
+  if startsText('https://', aurl) then
+    Options := TOptions.DefaultSsl()
+  else
+    Options := TOptions.New;
+{$ENDIF}
+  if ConnectTimeout >= 0 then
+    Options.ConnectTimeout := ConnectTimeout;
+  if ReadTimeOut >= 0 then
+    Options.ReadTimeOut := ReadTimeOut;
 
   Result := False;
   http := CreateHttp(Options, ProgressProc);
   gc2(http);
-
 
   try
     if postParams = nil then
       http.get(lUrl, response)
     else
       http.post(lUrl, postParams, response);
-
 
     Result := true;
   except
@@ -411,14 +451,14 @@ options.ReadTimeOut:=ReadTimeOut;
 end;
 
 function download(const aurl: string; postParams: TStringList; out response: string; const ProgressProc: TProgressProc = nil;
-// TimeOuts: -1 means use the defailt from the Toptions
-ConnectTimeOut:integer=-1; ReadTimeOut:Integer=-1): boolean;
+  // TimeOuts: -1 means use the defailt from the Toptions
+  ConnectTimeout: Integer = -1; ReadTimeOut: Integer = -1): boolean;
 var
   buffer: Tbytes;
   size: Integer;
   lEncoding: TEncoding;
 begin
-  Result := download(aurl, postParams, buffer, ProgressProc, ConnectTimeOut, ReadTimeOut);
+  Result := download(aurl, postParams, buffer, ProgressProc, ConnectTimeout, ReadTimeOut);
   if Result then
   begin
 
