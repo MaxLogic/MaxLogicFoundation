@@ -226,6 +226,7 @@ End;
 
 {$IFDEF MsWindows}
 
+
 Procedure Exec(Const Filename: String; Const Parameter: String = ''; StartDir: String = '');
 Begin
   If StartDir = '' Then
@@ -235,6 +236,7 @@ Begin
 End;
 {$ENDIF}
 {$IFDEF MsWindows}
+
 
 Procedure ExecuteFile(
   Const aFileName: String;
@@ -259,6 +261,7 @@ Begin
 End;
 {$ENDIF}
 {$IFDEF MsWindows}
+
 
 Procedure ExecuteFile(
   Const Cmd, ACurrentDir: String; AWait: Boolean;
@@ -308,6 +311,7 @@ End;
 {$ENDIF}
 
 {$IFDEF MSWINDOWS}
+
 
 function RecycleItem(CONST ItemName: string; CONST DeleteToRecycle: Boolean = TRUE; CONST ShowConfirm: Boolean = TRUE; CONST TotalSilence: Boolean = False): Boolean;
 VAR
