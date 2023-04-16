@@ -42,6 +42,8 @@ Function LoatStringFromResource(Const aResName: String; aEncoding: TEncoding = N
 
 // works also for dll files
 Function GetInstallDir: String;
+
+{$IFDEF MsWindows}
 Procedure Exec(Const Filename: String; Const Parameter: String = ''; StartDir: String = '');
 
 Procedure ExecuteFile(Const aFileName: String;
@@ -49,6 +51,7 @@ Procedure ExecuteFile(Const aFileName: String;
   aRunHidden: Boolean = False); Overload;
 Procedure ExecuteFile(Const Cmd, ACurrentDir: String; AWait: Boolean;
   aRunHidden: Boolean = False); Overload;
+{$ENDIF}
 
 // default encoding is utf8
 // aWaitBetweenRetries is in milliseconds
@@ -65,8 +68,12 @@ Uses
   {$IFDEF MSWINDOWS}
   shellApi,
   {$ENDIF}
-  ioUtils, forms;
+  {$IFNDEF LINUX}
+  forms,
+  {$ENDIF}
+  ioUtils;
 {$IFDEF MSWINDOWS}
+
 
 Function LoatStringFromResource(Const aResName: String; Out aValue: String; Const aDefault: String = ''; aEncoding: TEncoding = Nil): Boolean;
 Var
@@ -94,6 +101,7 @@ End;
 {$ENDIF}
 
 {$IFDEF MSWINDOWS}
+
 
 Function LoatStringFromResource(Const aResName: String; aEncoding: TEncoding = Nil): String;
 Begin
@@ -216,6 +224,8 @@ Begin
   Result := ExtractFilePath(Result);
 End;
 
+{$IFDEF MsWindows}
+
 Procedure Exec(Const Filename: String; Const Parameter: String = ''; StartDir: String = '');
 Begin
   If StartDir = '' Then
@@ -223,6 +233,8 @@ Begin
   ShellExecute(0, Nil, PChar(Filename), PChar(Parameter), PChar(StartDir),
     SW_NORMAL);
 End;
+{$ENDIF}
+{$IFDEF MsWindows}
 
 Procedure ExecuteFile(
   Const aFileName: String;
@@ -245,6 +257,8 @@ Begin
 
   ExecuteFile(Cmd, dir, AWait, aRunHidden);
 End;
+{$ENDIF}
+{$IFDEF MsWindows}
 
 Procedure ExecuteFile(
   Const Cmd, ACurrentDir: String; AWait: Boolean;
@@ -291,6 +305,7 @@ Begin
     End;
   End;
 End;
+{$ENDIF}
 
 {$IFDEF MSWINDOWS}
 

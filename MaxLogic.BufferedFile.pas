@@ -17,67 +17,52 @@ Type
 
   TBufferedFile = Class
   Public Const
-    cDefaultBlockSize = 1024 * 1024;
+    cDefaultBlockSize = 16 * 1024;
   Strict Private
     fFile: TStream;
     fOwnsStream: Boolean;
-
-
-
-
-    fMinBytesLeftOfCursor, fMaxBytesLeftOfCursor,
-        fMinBytesRightOfCursor, fMaxBytesRightOfCursor,
-        fCurBytesLeftOfCursor, // NOTE: this is also the index of the curso inside the fBuffer
-        fCurBytesRightOfCursor: Integer;
-
-
+    fMaxBufferSize: Integer; // how many bytes will we read from the file to the buffer
+    fBuffer: TBytes;
+    FCursor: pByte; // the current processed byte in the fBuffer
+    fBufferSize: Integer; // the total amount of bytes in the buffer
+    fStartBuffer: pByte;
     fFileSize: int64; // the total file size on disk
-    fCursorPositionInFile: Int64;
-
-
+    fBufferOffsetInFile: int64; // the position of the first byte in the buffer related to the underlying file
     Procedure CleanUp;
-    Procedure ReadMoreBytesIntoBuffer; {$IFDEF USE_INLINE}Inline; {$ENDIF}
-    Function EndOfFile: Boolean;
-  private
-
-
-
+    Procedure readNextBlock; {$IFDEF USE_INLINE}Inline; {$ENDIF}
+  Private
+    // in file
+    fPosition: int64;
+    Procedure SetPosition(Const Value: int64);
   Public
-  // direct access to the data, please dont mess with it
-      Buffer: TBytes;
-    Cursor: Integer; // index to the Buffer above
-
-    Constructor Create(aMinBytesLeftOfCursor, aMaxBytesLeftOfCursor, aMinBytesRightOfCursor, aMaxBytesRightOfCursor: Integer);
+    Constructor Create(aBufferSize: Integer = cDefaultBlockSize);
     Destructor Destroy; Override;
 
     Procedure Open(Const aFileName: String; aShareMode: Cardinal = fmShareDenyWrite); Overload;
     Procedure Open(aStream: TStream; aTakeOwnerShipOfStream: Boolean = False); Overload;
-
+    Procedure Reset; // go back to start of the stream
 
     Function EoF: Boolean; {$IFDEF USE_INLINE}Inline; {$ENDIF}
-
     // returns false if we are at EOF
-    // if needed reads more bytes into the buffer
-    procedure Next; {$IFDEF USE_INLINE}Inline; {$ENDIF}
+    Function NextByte: Boolean; {$IFDEF USE_INLINE}Inline; {$ENDIF}
+    // tries to move in the buffer first, if that fails, it makes a hard re-read of the buffer from the file
+    Procedure Seek(Const aCount: int64);
 
-    Function CursorByte:Byte;{$IFDEF USE_INLINE}Inline; {$ENDIF}
-    Function CursorChar: AnsiChar;{$IFDEF USE_INLINE}Inline; {$ENDIF}
-    Function CursorPByte: pByte;{$IFDEF USE_INLINE}Inline; {$ENDIF}
-    // copies bytes from the buffer, returns number of bytes copied
-    Procedure CopyRawByteString(aInBufferIndex, aCount:Integer; out aValue:RawByteString);
-
-    // as the above method only adds bytes, we sometimes need to clean them.. To do this call TrimBuffer, it will release some bytes from the start of the buffer and move the cursor acordingly
-    // ATTENTION: this will change the Cursor and the buffer, so make sure you do not store anywhere any references to the current or to any old cursors.
-  procedure TrimBuffer;
-
-
+    // a Index referes to the file Position
+    // note: this will try to read from the internal buffer first,
+    // but if that fails then the fileStream will be accessed
+    // NOTE: that does not change the position property
+    Function copyBytes(Const aStartIndex, aCount: int64): TBytes; Overload; {$IFDEF USE_INLINE}Inline; {$ENDIF}
+    // aStartIndex is in relation to the file, not to the buffer
+    Procedure copyBytes(Const aStartIndex, aCount: int64; Var aBuffer: TBytes); Overload; {$IFDEF USE_INLINE}Inline; {$ENDIF}
+    Procedure copyBytes(Const aStartIndex, aCount: int64; aBuffer: pointer); Overload; {$IFDEF USE_INLINE}Inline; {$ENDIF}
+    Function CopyRawByteString(Const aStartIndex, aCount: int64): rawByteString; {$IFDEF USE_INLINE}Inline; {$ENDIF}
+    Function CharCursor: AnsiChar; {$IFDEF USE_INLINE}Inline; {$ENDIF}
+    Function pCharCursor: pAnsiChar; {$IFDEF USE_INLINE}Inline; {$ENDIF}
+    // the current byte
+    Property Cursor: pByte Read FCursor;
     // the total position in the file
-    Property Position: int64 Read fCursorPositionInFile ;
-    // the number of bytes in the underlying buffer left and right of cursor. or behind and in front of the cursor
-    property BytesLeftOfCursor: integer read Cursor;
-    property BytesRightOfCursor: Integer read fCurBytesRightOfCursor;
-
-    // the size of the underlying stream
+    Property Position: int64 Read fPosition Write SetPosition;
     Property Size: int64 Read fFileSize;
   End;
 
@@ -94,25 +79,47 @@ Begin
       fFile.Free;
     fFile := Nil;
   End;
-
-
-
-fCurBytesRightOfCursor:=0;
-fCursorPositionInFile:=0;
-Cursor:=0;
 End;
 
+Procedure TBufferedFile.copyBytes(Const aStartIndex, aCount: int64;
+  Var aBuffer: TBytes);
+Begin
+  copyBytes(aStartIndex, aCount, @aBuffer[0]);
+End;
 
+Procedure TBufferedFile.copyBytes(Const aStartIndex, aCount: int64; aBuffer: pointer);
+Var
+  InBufferOffset: int64;
+  CurFilePosition: int64;
+Begin
+  If (aStartIndex >= fBufferOffsetInFile) And (aStartIndex + aCount <= fBufferOffsetInFile + fBufferSize) Then
+  Begin
+    // translate InFileOffset to in BufferOffset
+    InBufferOffset := (aStartIndex - fBufferOffsetInFile);
+    Move(fBuffer[InBufferOffset], aBuffer^, aCount);
+  End Else Begin
+    CurFilePosition := fFile.Position; // store the current offset
+    Try
+      fFile.Position := aStartIndex;
+      fFile.Read(aBuffer^, aCount);
+    Finally
+      fFile.Position := CurFilePosition; // restore the current offset
+    End;
+  End;
+End;
 
+Function TBufferedFile.copyBytes(Const aStartIndex, aCount: int64): TBytes;
+Begin
+  SetLength(result, aCount);
+  If aCount <> 0 Then
+    copyBytes(aStartIndex, aCount, result);
+End;
 
 Constructor TBufferedFile.Create;
 Begin
   Inherited Create;
-
-fMinBytesleftOfCursor:=aMinBytesLeftOfCursor;
-fMaxBytesleftOfCursor:=aMaxBytesleftOfCursor;
-fMinBytesRightOfCursor:=aMinBytesRightOfCursor;
-fMaxBytesRightOfCursor:=aMaxBytesRightOfCursor;
+  fMaxBufferSize := aBufferSize;
+  SetLength(fBuffer, aBufferSize);
 End;
 
 Destructor TBufferedFile.Destroy;
@@ -123,19 +130,23 @@ End;
 
 Function TBufferedFile.EoF: Boolean;
 Begin
-  result := self.Position >= fFileSize;
+  result := Position >= fFileSize;
 End;
 
-procedure TBufferedFile.Next;
+Function TBufferedFile.NextByte: Boolean;
 Begin
   If EoF Then
-    exit;
+    exit(False);
 
+  result := True;
 
-  inc(Cursor);
-  inc(fCursorPositionInFile);
-  dec(fCurBytesRightOfCursor);
-    ReadMoreBytesIntoBuffer;
+  inc(FCursor);
+  inc(fPosition);
+
+  If (fPosition >= (fBufferOffsetInFile + fBufferSize))
+    Or (fPosition < fBufferOffsetInFile) Then
+    readNextBlock;
+
 End;
 
 Procedure TBufferedFile.Open(Const aFileName: String; aShareMode: Cardinal = fmShareDenyWrite);
@@ -147,40 +158,65 @@ Begin
   fOwnsStream := True;
 End;
 
-procedure TBufferedFile.TrimBuffer;
-var
-NumOfBytesToFree:Integer;
+Procedure TBufferedFile.readNextBlock;
 Begin
-  if (Cursor> fMaxBytesLeftOfCursor )then
-  begin
-    NumOfBytesToFree:=Cursor- fMinBytesLeftOfCursor;
-    move(Buffer[NumOfBytesToFree],
-    Buffer[0],
-    ((Cursor+ fCurBytesRightOfCursor+1)-NumOfBytesToFree));
-    dec(Cursor, NumOfBytesToFree);
-  end;
+  fBufferOffsetInFile := fFile.Position;
+  fPosition := fFile.Position;
+  fBufferSize := fFile.Read(fBuffer[0], fMaxBufferSize);
+  FCursor := @fBuffer[0];
+  fStartBuffer := FCursor;
 End;
 
-Procedure TBufferedFile.ReadMoreBytesIntoBuffer;
-var
-i, BytecountToRead:Integer;
+Procedure TBufferedFile.Reset;
 Begin
-if (fCurBytesRightOfCursor < fMinBytesRightOfCursor ) and (not EndOfFile)then
-begin
-
-  ByteCountToRead:=fMaxBytesRightOfCursor - fCurBytesRightOfCursor ;
-
-    i:=Cursor+fCurBytesRightOfCursor; // position of the end of the buffer
-if length(Buffer) < (i+ByteCountToRead+1) then
-  setLength(Buffer, i+ByteCountToRead+1);
-
-
-    fCurBytesRightOfCursor:= fCurBytesRightOfCursor +
-    fFile.Read(Buffer[i], ByteCountToRead);
-end;
+  If Position <> 0 Then
+    Seek(-Position);
 End;
 
+Procedure TBufferedFile.Seek(Const aCount: int64);
+Var
+  InBufferOffset: int64;
+  requestedInBufferOffset: int64;
+Begin
+  InBufferOffset := (nativeInt(FCursor) - nativeInt(fStartBuffer));
+  requestedInBufferOffset := InBufferOffset + aCount;
 
+  // are we still in the boundaries of the buffer?
+  If (requestedInBufferOffset >= 0) And (requestedInBufferOffset < fBufferSize) Then
+  Begin
+    inc(FCursor, aCount);
+    inc(fPosition, aCount);
+  End Else If ((fBufferOffsetInFile + requestedInBufferOffset) >= fFileSize) Then
+  Begin
+    fFile.Position := fFileSize;
+    readNextBlock;
+  End Else Begin
+    fFile.Position := (fBufferOffsetInFile + requestedInBufferOffset);
+    readNextBlock;
+  End;
+End;
+
+Procedure TBufferedFile.SetPosition(Const Value: int64);
+Begin
+  Seek(Value - fPosition);
+End;
+
+Function TBufferedFile.CharCursor: AnsiChar;
+Begin
+  result := AnsiChar(FCursor^);
+End;
+
+Function TBufferedFile.pCharCursor: pAnsiChar;
+Begin
+  result := pAnsiChar(FCursor);
+End;
+
+Function TBufferedFile.CopyRawByteString(Const aStartIndex, aCount: int64): rawByteString;
+Begin
+  SetLength(result, aCount);
+  If aCount <> 0 Then
+    copyBytes(aStartIndex, aCount, @result[1]);
+End;
 
 Procedure TBufferedFile.Open(aStream: TStream; aTakeOwnerShipOfStream: Boolean = False);
 Begin
@@ -189,50 +225,9 @@ Begin
   fOwnsStream := aTakeOwnerShipOfStream;
   fFile := aStream;
   fFileSize := fFile.Size;
-  fCursorPositionInFile := 0;
-  ReadMoreBytesIntoBuffer;
+  fPosition := 0;
+  readNextBlock;
 End;
 
-function TBufferedFile.EndOfFile: Boolean;
-begin
-  result:= fFile.Position>=fFileSize;
-end;
-
-
-
-function TBufferedFile.CursorByte: Byte;
-begin
-  Result:=Buffer[Cursor];
-end;
-
-function TBufferedFile.CursorChar: AnsiChar;
-begin
-  result:=ansiChar(CursorByte);
-end;
-
-
-
-function TBufferedFile.CursorPByte: pByte;
-begin
-result:=@buffer[Cursor];
-end;
-
-procedure TBufferedFile.CopyRawByteString(aInBufferIndex, aCount: Integer; out aValue: RawByteString);
-var
-maxBytesinBuffer:Integer;
-begin
-       maxBytesInBuffer:= (cursor + fCurBytesLeftOfCursor)+1;
-       dec(maxBytesInBuffer, aInBufferIndex);
-       if Acount> maxBytesInBuffer then
-       aCount:=maxBytesInBuffer;
-
-
-       if aCount>0 then
-       begin
-       setLength(aValue, aCount);
-       move(Buffer[aInBufferIndex], aValue[1], aCount);
-       end else
-       aValue:='';
-end;
-
 End.
+
