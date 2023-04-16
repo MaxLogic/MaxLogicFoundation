@@ -24,7 +24,7 @@ Implementation
 
 Uses
   MaxLogic.MadExceptStrings,
-  MaxLogic.ioUtils, maxAsync, syncObjs;
+  MaxLogic.ioUtils, syncObjs;
 
 Var
   fBuildInfo: String = '';
@@ -181,7 +181,7 @@ Begin
 End;
 
 Var
-  glSyncMadExceptFileAdder: TFixedCriticalSection = Nil;
+  glSyncMadExceptFileAdder: TCriticalSection = Nil;
   glMadExceptAttachments: TDictionary<String, byte> = Nil;
 
 Procedure AddFileToMadExcept(Const Filename: String);
@@ -194,7 +194,7 @@ Var
   LoFn: String;
 Begin
   If glSyncMadExceptFileAdder = Nil Then
-    glSyncMadExceptFileAdder := TFixedCriticalSection.Create;
+    glSyncMadExceptFileAdder := TCriticalSection.Create;
   glSyncMadExceptFileAdder.enter;
   Try
     If glMadExceptAttachments = Nil Then
