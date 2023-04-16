@@ -71,32 +71,27 @@ Type
 
   // forward declaration
   TmaxThread = Class;
-
-  {
-    iAsync = iInterface;
-    TAsyncLoop = class;
-    TAsyncCollectionProcessor = class;
-    iSignal = iInterface;
-    {$IFDEF MSWINDOWS}
-    TWaiter = class;
-    {$ENDIF}
-    // TSafeValue<T>=record;
-    iCriticalSection = iInterface;
-
-    // do not use directly:
-    TSignal = class;
-    TmaxThread = class;
-    iThreadData = iInterface;
-    TThreadData = class;
-    TmaxAsyncGlobal = class;
-    tInterfacedCriticalSection = class;
-  }
+  
+(**  
+  iAsync = iInterface;
+  TAsyncLoop = class;
+  TAsyncCollectionProcessor = class;
+  iSignal = iInterface;
+  {$IFDEF MSWINDOWS}
+  TWaiter = class;
+  {$ENDIF}
+  iCriticalSection = iInterface;
+  // do not use directly:
+  TSignal = class;
+  TmaxThread = class;
+  iThreadData = iInterface;
+  TThreadData = class;
+  TmaxAsyncGlobal = class;
+  tInterfacedCriticalSection = class;
+**)
 
   iAsync = Interface
     ['{41564891-4A25-464E-B756-B6EFD50063E4}']
-    {$IFDEF MSWINDOWS}
-    Procedure MsgWaitFor;
-    {$endif}
     Procedure WaitFor;
     Function Finished: boolean;
     // After execution, the thread is still available, so you do not need to re-create it. The easiest way is just to WakeUp it. You can run it either with a new procedure to be called or with the same as before
@@ -123,6 +118,9 @@ Type
       WAIT_TIMEOUT - The function has failed. To get extended error information, call GetLastError.
       WAIT_FAILED -  The function has failed. To get extended error information, call GetLa }
     Function WaitForSignaled(TimeOut: dword = infinite): TWaitResult;
+
+    function GetEvent: TEvent;
+    property Event: TEvent read GetEvent;
   End;
 
   iThreadData = Interface
@@ -169,6 +167,7 @@ Type
   TSignal = Class(tInterfacedObject, iSignal)
   Private
     fEvent:TEvent;
+    function GetEvent: TEvent;
   Public
     Constructor Create(aAutoReset: boolean = false);
     Destructor Destroy; Override;
@@ -176,6 +175,7 @@ Type
     Procedure SetSignaled;
     Procedure SetNonSignaled;
     Function WaitForSignaled(TimeOut: dword = infinite): TWaitResult;
+    property Event: TEvent read GetEvent;
   End;
 
   TDummy = Record
@@ -343,9 +343,6 @@ Type
     Constructor Create;
     Destructor Destroy; Override;
 
-    {$IFDEF MSWINDOWS}
-    Procedure MsgWaitFor;
-    {$ENDIF}
     Procedure WaitFor;
     Function Finished: boolean;
     Procedure WakeUp(aProc: TThreadProcedure; Const TaskName: String); Overload;
@@ -550,17 +547,12 @@ Public
   {$IFDEF MSWINDOWS}
   // helps to wait for multiple signas or multiple async Items
   TWaiter = Class
-    Public
-  // returns false if the timeout is expired, otherwise true
-  // ProcessMessages will be set to false if we are not in the main VCL Thread
-    Class
-  Function WaitFor(Const async: TArray<iAsync>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): boolean;
-  Overload;
-  Class
-  Function WaitFor(Const Signals: TArray<iSignal>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): boolean; Overload;
-  Class
-  Function WaitFor(Const aEvents: TArray<TEvent>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): boolean;
-  Overload;
+  Public
+    // returns false if the timeout is expired, otherwise true
+    // ProcessMessages will be set to false if we are not in the main VCL Thread
+    Class Function WaitFor(Const async: TArray<iAsync>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): boolean; Overload;
+    Class Function WaitFor(Const Signals: TArray<iSignal>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): boolean; Overload;
+    Class Function WaitFor(Const aEvents: TArray<TEvent>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): boolean; Overload;
   End;
   {$ENDIF}
 
@@ -954,15 +946,7 @@ Begin
   result := fThreadData.Finished;
 End;
 
-{$IFDEF MSWINDOWS}
-Procedure TmaxAsync.MsgWaitFor;
-Begin
-  While Not fThreadData.Finished Do
-    fThreadData.ReadySignal.MsgWaitForSignaled;
-End;
-{$IFDEF MSWINDOWS}
-{$ENDIF}
-
+{$IFDEF MSWindows}
 Procedure TmaxAsync.SetThreadPriority(Const Value: TThreadPriority);
 Begin
   self.fThreadData.Thread.Priority := Value;
@@ -1193,6 +1177,11 @@ End;
 
 
 
+
+function TSignal.GetEvent: TEvent;
+begin
+  Result:= fEvent;
+end;
 
 Procedure TSignal.SetNonSignaled;
 Begin
@@ -1634,8 +1623,9 @@ Begin
 End;
 
 { TWaiter }
-                                                                                                                              {$IFDEF MSWINDOWS}
-Class Function TWaiter.WaitFor(Const async: TArray<iAsync>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false}): boolean;
+
+{$IFDEF MSWINDOWS}
+Class Function TWaiter.WaitFor(Const async: TArray<iAsync>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): boolean;
 Var
   events: TArray<TEvent>;
   x: integer;
@@ -1742,6 +1732,7 @@ Begin
   End;
   result := True;
 End;
+{$ENDIF}
 
 { TAsyncCollectionProcessor<T> }
 
@@ -1750,7 +1741,7 @@ Begin
   Inherited Create;
   {$IFDEF MSWINDOWS}
   fCriticalSection := TFixedRtlCriticalSection.Create;
-  {$ELSE}
+  {$ELSE}           !
   fCriticalSection := TFixedCriticalSection.Create;
   {$ENDIF}
   fItems := TQueue<T>.Create;
