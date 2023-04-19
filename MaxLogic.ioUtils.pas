@@ -10,6 +10,10 @@ Unit MaxLogic.ioUtils;
   2022-04-12: ported Exec method
 }
 
+{$IF DEFINED(FRAMEWORK_VCL) OR DEFINED(FRAMEWORK_FMXs)}
+  {$DEFINE CanUseApplicationInstance}
+{$IFEND}
+
 Interface
 
 Uses
@@ -68,7 +72,7 @@ Uses
   {$IFDEF MSWINDOWS}
   shellApi,
   {$ENDIF}
-  {$IFNDEF LINUX}
+  {$IFDEF CanUseApplicationInstance}
   forms,
   {$ENDIF}
   ioUtils;
@@ -318,9 +322,11 @@ VAR
   SHFileOpStruct: TSHFileOpStruct;
 begin
   FillChar(SHFileOpStruct, sizeOf(SHFileOpStruct), #0);
+  {$IFDEF CanUseApplicationInstance}
   if assigned(Application) and assigned(Application.MainForm) then
     SHFileOpStruct.wnd := Application.MainForm.Handle { Others are using 0. But Application.MainForm.Handle is better because otherwise, the 'Are you sure you want to delete' will be hidden under program's window }
   else
+  {$ENDIF}
     SHFileOpStruct.wnd := 0;
 
   SHFileOpStruct.wFunc := FO_DELETE;
