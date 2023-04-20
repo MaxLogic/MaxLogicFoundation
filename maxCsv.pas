@@ -1,8 +1,9 @@
 Unit maxCsv;
 
 { Copyright: pawel Piotrowski
-  Version: 1.2
+  Version: 1.4
   History:
+  2023-04-18: added TRowReaderWriter for faster read/write to a row
   2023-04-11: added property CloseRowWithDelimiter
   2013-04-03: writer can now use different lineBreaks
   2016-09-12: update
@@ -130,13 +131,52 @@ Type
     property CloseRowWithDelimiter: Boolean read FCloseRowWithDelimiter write SetCloseRowWithDelimiter;
   End;
 
+  TMissingColumnHandling = (mcOnReadReturnEmptyString, mcOnWriteIgnore, mcNoErrorsOnReadWrite);
+
+  TRowReaderWriter = class
+  private
+    fDic: TDictionary<String, Integer>;
+    FHeader: TRow;
+    FColCount: Integer;
+    FData: TRow;
+    FMissingColumnHandling: TMissingColumnHandling;
+
+    function GetHeaderAsCommaSeparatedText: String;
+    procedure SetColCount(const Value: Integer);
+    procedure SetData(const Value: TRow);
+    procedure SetHeader(const Value: TRow);
+    procedure SetHeaderAsCommaSeparatedText(const Value: String);
+    function GetValue(const aColName: String): String;
+    procedure SetValue(const aColName, Value: String);
+    procedure SetMissingColumnHandling(
+      const Value: TMissingColumnHandling);
+  public
+    Constructor Create;
+    Destructor Destroy; override;
+
+    Function IndexOf(const aColName: String): Integer; inline;
+    // empties the data array
+    Procedure Reset;
+
+    // is used to set up the index
+    property Header: TRow read FHeader write SetHeader;
+    Property HeaderAsCommaSeparatedText: String read GetHeaderAsCommaSeparatedText write SetHeaderAsCommaSeparatedText;
+    Property ColCount: Integer read FColCount write SetColCount;
+    // when setting, the length will be checked to be >= ColCount, if it is less, then it will be increased
+    Property Data: TRow read FData write SetData;
+    // access the column values by their names
+    Property Values[const aColName: String]: String read GetValue write SetValue; default;
+    // how the class should behave when you access a missing column?
+    Property MissingColumnHandling:TMissingColumnHandling read FMissingColumnHandling write SetMissingColumnHandling;
+  end;
+
 Implementation
 
 Uses
   {$IFDEF MSWINDOWS}
   maxInMemoryFile,
   {$ENDIF}
-  ioUtils, ansiStrings, System.WideStrUtils;
+  ioUtils, ansiStrings, System.WideStrUtils, autoFree;
 
 { TCSVBase }
 
@@ -603,5 +643,123 @@ Begin
     End;
   End;
 End;
+
+{ TRowReaderWriter }
+
+constructor TRowReaderWriter.Create;
+begin
+  inherited Create;
+  fDic:= TDictionary<String, Integer>.Create;
+end;
+
+destructor TRowReaderWriter.Destroy;
+begin
+  fDic.Free;
+  inherited;
+end;
+
+function TRowReaderWriter.GetHeaderAsCommaSeparatedText: String;
+var
+  l:TStringList;
+  s: String;
+begin
+  gc(l, TStringList.Create);
+  l.StrictDelimiter:= True;
+  for s in fHeader do
+    l.Add(s);
+  Result:= l.CommaText;
+end;
+
+function TRowReaderWriter.GetValue(const aColName: String): String;
+var
+  i: Integer;
+begin
+  i:= IndexOf(aColName);
+  if (i<>-1) then
+    Result:= fData[i]
+  else begin
+    Result:= '';
+    if not(FMissingColumnHandling in [mcOnReadReturnEmptyString, mcNoErrorsOnReadWrite] ) then
+      raise Exception.Create('ERROR: column "'+aColName+'" not found');
+  end;
+end;
+
+function TRowReaderWriter.IndexOf(const aColName: String): Integer;
+begin
+  if not fDic.TryGetValue(aColName, Result) then
+    Result:= -1;
+
+end;
+
+procedure TRowReaderWriter.Reset;
+var
+  ar: TArray<String>;
+begin
+  setLength(ar, FColCount);
+  self.FData := ar;
+end;
+
+procedure TRowReaderWriter.SetColCount(const Value: Integer);
+begin
+  FColCount := Value;
+  if Length(fData) < fColCount then
+    SetLength(fData, fColCount);
+  if length(fHeader) < fColCount then
+    SetLength(fHeader, fColCount);
+end;
+
+procedure TRowReaderWriter.SetData(const Value: TRow);
+begin
+  FData := Value;
+  if (fColCount <> 0) and (length(fData)<fColCount) then
+    setLength(fData, fColCount);
+
+end;
+
+procedure TRowReaderWriter.SetHeader(const Value: TRow);
+var
+  x: Integer;
+begin
+  FHeader := Value;
+  ColCount:= length(fHeader);
+  fDic.Clear;
+  for x := 0 to length(fHeader)-1 do
+    fDic.Add(fHeader[x], x);
+end;
+
+procedure TRowReaderWriter.SetHeaderAsCommaSeparatedText(
+  const Value: String);
+var
+  l: TStringList;
+  ar: TArray<String>;
+  x: Integer;
+begin
+  gc(l, TStringList.create);
+  l.StrictDelimiter:= True;
+  l.CommaText:= value;
+  setLength(ar, l.Count);
+  for x := 0 to l.Count-1 do
+    ar[x]:= l[x];
+  self.Header:= ar;
+end;
+
+procedure TRowReaderWriter.SetMissingColumnHandling(
+  const Value: TMissingColumnHandling);
+begin
+  FMissingColumnHandling := Value;
+end;
+
+procedure TRowReaderWriter.SetValue(const aColName, Value: String);
+var
+  i: Integer;
+begin
+  i:= IndexOf(aColName);
+  if (i<>-1) then
+    fData[i]:= Value
+  else begin
+    if not(FMissingColumnHandling in [mcOnWriteIgnore, mcNoErrorsOnReadWrite] ) then
+      raise Exception.Create('ERROR: column "'+aColName+'" not found');
+  end;
+end;
 
 End.
