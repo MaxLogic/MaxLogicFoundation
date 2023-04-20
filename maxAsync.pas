@@ -93,6 +93,9 @@ Type
   iAsync = Interface
     ['{41564891-4A25-464E-B756-B6EFD50063E4}']
     Procedure WaitFor;
+    {$IFDef MsWindows}
+    Procedure MsgWaitFor;
+    {$EndIf}
     Function Finished: boolean;
     // After execution, the thread is still available, so you do not need to re-create it. The easiest way is just to WakeUp it. You can run it either with a new procedure to be called or with the same as before
     Procedure WakeUp(aProc: TThreadProcedure; Const TaskName: String); Overload;
@@ -118,7 +121,10 @@ Type
       WAIT_TIMEOUT - The function has failed. To get extended error information, call GetLastError.
       WAIT_FAILED -  The function has failed. To get extended error information, call GetLa }
     Function WaitForSignaled(TimeOut: dword = infinite): TWaitResult;
-
+    {$IFDef MsWindows}
+    // note if this is called outside of the main thread, it falls back to the simple WaitFor function, no messages are handled
+    Procedure MsgWaitForSignaled(TimeOut: dword = infinite);
+    {$EndIf}
     function GetEvent: TEvent;
     property Event: TEvent read GetEvent;
   End;
@@ -175,6 +181,10 @@ Type
     Procedure SetSignaled;
     Procedure SetNonSignaled;
     Function WaitForSignaled(TimeOut: dword = infinite): TWaitResult;
+    {$IFDef MsWindows}
+    // note if this is called outside of the main thread, it falls back to the simple WaitFor function, no messages are handled
+    Procedure MsgWaitForSignaled(TimeOut: dword = infinite);
+    {$EndIf}
     property Event: TEvent read GetEvent;
   End;
 
@@ -342,7 +352,9 @@ Type
   Public
     Constructor Create;
     Destructor Destroy; Override;
-
+    {$IFDEF MsWindows}
+    Procedure MsgWaitFor;
+    {$EndIf}
     Procedure WaitFor;
     Function Finished: boolean;
     Procedure WakeUp(aProc: TThreadProcedure; Const TaskName: String); Overload;
@@ -1182,6 +1194,12 @@ function TSignal.GetEvent: TEvent;
 begin
   Result:= fEvent;
 end;
+       {$IFDef MsWindows}
+procedure TSignal.MsgWaitForSignaled(TimeOut: dword);
+begin
+  MsgWaitForSingleObject(fEvent.Handle, TimeOut);
+end;
+{$EndIf}
 
 Procedure TSignal.SetNonSignaled;
 Begin
@@ -1925,6 +1943,15 @@ Function TmaxAsync.GetThreadPriority: TThreadPriority;
 Begin
   result := self.fThreadData.Thread.Priority;
 End;
+
+{$IFDEF MsWIndows}
+procedure TmaxAsync.MsgWaitFor;
+begin
+  While Not fThreadData.Finished Do
+    fThreadData.ReadySignal.MsgWaitForSignaled;
+end;
+{$ENDIF}
+
 {$ENDIF}
 { TUserData }
 
