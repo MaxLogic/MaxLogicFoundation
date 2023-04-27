@@ -11,6 +11,14 @@ Unit maxAsync;
   {$IFDEF MSWINDOWS}
   {$DEFINE FORWARD_EXCEPTIONS_TO_MAIN_THREAD}
   {$ENDIF}
+
+// TThread.ForceQueueis not avaiable in XE8.. not sure when it was introduced?
+{$IF CompilerVersion <= 29.0}
+  {$DEFINE ForceQueueNotAvailable}
+{$ENDIF}
+
+
+
 {
   Version: 2.30
 
@@ -735,12 +743,21 @@ Begin
   Begin
     If DoWait Then
       aProc()
-    Else
+    Else begin
+      {$IFDEF ForceQueueNotAvailable}
+      TThread.Queue(Nil, aProc);
+      {$ELSE}
       TThread.ForceQueue(Nil, aProc);
+      {$ENDIF}
+    end;
 
   End
   Else If Not DoWait Then
-    TThread.ForceQueue(Nil, aProc)
+      {$IFDEF ForceQueueNotAvailable}
+      TThread.Queue(Nil, aProc)
+      {$ELSE}
+      TThread.ForceQueue(Nil, aProc)
+      {$ENDIF}
   Else
   Begin
     Signal := TSignal.Create;
@@ -755,7 +772,13 @@ Begin
           Signal.SetSignaled;
         End;
       End;
+
+    {$IFDEF ForceQueueNotAvailable}
+    TThread.Queue(Nil, MyProc);
+    {$ELSE}
     TThread.ForceQueue(Nil, MyProc);
+    {$ENDIF}
+
     Signal.WaitForSignaled;
     Signal := NIL;
   End;
