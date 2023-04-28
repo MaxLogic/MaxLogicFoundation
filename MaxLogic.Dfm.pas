@@ -7,8 +7,7 @@ Interface
 
 Uses
   windows, classes, sysUtils, RTLConsts, TypInfo, generics.collections, variants, rtti,
-  generics.defaults,
-  pawel1, math;
+  generics.defaults, math, masks;
 
 Type
 
@@ -117,7 +116,6 @@ Type
 
     // this will open a dfm file and parse it, then output it both as a binary and as a text file. the results will be then compared to the output of the intern delphi conversion results. the files must be identicalt
     Class Procedure SelfTest(Const FileName: String);
-    Class Procedure SelfTestOnDir(dir: String);
 
     Procedure LoadFromStream(Stream: TStream);
     Procedure LoadFromFile(Const FileName: String);
@@ -704,20 +702,6 @@ Begin
   OutText.Free;
 End;
 
-Class Procedure TDFMObject.SelfTestOnDir(dir: String);
-Var
-  files: TStringList;
-  x: integer;
-Begin
-  beep;
-  dir := IncludeTrailingPathDelimiter(dir);
-  files := TStringList.Create;
-  pawel1.getfilelist(files, dir, '*.dfm', True);
-  For x := 0 To files.count - 1 Do
-    SelfTest(dir + files[x]);
-
-  files.Free;
-End;
 
 Procedure TDFMObject.SetName(Const Value: String);
 Begin
@@ -769,7 +753,7 @@ Begin
   l := TList<TDFMObject>.Create;
   Try
     For x := 0 To ObjectCount - 1 Do
-      If pawel1.StringMatches(self.Objects[x].ObjectClassName, aObjectClassNamePattern, false) Then
+      If Masks.MatchesMask(self.Objects[x].ObjectClassName, aObjectClassNamePattern) Then
         l.add(Objects[x]);
     Result := l.ToArray;
   Finally
