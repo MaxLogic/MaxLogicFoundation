@@ -1,6 +1,6 @@
 Unit MaxLogic.Logger;
 
-{ .$DEFINE DISABLE_PRLOGGER }
+{$DEFINE DISABLE_PRLOGGER}
 {
   Version: 1.1
   History
@@ -32,17 +32,25 @@ Uses
   winapi.windows,
   {$ENDIF}
   system.sysUtils, system.classes, system.Diagnostics,
-  MaxLogic.FastList, syncObjs,
+  syncObjs,
+  {$IFNDEF DISABLE_PRLOGGER }
   LoggerPro, // LoggerPro core
   LoggerPro.FileAppender, // File appender
-  LoggerPro.OutputDebugStringAppender; // OutputDebugString appender
+  LoggerPro.OutputDebugStringAppender // OutputDebugString appender
+  {$ENDIF}
+  MaxLogic.FastList;
 
 Type
   // forward declarations
   TMaxLog = Class;
   TLogEntry = Class;
   TDoLogOnRelease = Class;
+  {$IFNDEF DISABLE_PRLOGGER }
   TLogType = LoggerPro.TLogType;
+  {$ELSE}
+  TLogType = (Debug = 0, Info, Warning, Error);
+  {$ENDIF}
+
   TOutputFormatKind = (ofkJson, ofkPlainText, ofkPlainOnNextLine);
 
   { this class stores the data for a log entry
@@ -129,8 +137,10 @@ Type
   iMaxLog = Interface
     ['{28201268-1C2A-4102-9BFB-1E81BB3B1826}']
     Procedure SetDefaultTag(Const Value: String);
+    {$IFNDEF DISABLE_PRLOGGER }
     Procedure SetLogWriter(Const Value: ILogWriter);
     Function GetLogWriter: ILogWriter;
+    {$ENDIF}
     Function GetDefaultTag: String;
     // creates a new logEntry
     // NOTE: that doesnt write it to anywhere
@@ -159,7 +169,9 @@ Type
     Property DefaultTag: String Read GetDefaultTag Write SetDefaultTag;
     // raw access to the underlying logger
     // if you do not like the predefined one, you always can reassign this value here
+    {$IFNDEF DISABLE_PRLOGGER }
     Property LogWriter: ILogWriter Read GetLogWriter Write SetLogWriter;
+    {$ENDIF}
     function GetOutputFormatKind: TOutputFormatKind;
     procedure SetOutputFormatKind(const Value: TOutputFormatKind);
     property OutputFormatKind: TOutputFormatKind read GetOutputFormatKind write SetOutputFormatKind;
@@ -178,7 +190,9 @@ Type
   TMaxLog = Class(TInterfacedObject, iMaxLog)
   Private
     FDefaultTag: String;
+    {$IFNDEF DISABLE_PRLOGGER }
     FLogWriter: ILogWriter;
+    {$ENDIF}
     fLogDir: String;
     fCs: TCriticalSection;
     fOutputFormatKind: TOutputFormatKind;
@@ -187,8 +201,10 @@ Type
     fLastCheckOldLogFilesTimeStamp: TDateTime;
     fFileMaskForDeletingOldLogFiles: String;
     Procedure SetDefaultTag(Const Value: String);
+    {$IFNDEF DISABLE_PRLOGGER }
     Procedure SetLogWriter(Const Value: ILogWriter);
     Function GetLogWriter: ILogWriter;
+    {$ENDIF}
     Function GetDefaultTag: String;
     function GetOutputFormatKind: TOutputFormatKind;
     procedure SetOutputFormatKind(const Value: TOutputFormatKind);
@@ -207,6 +223,7 @@ Type
       Const aLogDir: String = '';
       Const aLogFileNameFormat: String = '%s.%2.2d.%s.log');
     Destructor Destroy; Override;
+
     // creates a new logEntry
     // NOTE: that doesnt write it to anywhere
     Function LogENtry(Const aMsg: String = ''): iLogEntry;
@@ -220,7 +237,8 @@ Type
     Procedure add(aMsg: iLogEntry; aLogType: TLogType); Overload;
     // will accept the message as is
     Procedure addRaw(Const aJsonLogEntryText: String; aLogType: TLogType);
-    // simplify logging add
+
+    // simplify logging
     Procedure Info(Const aMsg: String); Overload;
     Procedure Info(aMsg: iLogEntry); Overload;
     Procedure Warn(Const aMsg: String); Overload;
@@ -229,14 +247,18 @@ Type
     Procedure Error(aMsg: iLogEntry); Overload;
     Procedure Debug(Const aMsg: String); Overload;
     Procedure Debug(aMsg: iLogEntry); Overload;
+
     // the the loggerPro saves a sufix to the file names, this is this Tag here
     // Default is Main
     Property DefaultTag: String Read GetDefaultTag Write SetDefaultTag;
+
     property OutputFormatKind: TOutputFormatKind read GetOutputFormatKind write SetOutputFormatKind;
     property AutoStackTraceForErrors: Boolean read GetAutoStackTraceForErrors write SetAutoStackTraceForErrors;
     // raw access to the underlying logger
     // if you do not like the predefined one, you always can reassign this value here
+    {$IFNDEF DISABLE_PRLOGGER }
     Property LogWriter: ILogWriter Read GetLogWriter Write SetLogWriter;
+    {$ENDIF}
     property LogDir: String read GetLogDir;
     // set this to auto-delete files older then n days
     // NOTE: the log file usually has a pid in its name, that will be replaced by a * wildcard while deleting
@@ -254,8 +276,12 @@ Type
 
 Var
   glMainVclThreadId: TThreadID;
+
+  {$IFDEF MsWindows} // the pid should never change on windows. On linux a process may be forked... then it will get a new pid....
   glPid: Int64;
   glPidAsHex: String = '(undefined)'; // this will spare us the conversion each time we have a logEntry to create
+  {$ENDIF}
+
   GlobalAppStartTimer: TStopWatch; // will be started in the initialization section
   // default global maxLog instance, will be auto created on first start up
   // but you should call SetGlobalMaxLog yourself
@@ -268,11 +294,19 @@ Procedure ShutDownMaxLog;
 // ToDo: maybe look for a faster alternative
 Function JsonEncode(Const RawText: String): String; inline;
 
+{$IFDEF MsWindows}
+Function GetPID: Cardinal;
+{$ENDIF}
+Function GetPidAsHex: String;
+
 Implementation
 
 Uses
   {$IFDEF madExcept}
   madStackTrace,
+  {$ENDIF}
+  {$IFDEF LINUX}
+  Posix.Stdlib, Posix.SysStat, Posix.SysTypes, Posix.Unistd, Posix.Signal, Posix.Fcntl,
   {$ENDIF}
   dateUtils, strUtils, system.Json,
   idGlobal, ioUtils,
@@ -347,6 +381,36 @@ Procedure ShutDownMaxLog;
 Begin
   glDefaultMaxLog := NIL;
 End;
+
+{$IFDEF MsWindows}
+Function GetPID: Cardinal;
+var
+  hdl: THandle;
+begin
+  if glPid<>0 then
+    Exit(glPid);
+
+  hdl := GetCurrentProcess;
+  Result := GetCurrentProcessId;
+
+  glPid:= Result
+end;
+{$ENDIF}
+
+Function GetPidAsHex: String;
+begin
+  {$IFDEF MsWindows}
+  if glPidAsHex<>'' then
+    Exit(glPidAsHex);
+  {$Endif}
+
+  Result:= IntToHex(GetPid, 1);
+
+  {$IFDEF MsWindows}
+  glPidAsHex:= Result
+  {$ENDIF}
+end;
+
 
 Function JsonEncode(Const RawText: String): String;
 Begin
@@ -504,9 +568,9 @@ Var
 Begin
   Result := '';
   put('TID', fThreadId);
-  put('PID', glPidAsHex);
+  put('PID', GetPidAsHex);
   pid := idGlobal.CurrentProcessId;
-  If pid <> glPid Then
+  If pid <> GetPid Then
     put('fork-PID', IntToHex(pid, 1));
   put('MsSinceAppStart', GlobalAppStartTimer.ElapsedMilliseconds);
   if aKind = ofkJson then
@@ -570,11 +634,12 @@ Procedure TMaxLog.SetDefaultTag(Const Value: String);
 Begin
   FDefaultTag := Value;
 End;
-
+{$IFNDEF DISABLE_PRLOGGER }
 Procedure TMaxLog.SetLogWriter(Const Value: ILogWriter);
 Begin
   FLogWriter := Value;
 End;
+{$ENDIF}
 
 procedure TMaxLog.SetMaxLogFileAgeInDays(const Value: Integer);
 begin
@@ -649,8 +714,7 @@ Begin
   {$ELSE}
   // mostly for debuging a super simple log writing
   var f: textfile;
-  var
-  fn := self.fLogDir + changeFileExt(extractFilename(paramStr(0)), '-pid-' + IntToHex(glPid, 1) + '.log');
+  var fn := self.fLogDir + changeFileExt(extractFilename(GetCurrentDLLName), '-pid-' + IntToStr(GetPid) + '.log');
   system.assign(f, fn);
   try
     if not fileExists(fn) then
@@ -667,7 +731,9 @@ End;
 
 Constructor TMaxLog.Create;
 Var
+{$IFNDEF DISABLE_PRLOGGER }
   fa: TLoggerProFileAppender;
+  {$ENDIF}
   pid: Int64;
 Begin
   Inherited Create;
@@ -700,7 +766,7 @@ Begin
     // TLoggerProOutputDebugStringAppender.Create
     ]);
   {$ENDIF}
-  FDefaultTag := 'Main-pid-' + IntToHex(pid, 1);
+  FDefaultTag := 'Main-pid-' + IntToStr(pid);
 End;
 
 Procedure TMaxLog.add(aMsg: iLogEntry);
@@ -744,15 +810,15 @@ Begin
 End;
 
 Destructor TMaxLog.Destroy;
-Var
-  l: ILogWriter;
 Begin
+  {$IFNDEF DISABLE_PRLOGGER }
   If FLogWriter <> Nil Then
   Begin
     // While FLogWriter.AppendersCount <> 0 Do
     // FLogWriter.DelAppender(FLogWriter.Appenders[0]);
     FLogWriter := Nil;
   End;
+  {$ENDIF}
   fCs.Free;
   Inherited;
 End;
@@ -776,11 +842,12 @@ function TMaxLog.GetLogDir: String;
 begin
   Result := fLogDir;
 end;
-
+{$IFNDEF DISABLE_PRLOGGER }
 Function TMaxLog.GetLogWriter: ILogWriter;
 Begin
   Result := FLogWriter;
 End;
+{$ENDIF}
 
 function TMaxLog.GetMaxLogFileAgeInDays: Integer;
 begin
@@ -828,8 +895,7 @@ glMainVclThreadId := GetCurrentThreadId;
 {$ELSE}
 glMainVclThreadId := TThread.CurrentThread.ThreadID;
 {$ENDIF}
-glPid := idGlobal.CurrentProcessId;
-glPidAsHex := IntToHex(glPid, 1);
+
 If Not assigned(glCs) Then
 Begin
   Var
