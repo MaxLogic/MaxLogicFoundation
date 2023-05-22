@@ -7,10 +7,39 @@ uses
 
 function StringMatches(Value, Pattern: string;
   casesensitive: boolean = true): boolean;
-Function putBefore(Const AString: String; AChar: char; TotalLength: Integer)
-  : String; Overload;
-Function putBefore(Num: Integer; AChar: char; TotalLength: Integer)
-  : String; Overload;
+Function putBefore(Const AString: String; AChar: char; TotalLength: Integer): String; Overload;
+Function putBefore(Num: Integer; AChar: char; TotalLength: Integer): String; Overload;
+
+Function ExtractString(
+  Const aText, aStartMarker, aEndMarker: String;
+    Const aStartoffset: Integer;
+  Out aValue: String;
+  Out aStartMarkerFoundAtIndex: Integer;
+  aCasesensitive: boolean = true): boolean;
+
+Type
+  TReplacePlaceholderAction = (raReplace,
+    raSkip, // does not replace the found placeholder
+    raStop, // as raSkip but also stops the search for the next item
+    raReplaceAndStop // replaces this last occurence, but stops afterwards
+    );
+  TReplacePlaceholderOnFoundProc = reference to procedure(
+    // the text between startMarker and endMarker
+    const aValue: String;
+    aStartMarkerFoundAtIndex: Integer;
+    // the string to replace the placeholder (StartMarker+value+endmarker)
+    // default is the whole placeholder that s the value with the start and end markers, so if you do not touch that, it will act as action=raSkip
+    var aReplaceValue: String;
+    // default raReplace
+    var aAction: TReplacePlaceholderAction);
+
+Function ReplacePlaceholder(
+  Const aText, aStartMarker, aEndMarker: String;
+  const aOnFoundProc: TReplacePlaceholderOnFoundProc;
+  aStartoffset: Integer = 1;
+  // will search for the startMarker and Marker case sensitive or not
+  aCaseSensitive: Boolean = True
+  ): String;
 
 implementation
 
@@ -115,5 +144,92 @@ Begin
   Result := putBefore(IntToStr(Num), AChar, TotalLength);
 End;
 
+Function ExtractString(
+  Const aText, aStartMarker, aEndMarker: String; Const
+  aStartoffset: Integer;
+  Out aValue: String; Out aStartMarkerFoundAtIndex: Integer;
+  aCasesensitive: boolean = true): boolean;
+Var
+  i1, i2: Integer;
+  lStartMarker, lEndMarker, lText: String;
+Begin
+  Result := False;
+  If aCasesensitive Then
+    aStartMarkerFoundAtIndex := PosEx(aStartMarker, aText, aStartoffset)
+  Else
+  Begin
+      lStartMarker := AnsiLowercase(aStartMarker);
+    lText := AnsiLowercase(aText);
+    lEndMarker := AnsiLowercase(aEndMarker);
+    aStartMarkerFoundAtIndex := PosEx(lStartMarker, lText, aStartoffset);
+  End;
+
+  If aStartMarkerFoundAtIndex >= 1 Then
+  Begin
+      i1 := aStartMarkerFoundAtIndex + Length(aStartMarker);
+
+    If aCasesensitive Then
+      i2 := PosEx(aEndMarker, aText, i1)
+    Else
+      i2 := PosEx(lEndMarker, lText, i1);
+
+    If i2 >= 1 Then
+    Begin
+        Result := true;
+      aValue := copy(aText, i1, i2 - i1);
+    End;
+  End;
+End;
+
+Function ReplacePlaceholder(
+  Const aText, aStartMarker, aEndMarker: String;
+  const aOnFoundProc: TReplacePlaceholderOnFoundProc;
+  aStartoffset: Integer = 1;
+  aCaseSensitive: Boolean = True
+): String;
+var
+  lValue, lReplacementValue: String;
+  lStartMarkerFoundAtIndex: Integer;
+  lAction: TReplacePlaceholderAction;
+  lFound: Boolean;
+Begin
+  Result:= '';
+  repeat
+
+    lFound:= ExtractString(
+      aText, aStartMarker, aEndMarker,
+      aStartoffset,
+      lValue,
+      lStartMarkerFoundAtIndex,
+      aCasesensitive);
+
+    if lFound then
+    begin
+      lAction:= raReplace;
+      lReplacementValue:= copy(aText, lStartMarkerFoundAtIndex, length(aStartMarker)+length(lvalue)+length(aEndMarker));
+      aOnFoundProc(lValue, lStartMarkerFoundAtIndex, lReplacementValue, lAction);
+
+      Case lAction of
+        raStop:
+          Break;
+        raSkip:
+        begin
+          lReplacementValue:= copy(aText, lStartMarkerFoundAtIndex, length(aStartMarker)+length(lvalue)+length(aEndMarker));
+          lAction:= raReplace;
+        end;
+      End;
+
+      Result:= Result +
+        copy(aText, aStartOffset, (lStartMarkerFoundAtIndex-aStartOffset))+
+        lReplacementValue;
+
+      aStartOffset:= lStartMarkerFoundAtIndex +  length(aStartMarker) + length(lValue) + length(aEndMarker);
+    end;
+  until (not lfound) or (lAction in [raStop, raReplaceAndStop]);
+
+  // append the rest of the aText
+  if aStartOffset< length(aText) then
+    Result:= Result + copy(aText, aStartOffset, length(aText));
+End;
 end.
 
