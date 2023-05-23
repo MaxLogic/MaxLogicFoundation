@@ -3,17 +3,17 @@ unit MaxLogic.Windows;
 Interface
 
 uses
-  windows, classes, sysUtils, generics.Collections;
+  Windows, classes, sysUtils, generics.Collections;
 
 Type
   TSystemUser = record
     Node,
-    UserName,
-    SID: String;
+      UserName,
+      SID: String;
     rawRow: String; // the sv row as a whole
   end;
 
-Function retriveWindowsUsers:TArray<TSystemUser>;
+Function retriveWindowsUsers: TArray<TSystemUser>;
 
 { Run a DOS program and retrieve its output dynamically while it is running. }
 Function GetDosOutput(CommandLine: String; aWorkDir: String = 'C:\'): String;
@@ -24,12 +24,30 @@ Type
 Procedure CaptureConsoleOutput(Const aExeFileName, AParameters: String;
   OnLineReady: tStrProc; Const aWorkingDir: String = '');
 
+function GetFullProcessImageName(APid: DWord): string;
+
+/// <summary>
+/// checks if the application is already running
+/// if aCheckFullPath is true you need to specify the fill file name including the path
+/// if aCheckFullPath is false, then only the filename without the path will betested
+/// </summary>
+function ProcessIsRunning(const aExeName: String; aCheckFullPath: Boolean): Boolean;
+
+function QueryFullProcessImageName(
+  hProcess: THandle;
+  dwFlags: DWord;
+  lpExeName: PChar;
+  out lpdwSize: DWord
+  ): BOOL;
+stdcall external kernel32 name 'QueryFullProcessImageNameW';
+
 Implementation
 
 uses
-  ioUtils, strUtils, MaxLogic.ioUtils, autoFree;
+  system.ioUtils, system.strUtils, MaxLogic.ioUtils, autoFree,
+  ShellApi, TLHelp32;
 
-Function retriveWindowsUsers:TArray<TSystemUser>;
+Function retriveWindowsUsers: TArray<TSystemUser>;
 var
   cmd: String;
   row, l: TStringList;
@@ -37,45 +55,44 @@ var
   u: TSystemUser;
   items: TList<TSystemUser>;
 begin
-  Result:= [];
+  Result := [];
 
-    gc(l, TStringList.create);
-    gc(row, TStringList.create);
+  gc(l, TStringList.create);
+  gc(row, TStringList.create);
 
-  cmd:= 'wmic.exe useraccount get name,sid /format:csv';
-  l.Text:= GetDosOutput(cmd, getInstallDir);
+  cmd := 'wmic.exe useraccount get name,sid /format:csv';
+  l.Text := GetDosOutput(cmd, getInstallDir);
 
+  row.StrictDelimiter := True;
+  row.delimiter := ',';
+  row.CaseSensitive := false;
 
-    row.StrictDelimiter:= True;
-    row.delimiter:= ',';
-    row.CaseSensitive:= false;
+  // there are some empty lines there... get rid of them...
+  for x := l.count - 1 downto 0 do
+    if trim(l[x]) = '' then
+      l.delete(x);
+  if l.count < 2 then
+    exit;
 
-    // there are some empty lines there... get rid of them...
-    for x := l.count-1 downto 0 do
-      if trim(l[x])='' then
-        l.delete(x);
-    if l.count < 2 then
-      exit;
-
-    row.delimitedText := l[0];
-    NodeIndex:= row.IndexOf('Node');
-    NameIndex:= row.IndexOf('Name');
-    SidIndex:= row.IndexOf('SID');
-    gc(items, TList<TSystemUser>.create);
-    For x := 1 to l.Count-1 do
-    begin
-      row.delimitedText := l[x];
-      u:= default(TSystemUser);
-      if NameIndex<>-1 then
-        u.Username:= row[NameIndex];
-      if NodeIndex<>-1 then
-        u.Node:= row[NodeIndex];
-      if SidIndex<>-1 then
-        u.Sid:= row[SidIndex];
-      u.RawRow:= l[x];
-      items.add(u);
-    end;
-  Result:= items.ToArray;
+  row.delimitedText := l[0];
+  NodeIndex := row.IndexOf('Node');
+  NameIndex := row.IndexOf('Name');
+  SidIndex := row.IndexOf('SID');
+  gc(items, TList<TSystemUser>.create);
+  For x := 1 to l.count - 1 do
+  begin
+    row.delimitedText := l[x];
+    u := default (TSystemUser);
+    if NameIndex <> -1 then
+      u.UserName := row[NameIndex];
+    if NodeIndex <> -1 then
+      u.Node := row[NodeIndex];
+    if SidIndex <> -1 then
+      u.SID := row[SidIndex];
+    u.rawRow := l[x];
+    items.add(u);
+  end;
+  Result := items.ToArray;
 end;
 
 { Run a DOS program and retrieve its output dynamically while it is running. }
@@ -85,18 +102,18 @@ Var
   SecurityAttributes: TSecurityAttributes;
   StartupInfo: TStartupInfo;
   ProcessInfo: TProcessInformation;
-  StdOutPipeRead, StdOutPipeWrite: tHandle;
-  WasOK: boolean;
+  StdOutPipeRead, StdOutPipeWrite: THandle;
+  WasOK: Boolean;
   pCommandLine: Array [0 .. 256] Of ansiChar;
   BytesRead: Cardinal;
   sCmd, WorkDir: String;
-  isOK: boolean;
+  isOK: Boolean;
 Begin
   Result := '';
   With SecurityAttributes Do
   Begin
-      nLength := sizeOf(SecurityAttributes);
-    bInheritHandle := true;
+    nLength := sizeOf(SecurityAttributes);
+    bInheritHandle := True;
     lpSecurityDescriptor := Nil;
   End;
   CreatePipe(StdOutPipeRead, StdOutPipeWrite, @SecurityAttributes, 0);
@@ -117,7 +134,7 @@ Begin
     sCmd := 'cmd.exe /C ' + CommandLine;
     UniqueString(sCmd);
     isOK := CreateProcess(Nil, PChar(sCmd), Nil, Nil,
-      true, 0, Nil, PChar(WorkDir), StartupInfo, ProcessInfo);
+      True, 0, Nil, PChar(WorkDir), StartupInfo, ProcessInfo);
 
     closeHandle(StdOutPipeWrite);
     If isOK Then
@@ -134,7 +151,7 @@ Begin
           WasOK := Windows.ReadFile(StdOutPipeRead, pCommandLine, 255, BytesRead, Nil);
           If BytesRead > 0 Then
           Begin
-              pCommandLine[BytesRead] := #0;
+            pCommandLine[BytesRead] := #0;
             Result := Result + pCommandLine;
           End;
         Until Not WasOK Or (BytesRead = 0);
@@ -151,28 +168,28 @@ End;
 // Capture console output in [Realtime] and return its char right away
 
 Procedure CaptureConsoleOutput(Const aExeFileName, AParameters: String;
-OnLineReady: tStrProc; Const aWorkingDir: String = '');
+  OnLineReady: tStrProc; Const aWorkingDir: String = '');
 Const
   CReadBuffer = 2400;
 Var
   sCmd: String;
   SecurityAttributes: TSecurityAttributes;
-  hRead: tHandle;
-  hWrite: tHandle;
+  hRead: THandle;
+  hWrite: THandle;
   StartupInfo: TStartupInfo;
   ProcessInfo: TProcessInformation;
   pBuffer: Array [0 .. CReadBuffer + 1] Of ansiChar;
-  dRead: dword;
-  dRunning: dword;
+  dRead: DWord;
+  dRunning: DWord;
   WorkingDir: String;
 Begin
   SecurityAttributes.nLength := sizeOf(TSecurityAttributes);
-  SecurityAttributes.bInheritHandle := true;
+  SecurityAttributes.bInheritHandle := True;
   SecurityAttributes.lpSecurityDescriptor := Nil;
 
   If CreatePipe(hRead, hWrite, @SecurityAttributes, 0) Then
   Begin
-      StartupInfo := Default (TStartupInfo);
+    StartupInfo := Default (TStartupInfo);
     StartupInfo.cb := sizeOf(TStartupInfo);
     StartupInfo.hStdInput := hRead;
     StartupInfo.hStdOutput := hWrite;
@@ -188,7 +205,7 @@ Begin
       WorkingDir := getInstallDir;
 
     If CreateProcess(Nil, PChar(sCmd), @SecurityAttributes,
-      @SecurityAttributes, true,
+      @SecurityAttributes, True,
       NORMAL_PRIORITY_CLASS,
       Nil, PChar(WorkingDir), StartupInfo, ProcessInfo) Then
     Begin
@@ -214,5 +231,58 @@ Begin
   End;
 End;
 
+function GetFullProcessImageName(APid: DWord): string;
+var
+  LBuffer: PChar;
+  LSize: DWord;
+  LProcess: THandle;
+begin
+  Result := '';
+  LProcess := OpenProcess(PROCESS_QUERY_INFORMATION, false, APid);
+  if LProcess <> INVALID_HANDLE_VALUE then
+  begin
+    try
+      LSize := MAX_PATH;
+      LBuffer := GetMemory(LSize * sizeOf(Char));
+      try
+        if QueryFullProcessImageName(LProcess, 0, LBuffer, LSize) then
+        begin
+          Result := LBuffer;
+        end;
+      finally
+        FreeMemory(LBuffer);
+      end;
+    finally
+      closeHandle(LProcess);
+    end;
+  end;
+end;
+
+function ProcessIsRunning(const aExeName: String; aCheckFullPath: Boolean): Boolean;
+var
+  LSnapshot: THandle;
+  LProcess: TProcessEntry32;
+  LExe: string;
+begin
+  LSnapshot := CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  try
+    LProcess.dwSize := sizeOf(LProcess);
+    if Process32First(LSnapshot, LProcess) then
+    begin
+      LExe := ExtractFileName(aExeName);
+      repeat
+        if SameText(LProcess.szExeFile, LExe)
+          and
+          ((not aCheckFullPath)
+            or SameText(GetFullProcessImageName(LProcess.th32ProcessID), aExeName))
+        then
+          exit(True);
+      until not Process32Next(LSnapshot, LProcess);
+    end;
+    Result := false;
+  finally
+    closeHandle(LSnapshot)
+  end;
+end;
 
 end.

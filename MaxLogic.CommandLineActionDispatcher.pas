@@ -254,8 +254,9 @@ var
   i: integer;
 begin
   Result := '';
-  for i := 2 to ParamCount do begin
-    if i > 1 then
+  for i := 2 to ParamCount do
+  begin
+    if result <> '' then
       Result := Result + ' ';
     if Pos(' ', ParamStr(i)) > 0 then
       Result := Result + '"' + ParamStr(i) + '"'
@@ -340,7 +341,7 @@ begin
               end;
             end;
           Finally
-            FreeAndNil(lEntry);
+            FreeAndNil(lArgs);
           End;
         end;
     end;
@@ -407,7 +408,7 @@ begin
   fActionList.Add(lEntry);
   for lActionName in lEntry.ActionNames.Split([',']) do
   begin
-    fActionDic.Add(ansiLowercase(lActionName), lEntry);
+    fActionDic.Add(ansiLowercase(Trim(lActionName)), lEntry);
   end;
 end;
 
@@ -420,6 +421,8 @@ begin
 end;
 
 { TCLPActionDispatcher.TCLPActionEntry }
+
+
 
 function TCLActionDispatcher.TCLPActionEntry.FirstActionName: String;
 begin
