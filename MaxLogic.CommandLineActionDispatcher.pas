@@ -209,7 +209,9 @@ begin
         end;
       akNormal:
         begin
+          // init variables, so we know if we need to free them in try finally
           lArgs:= nil;
+          lService:= nil;
           try
             // is the action method without parameters or do we need to parse the command line and pass the argiments to the method?
             if (lEntry.ArgsParam = nil) then
@@ -226,7 +228,7 @@ begin
 
             if Result then
             begin
-              gc(lService, lEntry.ServiceClass.Create);
+              lService:= TRTTIHelper.CreateInstanceFromTClass(lEntry.ServiceClass);
               if assigned(lArgs) then
                 TRTTIHelper.Call(lService, lEntry.MethodName, [lArgs])
               else
@@ -234,6 +236,7 @@ begin
             end;
           finally
             FreeAndNil(lArgs);
+            FreeAndNil(lService);
           end;
         end;
     end;

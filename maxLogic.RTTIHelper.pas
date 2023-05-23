@@ -36,6 +36,7 @@ Type
 
     // invokes a parameterless constructor
     class Function CreateClassInstanceFromRttiType(aRttiType: TRttiType): Tobject;
+    class Function CreateInstanceFromTClass(aClass: TClass): TObject;
   End;
 
 Implementation
@@ -66,6 +67,17 @@ begin
           break; // for lConstructor
         end
       end;
+end;
+
+class function TRTTIHelper.CreateInstanceFromTClass(
+  aClass: TClass): TObject;
+var
+  t: TRttiType;
+  v: TValue;
+begin
+  t:= fCtx.GetType(aClass);
+  v:= t.GetMethod('Create').Invoke(t.AsInstance.MetaclassType,[]);
+  Result:= v.AsObject;
 end;
 
 class Destructor TRTTIHelper.DestroyClass;
