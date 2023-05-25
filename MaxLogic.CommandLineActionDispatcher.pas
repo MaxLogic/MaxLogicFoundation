@@ -153,7 +153,7 @@ begin
   Result := false;
   if aEntry.kind <> akNormal then
     Exit;
-  if aEntry.ArgsParam<> nil then
+  if aEntry.ArgsParam <> nil then
   begin
     aArgs := TRTTIHelper.CreateClassInstanceFromRttiType(aEntry.ArgsParam);
     Result := True;
@@ -210,8 +210,8 @@ begin
       akNormal:
         begin
           // init variables, so we know if we need to free them in try finally
-          lArgs:= nil;
-          lService:= nil;
+          lArgs := nil;
+          lService := nil;
           try
             // is the action method without parameters or do we need to parse the command line and pass the argiments to the method?
             if (lEntry.ArgsParam = nil) then
@@ -223,12 +223,12 @@ begin
               if aCommandLine <> '' then
                 Result := cp.Parse(aCommandLine, lArgs)
               else
-                Result := cp.Parse(GetAdjustedCommandLine, lArgs );
+                Result := cp.Parse(GetAdjustedCommandLine, lArgs);
             end;
 
             if Result then
             begin
-              lService:= TRTTIHelper.CreateInstanceFromTClass(lEntry.ServiceClass);
+              lService := TRTTIHelper.CreateInstanceFromTClass(lEntry.ServiceClass);
               if assigned(lArgs) then
                 TRTTIHelper.Call(lService, lEntry.MethodName, [lArgs])
               else
@@ -259,7 +259,7 @@ begin
   Result := '';
   for i := 2 to ParamCount do
   begin
-    if result <> '' then
+    if Result <> '' then
       Result := Result + ' ';
     if Pos(' ', ParamStr(i)) > 0 then
       Result := Result + '"' + ParamStr(i) + '"'
@@ -268,13 +268,10 @@ begin
   end;
 end;
 
-
-
-
 procedure TCLActionDispatcher.OutputUsageToConsole;
 var
   l: TStringList;
-  x: Integer;
+  x: integer;
 begin
   gc(l, TStringList.Create);
   OutputUsageToStrings(l);
@@ -295,7 +292,7 @@ begin
   lArgs := nil;
   aUsage.Add(ExtractFilename(ParamStr(0)) + ' ' + MaxLogic.ioUtils.GetVersionString);
   aUsage.Add('');
-  if self.Description<>'' then
+  if self.Description <> '' then
   begin
     aUsage.Add(self.Description);
     aUsage.Add('');
@@ -307,7 +304,7 @@ begin
   ar := fActionList.ToArray;
   TArray.Sort<TCLPActionEntry>(
     ar, TComparer<TCLPActionEntry>.Construct(
-        function(const Left, Right: TCLPActionEntry): Integer
+        function(const Left, Right: TCLPActionEntry): integer
     begin
       Result := TComparer<String>.Default.Compare(Left.FirstActionName, Right.FirstActionName);
     end));
@@ -386,12 +383,12 @@ begin
   lParams := lRttiMethod.GetParameters;
   case length(lParams) of
     0:
-      lArg:= nil;
+      lArg := nil;
     1:
       begin
         if lParams[0].ParamType.TypeKind <> tkClass then
           raise Exception.Create(ClassName + '.Register: Invalid Parameter type for ' + aServiceClass.ClassName + '.' + lMethodName + '. It may have either no parameters or one parameter descending from TObject');
-        lArg:= lParams[0].ParamType;
+        lArg := lParams[0].ParamType;
       end;
   else
     raise Exception.Create(ClassName + '.Register: Invalid number of Parameters for ' + aServiceClass.ClassName + '.' + lMethodName + '. It may have either no parameters or one parameter descending from TObject');
@@ -424,8 +421,6 @@ begin
 end;
 
 { TCLPActionDispatcher.TCLPActionEntry }
-
-
 
 function TCLActionDispatcher.TCLPActionEntry.FirstActionName: String;
 begin
