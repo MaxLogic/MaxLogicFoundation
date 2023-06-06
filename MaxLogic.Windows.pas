@@ -41,6 +41,8 @@ function QueryFullProcessImageName(
   ): BOOL;
 stdcall external kernel32 name 'QueryFullProcessImageNameW';
 
+function RunAsAdmin(hWnd: HWND; filename: string; Parameters: string): Boolean;
+
 Implementation
 
 uses
@@ -283,6 +285,31 @@ begin
   finally
     closeHandle(LSnapshot)
   end;
+end;
+
+function RunAsAdmin(hWnd: HWND; filename: string; Parameters: string): Boolean;
+{
+    source: https://stackoverflow.com/questions/923350/delphi-prompt-for-uac-elevation-when-needed
+
+    See Step 3: Redesign for UAC Compatibility (UAC)
+    http://msdn.microsoft.com/en-us/library/bb756922.aspx
+
+    This code is released into the public domain. No attribution required.
+}
+var
+    sei: TShellExecuteInfo;
+begin
+    ZeroMemory(@sei, SizeOf(sei));
+    sei.cbSize := SizeOf(TShellExecuteInfo);
+    sei.Wnd := hwnd;
+    sei.fMask := SEE_MASK_FLAG_DDEWAIT or SEE_MASK_FLAG_NO_UI;
+    sei.lpVerb := PChar('runas');
+    sei.lpFile := PChar(Filename); // PAnsiChar;
+    if parameters <> '' then
+        sei.lpParameters := PChar(parameters); // PAnsiChar;
+    sei.nShow := SW_SHOWNORMAL; //Integer;
+
+    Result := ShellExecuteEx(@sei);
 end;
 
 end.

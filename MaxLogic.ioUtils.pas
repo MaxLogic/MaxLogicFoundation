@@ -2,7 +2,7 @@ Unit MaxLogic.ioUtils;
 
 {
   work in progress: for now only some methods exported from old big the pawel1.pas
-  Version: 0.16
+  Version: 0.18
 
   History:
   2023-03-18: added SafeAppendToFile
@@ -11,7 +11,7 @@ Unit MaxLogic.ioUtils;
 }
 
 {$IF DEFINED(FRAMEWORK_VCL) OR DEFINED(FRAMEWORK_FMXs)}
-  {$DEFINE CanUseApplicationInstance}
+{$DEFINE CanUseApplicationInstance}
 {$IFEND}
 
 Interface
@@ -65,6 +65,9 @@ Function SafeAppendToFile(const aFileName, aText: String; aRetryCount: Integer =
 {$IFDEF MSWINDOWS}
 function RecycleItem(CONST ItemName: string; CONST DeleteToRecycle: Boolean = TRUE; CONST ShowConfirm: Boolean = TRUE; CONST TotalSilence: Boolean = False): Boolean;
 {$ENDIF}
+
+Function CombinePath(const aParts: array of String; aAddFinalTrailingPathDelimiter: Boolean = False): String;
+function ConvertToValidDirectoryName(const aText: string; aReplaceInvalidCharsWith: Char = '_'): string;
 
 Implementation
 
@@ -326,7 +329,7 @@ begin
   if assigned(Application) and assigned(Application.MainForm) then
     SHFileOpStruct.wnd := Application.MainForm.Handle { Others are using 0. But Application.MainForm.Handle is better because otherwise, the 'Are you sure you want to delete' will be hidden under program's window }
   else
-  {$ENDIF}
+    {$ENDIF}
     SHFileOpStruct.wnd := 0;
 
   SHFileOpStruct.wFunc := FO_DELETE;
@@ -371,6 +374,33 @@ begin
       sleep(aWaitBetweenRetries);
     end;
   until RetryCounter >= aRetryCount;
+end;
+
+Function CombinePath(const aParts: array of String; aAddFinalTrailingPathDelimiter: Boolean = False): String;
+var
+  x: Integer;
+begin
+  if Length(aParts) = 0 Then
+    Exit('');
+
+  Result := aParts[0];
+  for x := 1 to Length(aParts) - 1 do
+    Result := TPath.combine(Result, aParts[x]);
+  if aAddFinalTrailingPathDelimiter then
+    Result := IncludeTrailingPathDelimiter(Result);
+end;
+
+function ConvertToValidDirectoryName(const aText: string; aReplaceInvalidCharsWith: Char = '_'): string;
+var
+  i: Integer;
+begin
+  Result := aText;
+  for i := Low(Result) to High(Result) do
+  begin
+    if not TPath.IsValidFileNameChar(Result[i]) then
+      Result[i] := aReplaceInvalidCharsWith;
+  end;
+  Result := Trim(Result);
 end;
 
 End.

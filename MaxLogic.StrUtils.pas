@@ -3,7 +3,7 @@ unit MaxLogic.StrUtils;
 interface
 
 uses
-  classes, sysUtils;
+  system.classes, system.sysUtils, system.Types;
 
 function StringMatches(Value, Pattern: string;
   casesensitive: boolean = true): boolean;
@@ -12,7 +12,7 @@ Function putBefore(Num: Integer; AChar: char; TotalLength: Integer): String; Ove
 
 Function ExtractString(
   Const aText, aStartMarker, aEndMarker: String;
-    Const aStartoffset: Integer;
+  Const aStartoffset: Integer;
   Out aValue: String;
   Out aStartMarkerFoundAtIndex: Integer;
   aCasesensitive: boolean = true): boolean;
@@ -38,13 +38,21 @@ Function ReplacePlaceholder(
   const aOnFoundProc: TReplacePlaceholderOnFoundProc;
   aStartoffset: Integer = 1;
   // will search for the startMarker and Marker case sensitive or not
-  aCaseSensitive: Boolean = True
+  aCasesensitive: boolean = true
   ): String;
+
+Function CombineUrl(const aPart1, aPart2: String; aSeparator: String = '/'): String; overload;
+Function CombineUrl(const aParts: array of String; aSeparator: String = '/'): String; overload;
+
+// uses internally masks.MatchesMask
+// checks if the aText mathes any of the givem filter strings
+// returns always true if the filter array is empty
+function MatchesFilter(const aText: string; const AFilter: TStringDynArray): boolean;
 
 implementation
 
 uses
-  StrUtils;
+  StrUtils, masks;
 
 function StringMatches(Value, Pattern: string;
   casesensitive: boolean = true): boolean;
@@ -60,15 +68,15 @@ begin
     Pattern := AnsiLowercase(Pattern);
   end;
 
-  Result := False;
+  Result := false;
   Pattern := StringReplace(Pattern, '**', '*', [rfReplaceAll]);
 
   if (Value = '') or (Pattern = '') then
-    Exit(False);
+    Exit(false);
 
   if Pattern[1] = '*' then
   begin
-    ExactStart := False;
+    ExactStart := false;
     Delete(Pattern, 1, 1);
   end
   else
@@ -76,7 +84,7 @@ begin
 
   if Pattern[Length(Pattern)] = '*' then
   begin
-    ExactEnd := False;
+    ExactEnd := false;
     Pattern := copy(Pattern, 1, Length(Pattern) - 1);
   end
   else
@@ -95,13 +103,13 @@ begin
 
     if i2 <= 0 then
     begin
-      Result := False;
+      Result := false;
       break;
     end;
 
     if (x = 0) and (ExactStart) and (i2 <> 1) then
     begin
-      Result := False;
+      Result := false;
       break;
     end;
 
@@ -111,7 +119,7 @@ begin
       s := copy(Value, (Length(Value) - len) + 1, len);
       if l[x] <> s then
       begin
-        Result := False;
+        Result := false;
         break;
       end;
     end;
@@ -131,7 +139,7 @@ Begin
     Result := AString
   Else
   Begin
-      SetLength(Result, TotalLength);
+    SetLength(Result, TotalLength);
     For x := 1 To TotalLength - l Do
       Result[x] := AChar;
     For x := TotalLength - l + 1 To TotalLength Do
@@ -146,19 +154,19 @@ End;
 
 Function ExtractString(
   Const aText, aStartMarker, aEndMarker: String; Const
-  aStartoffset: Integer;
+    aStartoffset: Integer;
   Out aValue: String; Out aStartMarkerFoundAtIndex: Integer;
   aCasesensitive: boolean = true): boolean;
 Var
   i1, i2: Integer;
   lStartMarker, lEndMarker, lText: String;
 Begin
-  Result := False;
+  Result := false;
   If aCasesensitive Then
     aStartMarkerFoundAtIndex := PosEx(aStartMarker, aText, aStartoffset)
   Else
   Begin
-      lStartMarker := AnsiLowercase(aStartMarker);
+    lStartMarker := AnsiLowercase(aStartMarker);
     lText := AnsiLowercase(aText);
     lEndMarker := AnsiLowercase(aEndMarker);
     aStartMarkerFoundAtIndex := PosEx(lStartMarker, lText, aStartoffset);
@@ -166,7 +174,7 @@ Begin
 
   If aStartMarkerFoundAtIndex >= 1 Then
   Begin
-      i1 := aStartMarkerFoundAtIndex + Length(aStartMarker);
+    i1 := aStartMarkerFoundAtIndex + Length(aStartMarker);
 
     If aCasesensitive Then
       i2 := PosEx(aEndMarker, aText, i1)
@@ -175,7 +183,7 @@ Begin
 
     If i2 >= 1 Then
     Begin
-        Result := true;
+      Result := true;
       aValue := copy(aText, i1, i2 - i1);
     End;
   End;
@@ -185,18 +193,18 @@ Function ReplacePlaceholder(
   Const aText, aStartMarker, aEndMarker: String;
   const aOnFoundProc: TReplacePlaceholderOnFoundProc;
   aStartoffset: Integer = 1;
-  aCaseSensitive: Boolean = True
-): String;
+  aCasesensitive: boolean = true
+  ): String;
 var
   lValue, lReplacementValue: String;
   lStartMarkerFoundAtIndex: Integer;
   lAction: TReplacePlaceholderAction;
-  lFound: Boolean;
+  lFound: boolean;
 Begin
-  Result:= '';
+  Result := '';
   repeat
 
-    lFound:= ExtractString(
+    lFound := ExtractString(
       aText, aStartMarker, aEndMarker,
       aStartoffset,
       lValue,
@@ -205,31 +213,78 @@ Begin
 
     if lFound then
     begin
-      lAction:= raReplace;
-      lReplacementValue:= copy(aText, lStartMarkerFoundAtIndex, length(aStartMarker)+length(lvalue)+length(aEndMarker));
+      lAction := raReplace;
+      lReplacementValue := copy(aText, lStartMarkerFoundAtIndex, Length(aStartMarker) + Length(lValue) + Length(aEndMarker));
       aOnFoundProc(lValue, lStartMarkerFoundAtIndex, lReplacementValue, lAction);
 
       Case lAction of
         raStop:
-          Break;
+          break;
         raSkip:
-        begin
-          lReplacementValue:= copy(aText, lStartMarkerFoundAtIndex, length(aStartMarker)+length(lvalue)+length(aEndMarker));
-          lAction:= raReplace;
-        end;
+          begin
+            lReplacementValue := copy(aText, lStartMarkerFoundAtIndex, Length(aStartMarker) + Length(lValue) + Length(aEndMarker));
+            lAction := raReplace;
+          end;
       End;
 
-      Result:= Result +
-        copy(aText, aStartOffset, (lStartMarkerFoundAtIndex-aStartOffset))+
+      Result := Result +
+        copy(aText, aStartoffset, (lStartMarkerFoundAtIndex - aStartoffset)) +
         lReplacementValue;
 
-      aStartOffset:= lStartMarkerFoundAtIndex +  length(aStartMarker) + length(lValue) + length(aEndMarker);
+      aStartoffset := lStartMarkerFoundAtIndex + Length(aStartMarker) + Length(lValue) + Length(aEndMarker);
     end;
-  until (not lfound) or (lAction in [raStop, raReplaceAndStop]);
+  until (not lFound) or (lAction in [raStop, raReplaceAndStop]);
 
   // append the rest of the aText
-  if aStartOffset< length(aText) then
-    Result:= Result + copy(aText, aStartOffset, length(aText));
+  if aStartoffset < Length(aText) then
+    Result := Result + copy(aText, aStartoffset, Length(aText));
 End;
-end.
 
+Function CombineUrl(const aPart1, aPart2: String; aSeparator: String = '/'): String;
+begin
+  Result := CombineUrl([aPart1, aPart2], aSeparator);
+end;
+
+Function CombineUrl(const aParts: array of String; aSeparator: String = '/'): String;
+var
+  x: Integer;
+begin
+  case Length(aParts) of
+    0:
+      Result := '';
+    1:
+      Result := aParts[0];
+  else begin
+      Result := aParts[0];
+      for x := 1 to Length(aParts) - 1 do
+      begin
+        if not endsText(aSeparator, Result) then
+          Result := Result + aSeparator;
+        if startsText(aSeparator, aParts[x]) then
+          Result := Result + copy(aParts[x], Length(aSeparator) + 1, Length(aParts[x]))
+        else
+          Result := Result + aParts[x];
+      end;
+    end;
+  end;
+end;
+
+function MatchesFilter(const aText: string;
+  const AFilter: TStringDynArray): boolean;
+var
+  LFilter: string;
+begin
+  if Length(AFilter) = 0 then
+    Exit(true);
+
+  Result := false;
+  for LFilter in AFilter do
+  begin
+    Result := masks.MatchesMask(aText, LFilter);
+    if Result then
+      break;
+  end;
+
+end;
+
+end.
