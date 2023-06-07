@@ -22,6 +22,7 @@ Type
     procedure SetMinor(const Value: Integer);
     procedure SetRelease(const Value: Integer);
     procedure SetText(const Value: String);
+    function GetFullText: String;
   public
     Data: array [0 .. 3] of Integer;
 
@@ -38,6 +39,13 @@ Type
     Function IsLessThen(const v: TVersion): Boolean;
 
     property Text: String read GetText write SetText;
+
+    { property: FullText
+      as text, but it always outputs all 4 parts of the version string. in other words all -1 will be treated as 0
+      that helps if we want to store the version in a db or as a part of the file name.
+      so we will evade the situation where we sometimes have the version like "1.0" and sometimes as "1.0.0" or "1.0.0.0"
+      sometimes have the version like "1.0" and sometimes as "1.0.0" or "1.0.0.0" }
+    property FullText: String read GetFullText;
 
     // instead of accessing the arraym you can access the date like this
     property Major: Integer read GetMajor write SetMajor;
@@ -85,6 +93,22 @@ end;
 function TVersion.GetBuild: Integer;
 begin
   Result := Data[3]
+end;
+
+function TVersion.GetFullText: String;
+var
+  x: Integer;
+  sData: array of String;
+begin
+  setLength(sData, length(Data));
+  for x := 0 to length(Data) - 1 do
+  begin
+    if Data[x] < 0 then
+      sData[x] := '0'
+    else
+      sData[x] := IntToStr(Data[x]);
+  end;
+  Result := String.Join('.', sData);
 end;
 
 function TVersion.GetHasBuild: Boolean;
@@ -221,7 +245,7 @@ var
   x: Integer;
 begin
   ar := Value.Split(['.', ' '], TStringSplitOptions.ExcludeEmpty);
-  SetLength(ar, 4);
+  setLength(ar, 4);
   for x := 0 to 3 do
     Data[x] := strToIntDef(ar[x], -1);
 end;
@@ -277,7 +301,7 @@ var
   ar: TArray<String>;
 begin
   ar := Value.Split(['-'], 2);
-  SetLength(ar, 2);
+  setLength(ar, 2);
   MinVersion.Text := ar[0];
   MaxVersion.Text := ar[1];
 end;
