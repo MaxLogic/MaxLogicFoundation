@@ -90,7 +90,7 @@ type
     fActionList: TObjectList<TCLPActionEntry>;
     fDescription: String;
     Function CreateArgsInstance(aEntry: TCLPActionEntry; out aArgs: Tobject): Boolean;
-    // if called with an empty aCommandLine it will parse the argiments from the command line, otherwies it wil luse the aCommandLine
+    // if called with an empty aCommandLine it will parse the arguments from the command line, otherwise it wil use the aCommandLine
     function DoExecute(const aCommandLine: String = ''): Boolean;
     // without the first argumet, so we skip the action itself
     Function GetAdjustedCommandLine: String;
@@ -190,12 +190,28 @@ var
   cp: IGpCommandLineParser;
   lArgs: Tobject;
   lService: Tobject;
+  lCommandLine: String;
+  i: Integer;
 begin
   Result := false;
-  if ParamCount = 0 then
-    Exit(false);
+  lCommandLine:= aCommandLine;
+  if lCommandLine='' then
+  begin
+    if ParamCount = 0 then
+      Exit(false);
+    lActionName := ParamStr(1);
+  end else begin
+    i:= pos(' ', lCommandLine);
+    if i<1 then
+    begin
+      lActionName:= trim(lCommandLine);
+      lCommandLine:='';
+    end else begin
+      lActionName:= trim(copy(lCommandLine, 1, i-1));
+      lCommandLine:= trim(copy(lCommandLine, i+1, length(lCommandLine)));
+    end;
+  end;
 
-  lActionName := ParamStr(1);
   if fActionDic.TryGetValue(ansiLowercase(lActionName), lEntry) then
   begin
     case lEntry.kind of
@@ -213,15 +229,15 @@ begin
           lArgs := nil;
           lService := nil;
           try
-            // is the action method without parameters or do we need to parse the command line and pass the argiments to the method?
+            // is the action method without parameters or do we need to parse the command line and pass the arguments to the method?
             if (lEntry.ArgsParam = nil) then
             begin
               Result := True;
             end else begin
               CreateArgsInstance(lEntry, lArgs);
               cp := CreateCommandLineParser;
-              if aCommandLine <> '' then
-                Result := cp.Parse(aCommandLine, lArgs)
+              if lCommandLine <> '' then
+                Result := cp.Parse(lCommandLine, lArgs)
               else
                 Result := cp.Parse(GetAdjustedCommandLine, lArgs);
             end;
