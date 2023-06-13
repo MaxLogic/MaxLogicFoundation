@@ -53,7 +53,7 @@ Function retriveWindowsUsers: TArray<TSystemUser>;
 var
   cmd: String;
   row, l: TStringList;
-  NodeIndex, NameIndex, SidIndex, i, x: Integer;
+  NodeIndex, NameIndex, SidIndex, x: Integer;
   u: TSystemUser;
   items: TList<TSystemUser>;
 begin

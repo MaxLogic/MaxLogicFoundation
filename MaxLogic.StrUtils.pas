@@ -68,7 +68,6 @@ begin
     Pattern := AnsiLowercase(Pattern);
   end;
 
-  Result := false;
   Pattern := StringReplace(Pattern, '**', '*', [rfReplaceAll]);
 
   if (Value = '') or (Pattern = '') then

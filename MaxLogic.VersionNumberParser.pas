@@ -203,7 +203,6 @@ function TVersion.ParsePostgresVersionString(
   const aVersionString: String): Boolean;
 var
   ar: TArray<String>;
-  i: Integer;
 begin
   Clear;
   Result := False;

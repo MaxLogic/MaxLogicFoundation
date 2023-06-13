@@ -358,7 +358,6 @@ begin
   if fglSslDllExists = 1 then
     Exit(true);
 
-  Result := False;
 
   Result := TestDll('libeay32.dll', [1, 0, 2, 18]) and
     TestDll('ssleay32.dll', [1, 0, 2, 18]);
@@ -428,7 +427,6 @@ begin
   if ReadTimeOut >= 0 then
     Options.ReadTimeOut := ReadTimeOut;
 
-  Result := False;
   http := CreateHttp(Options, ProgressProc);
   gc2(http);
 
