@@ -54,7 +54,68 @@ Type
     property Event: TEvent read GetEvent;
   End;
 
+  // this function will tell us if we are in the main thread or not
+Function InsideMainThread: boolean;
+
+{$IFDEF MSWINDOWS}
+Procedure MsgWaitForSingleObject(Handle: THandle; TimeOut: dword = infinite);
+{$ENDIF}
+
 implementation
+
+uses
+  diagnostics;
+
+Function InsideMainThread: boolean;
+Begin
+  Result :=
+  {$IFDEF MSWINDOWS}
+    GetCurrentThreadId
+  {$ELSE}
+    TThread.CurrentThread.ThreadId
+  {$ENDIF}
+    = MainThreadID;
+End;
+
+{$IFDEF MSWINDOWS}
+
+
+Procedure MsgWaitForSingleObject(Handle: THandle; TimeOut: dword = infinite);
+Var
+  StopWatch: TStopWatch;
+  TimeLeft: dword;
+  diff: integer;
+Begin
+  If Not InsideMainThread Then
+  Begin
+    WaitForSingleObject(Handle, TimeOut);
+    Exit;
+  End;
+
+  If TimeOut <> infinite Then
+    StopWatch := TStopWatch.StartNew;
+
+  TimeLeft := infinite;
+
+  // this makes sens only if we are in the main vcl thread
+  Repeat
+    If TimeOut <> infinite Then
+    Begin
+      diff := TimeOut - StopWatch.ElapsedMilliseconds;
+      If diff <= 0 Then
+        break;
+      TimeLeft := diff;
+    End;
+
+    If MsgWaitForMultipleObjects(1, Handle, false,
+      TimeLeft, QS_ALLINPUT) =
+      WAIT_OBJECT_0 + 1 Then
+      Application.ProcessMessages
+    Else
+      break;
+  Until false;
+End; // MsgWaitForSingleObject
+{$ENDIF}
 
 { TSignal }
 
@@ -84,6 +145,7 @@ function TSignal.GetEvent: TEvent;
 begin
   Result := fEvent;
 end;
+
 {$IFDEF MsWindows}
 
 procedure TSignal.MsgWaitForSignaled(TimeOut: dword);
