@@ -5,7 +5,7 @@ Unit maxLogic.RTTIHelper;
 Interface
 
 Uses
-  classes, sysUtils, RTTI;
+  classes, sysUtils, RTTI, Controls;
 
 Type
   TRTTIHelper = Class
@@ -19,7 +19,7 @@ Type
     class Function ReadProperty(Const aInstance: Tobject; Const aPropName: String): String;
     class Function ReadProp(Const aInstance: Tobject; Const aPropName: String): TValue;
     class Procedure WriteProperty(Const aInstance: Tobject; Const aPropName, aValue: String); overload;
-    class Procedure WriteProperty(Const aInstance: Tobject; Const aPropName: String; const  aValue: TValue); overload;
+    class Procedure WriteProperty(Const aInstance: Tobject; Const aPropName: String; const aValue: TValue); overload;
     class Function has(aInstance: Tobject; Const aPropertyName: String): Boolean;
     class Function PropertyIsString(aInstance: Tobject; Const aPropertyName: String): Boolean;
     class Function Call(aInstance: Tobject; const aMethodName: String; const aArgs: Array of TValue): TValue;
@@ -39,12 +39,28 @@ Type
     // invokes a parameterless constructor
     class Function CreateClassInstanceFromRttiType(aRttiType: TRttiType): Tobject;
     class Function CreateInstanceFromTClass(aClass: TClass): Tobject;
+
+    // CallEventHandler: calls an Event handler, that is a bit different then the method...
+    // see notes and source and orginal author:
+    // https://delphihaven.wordpress.com/2009/09/13/calling-an-event-handler-using-rtti/
+    // usage:
+    // CallEventHandler(MyButton, 'OnClick', [MyButton]);
+    class function CallEventHandler(Instance: Tobject; const EventName: string; const Args: array of TValue): TValue; overload;
+    class function CallEventHandler(Instance: Tobject; Event: TRttiProperty; const Args: array of TValue): TValue; overload;
   End;
 
 Implementation
 
 Uses
   TypInfo;
+
+resourcestring
+  SMissingEvent = '%s does not have an event called %s';
+  SPropertyNotAnEvent = '%s.%s is not an event';
+  SEventHandlerHasInsufficientRTTI = 'Event handler does not ' +
+    'have the required RTTI to be dynamically invoked';
+
+  { TRTTIHelper }
 
 class Constructor TRTTIHelper.CreateClass;
 Begin
@@ -141,11 +157,11 @@ class Function TRTTIHelper.ReadProperty(Const aInstance: Tobject; Const aPropNam
 var
   v: TValue;
 begin
-  v:= ReadProp(aInstance, aPropName);
+  v := ReadProp(aInstance, aPropName);
   if v.IsEmpty then
-    Result:= ''
+    Result := ''
   else
-    Result:= v.ToString;
+    Result := v.ToString;
 end;
 
 class Function TRTTIHelper.ReadProp(Const aInstance: Tobject; Const aPropName: String): TValue;
@@ -163,13 +179,13 @@ End;
 
 class Procedure TRTTIHelper.WriteProperty(Const aInstance: Tobject; Const aPropName, aValue: String);
 var
-  v:TValue;
+  v: TValue;
 begin
-  v:= aValue;
+  v := aValue;
   WriteProperty(aInstance, aPropName, v);
 end;
 
-class Procedure TRTTIHelper.WriteProperty(Const aInstance: Tobject; Const aPropName: String; const  aValue: TValue);
+class Procedure TRTTIHelper.WriteProperty(Const aInstance: Tobject; Const aPropName: String; const aValue: TValue);
 Var
   TypObj: TRttiType;
   Prop: TRttiProperty;
@@ -260,6 +276,64 @@ begin
 
   RttiMethod := TypObj.GetMethod(aMethodName);
   Result := RttiMethod.Invoke(aInstance, aArgs);
+end;
+
+class function TRTTIHelper.CallEventHandler(Instance: Tobject; Event: TRttiProperty;
+  const Args: array of TValue): TValue;
+var
+  HandlerValue: TValue;
+  HandlerObj: Tobject;
+  MethodRecPtr: ^TMethod;
+  RttiMethod: TRttiMethod;
+begin
+  if Event.PropertyType.TypeKind <> tkMethod then
+    raise EInvocationError.CreateFmt(SPropertyNotAnEvent, [Instance.ClassName, Event.Name]);
+  Result := nil;
+  HandlerValue := Event.GetValue(Instance);
+  if HandlerValue.IsEmpty then
+    Exit;
+  MethodRecPtr := HandlerValue.GetReferenceToRawData;
+  { check for event types we know }
+  if HandlerValue.TypeInfo = TypeInfo(TNotifyEvent) then
+  begin
+    TNotifyEvent(MethodRecPtr^)(Args[0].AsObject);
+    Exit;
+  end;
+  if HandlerValue.TypeInfo = TypeInfo(TMouseEvent) then
+  begin
+    TMouseEvent(MethodRecPtr^)(
+      Args[0].AsObject,
+      TMouseButton(Args[1].AsOrdinal),
+      Args[2].AsType<TShiftState>,
+      Args[3].AsInteger, Args[4].AsInteger);
+    Exit;
+  end;
+  if HandlerValue.TypeInfo = TypeInfo(TMouseMoveEvent) then
+  begin
+    TMouseMoveEvent(MethodRecPtr^)(Args[0].AsObject,
+      Args[1].AsType<TShiftState>, Args[2].AsInteger, Args[3].AsInteger);
+    Exit;
+  end;
+  { still here? well, let's go for the generic approach }
+  HandlerObj := MethodRecPtr.Data;
+  for RttiMethod in fCtx.GetType(HandlerObj.ClassType).GetMethods do
+    if RttiMethod.CodeAddress = MethodRecPtr.Code then
+    begin
+      Result := RttiMethod.Invoke(HandlerObj, Args);
+      Exit;
+    end;
+  raise EInsufficientRtti.Create(SEventHandlerHasInsufficientRTTI);
+end;
+
+class function TRTTIHelper.CallEventHandler(Instance: Tobject; const EventName: string;
+  const Args: array of TValue): TValue;
+var
+  Prop: TRttiProperty;
+begin
+  Prop := fCtx.GetType(Instance.ClassType).GetProperty(EventName);
+  if Prop = nil then
+    raise EInvocationError.CreateFmt(SMissingEvent, [Instance.ClassName, EventName]);
+  Result := CallEventHandler(Instance, Prop, Args);
 end;
 
 End.
