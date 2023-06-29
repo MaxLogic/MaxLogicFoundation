@@ -17,7 +17,9 @@ Type
 
     class Function ReadObjectProperty(Const aInstance: Tobject; Const aPropName: String): Tobject;
     class Function ReadProperty(Const aInstance: Tobject; Const aPropName: String): String;
-    class Procedure WriteProperty(Const aInstance: Tobject; Const aPropName, aValue: String);
+    class Function ReadProp(Const aInstance: Tobject; Const aPropName: String): TValue;
+    class Procedure WriteProperty(Const aInstance: Tobject; Const aPropName, aValue: String); overload;
+    class Procedure WriteProperty(Const aInstance: Tobject; Const aPropName: String; const  aValue: TValue); overload;
     class Function has(aInstance: Tobject; Const aPropertyName: String): Boolean;
     class Function PropertyIsString(aInstance: Tobject; Const aPropertyName: String): Boolean;
     class Function Call(aInstance: Tobject; const aMethodName: String; const aArgs: Array of TValue): TValue;
@@ -136,6 +138,17 @@ Begin
 End;
 
 class Function TRTTIHelper.ReadProperty(Const aInstance: Tobject; Const aPropName: String): String;
+var
+  v: TValue;
+begin
+  v:= ReadProp(aInstance, aPropName);
+  if v.IsEmpty then
+    Result:= ''
+  else
+    Result:= v.AsString;
+end;
+
+class Function TRTTIHelper.ReadProp(Const aInstance: Tobject; Const aPropName: String): TValue;
 Var
   TypObj: TRttiType;
   Prop: TRttiProperty;
@@ -143,12 +156,20 @@ Begin
   TypObj := fCtx.GetType(aInstance.ClassInfo);
   Prop := TypObj.GetProperty(aPropName);
   If assigned(Prop) Then
-    Result := Prop.GetValue(aInstance).asString
+    Result := Prop.GetValue(aInstance)
   Else
-    Result := '';
+    Result := TValue.Empty;
 End;
 
 class Procedure TRTTIHelper.WriteProperty(Const aInstance: Tobject; Const aPropName, aValue: String);
+var
+  v:TValue;
+begin
+  v:= aValue;
+  WriteProperty(aInstance, aPropName, v);
+end;
+
+class Procedure TRTTIHelper.WriteProperty(Const aInstance: Tobject; Const aPropName: String; const  aValue: TValue);
 Var
   TypObj: TRttiType;
   Prop: TRttiProperty;
