@@ -145,7 +145,7 @@ begin
   if v.IsEmpty then
     Result:= ''
   else
-    Result:= v.AsString;
+    Result:= v.ToString;
 end;
 
 class Function TRTTIHelper.ReadProp(Const aInstance: Tobject; Const aPropName: String): TValue;
