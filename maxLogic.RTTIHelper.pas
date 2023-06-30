@@ -179,10 +179,78 @@ End;
 
 class Procedure TRTTIHelper.WriteProperty(Const aInstance: Tobject; Const aPropName, aValue: String);
 var
-  v: TValue;
+  vTmp, vNew, vOld: TValue;
+  i32: integer;
+  i64: int64;
+  d: double;
+  b: Boolean;
+  c: Char;
 begin
-  v := aValue;
-  WriteProperty(aInstance, aPropName, v);
+  vTmp := aValue;
+  vOld := ReadProp(aInstance, aPropName);
+  if not vTmp.TryCast(vOld.typeInfo, vNew) then
+  begin
+    case vOld.Kind of
+      tkInteger:
+        begin
+          i32 := StrToInt(aValue);
+          vNew := i32;
+        end;
+      tkInt64:
+        begin
+          i64 := StrToInt(aValue);
+          vNew := i64;
+        end;
+
+      tkChar, tkWChar:
+        begin
+          if aValue <> '' then
+            c := aValue[1]
+          else
+            c := #0;
+          vNew := c;
+        end;
+
+      tkFloat:
+        begin
+          if aValue = '' then
+            d := 0
+          else
+            d := strToFloat(aValue);
+          vNew := d;
+        end;
+      tkEnumeration:
+        begin
+          // GetEnumValue will return an integer that you can then typecast back to the value in the enum. Assuming we have a variable called value of type Integer and we use the S variable from earlier
+          i32 := GetEnumValue(vOld.typeInfo, aValue);
+          // and now cast to the proper type
+          vNew := TValue.FromOrdinal(vOld.typeInfo, i32);
+        end;
+
+      { tkString: ;
+        : ;
+        tkSet: ;
+        tkClass: ;
+        tkMethod: ;
+        tkLString: ;
+        tkWString: ;
+        tkVariant: ;
+        tkArray: ;
+        tkRecord: ;
+        tkInterface: ;
+        tkDynArray: ;
+        tkUString: ;
+        tkClassRef: ;
+        tkPointer: ;
+        tkProcedure: ;
+        tkMRecord: ; }
+    else
+      raise EConvertError.Create('Error can not convert "' + aValue + '" to TValue of Kind: ' +
+          TRttiEnumerationType.GetName<TTypeKind>(vOld.Kind));
+    end;
+  end;
+
+  WriteProperty(aInstance, aPropName, vNew);
 end;
 
 class Procedure TRTTIHelper.WriteProperty(Const aInstance: Tobject; Const aPropName: String; const aValue: TValue);
@@ -294,12 +362,12 @@ begin
     Exit;
   MethodRecPtr := HandlerValue.GetReferenceToRawData;
   { check for event types we know }
-  if HandlerValue.TypeInfo = TypeInfo(TNotifyEvent) then
+  if HandlerValue.typeInfo = typeInfo(TNotifyEvent) then
   begin
     TNotifyEvent(MethodRecPtr^)(Args[0].AsObject);
     Exit;
   end;
-  if HandlerValue.TypeInfo = TypeInfo(TMouseEvent) then
+  if HandlerValue.typeInfo = typeInfo(TMouseEvent) then
   begin
     TMouseEvent(MethodRecPtr^)(
       Args[0].AsObject,
@@ -308,7 +376,7 @@ begin
       Args[3].AsInteger, Args[4].AsInteger);
     Exit;
   end;
-  if HandlerValue.TypeInfo = TypeInfo(TMouseMoveEvent) then
+  if HandlerValue.typeInfo = typeInfo(TMouseMoveEvent) then
   begin
     TMouseMoveEvent(MethodRecPtr^)(Args[0].AsObject,
       Args[1].AsType<TShiftState>, Args[2].AsInteger, Args[3].AsInteger);
