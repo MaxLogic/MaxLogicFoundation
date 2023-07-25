@@ -49,6 +49,16 @@ Type
     class function CallEventHandler(Instance: Tobject; Event: TRttiProperty; const Args: array of TValue): TValue; overload;
   End;
 
+  {$IF CompilerVersion < 35.0} // Delphi 11 Alexandria
+  TCustomAttributeClass = class of TCustomAttribute;
+  TRttiObjectHelper = class helper for TRttiObject
+    function GetAttribute(AAttrClass: TCustomAttributeClass): TCustomAttribute; overload;
+    function GetAttribute<T: TCustomAttribute>: T; overload; inline;
+    function HasAttribute(AAttrClass: TCustomAttributeClass): Boolean; overload; inline;
+    function HasAttribute<T: TCustomAttribute>: Boolean; overload; inline;
+  end;
+  {$IFEND}
+
 Implementation
 
 Uses
@@ -282,12 +292,6 @@ begin
     lType := lContext.GetType(aClass);
     if lType.HasAttribute<T> then
       Result := lType.GetAttribute<T>
-
-      { for lAttribute in  lType.GetAttributes do
-        begin
-        if lAttribute is aLookForAttributeClass then
-        Exit(lAttribute);
-        end; }
   finally
     lContext.free
   end;
@@ -403,5 +407,37 @@ begin
     raise EInvocationError.CreateFmt(SMissingEvent, [Instance.ClassName, EventName]);
   Result := CallEventHandler(Instance, Prop, Args);
 end;
+
+{ TRttiObjectHelper }
+
+{$IF CompilerVersion < 35.0} // Delphi 11 Alexandria
+function TRttiObjectHelper.GetAttribute(
+  AAttrClass: TCustomAttributeClass): TCustomAttribute;
+var
+  LAttr: TCustomAttribute;
+begin
+  for LAttr in GetAttributes do
+    if LAttr is AAttrClass then
+      Exit(LAttr);
+  Result := nil;
+
+end;
+
+function TRttiObjectHelper.GetAttribute<T>: T;
+begin
+  Result := T(GetAttribute(T));
+end;
+
+function TRttiObjectHelper.HasAttribute(
+  AAttrClass: TCustomAttributeClass): Boolean;
+begin
+  Result := GetAttribute(AAttrClass) <> nil;
+end;
+
+function TRttiObjectHelper.HasAttribute<T>: Boolean;
+begin
+  Result := HasAttribute(T);
+end;
+{$IFEND}
 
 End.
