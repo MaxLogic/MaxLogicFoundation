@@ -194,21 +194,21 @@ var
   i: Integer;
 begin
   Result := false;
-  lCommandLine:= aCommandLine;
-  if lCommandLine='' then
+  lCommandLine := aCommandLine;
+  if lCommandLine = '' then
   begin
     if ParamCount = 0 then
       Exit(false);
     lActionName := ParamStr(1);
   end else begin
-    i:= pos(' ', lCommandLine);
-    if i<1 then
+    i := pos(' ', lCommandLine);
+    if i < 1 then
     begin
-      lActionName:= trim(lCommandLine);
-      lCommandLine:='';
+      lActionName := trim(lCommandLine);
+      lCommandLine := '';
     end else begin
-      lActionName:= trim(copy(lCommandLine, 1, i-1));
-      lCommandLine:= trim(copy(lCommandLine, i+1, length(lCommandLine)));
+      lActionName := trim(copy(lCommandLine, 1, i - 1));
+      lCommandLine := trim(copy(lCommandLine, i + 1, length(lCommandLine)));
     end;
   end;
 
@@ -270,14 +270,14 @@ end;
 
 function TCLActionDispatcher.GetAdjustedCommandLine: String;
 var
-  i: integer;
+  i: Integer;
 begin
   Result := '';
   for i := 2 to ParamCount do
   begin
     if Result <> '' then
       Result := Result + ' ';
-    if Pos(' ', ParamStr(i)) > 0 then
+    if pos(' ', ParamStr(i)) > 0 then
       Result := Result + '"' + ParamStr(i) + '"'
     else
       Result := Result + ParamStr(i);
@@ -287,7 +287,7 @@ end;
 procedure TCLActionDispatcher.OutputUsageToConsole;
 var
   l: TStringList;
-  x: integer;
+  x: Integer;
 begin
   gc(l, TStringList.Create);
   OutputUsageToStrings(l);
@@ -320,7 +320,7 @@ begin
   ar := fActionList.ToArray;
   TArray.Sort<TCLPActionEntry>(
     ar, TComparer<TCLPActionEntry>.Construct(
-        function(const Left, Right: TCLPActionEntry): integer
+        function(const Left, Right: TCLPActionEntry): Integer
     begin
       Result := TComparer<String>.Default.Compare(Left.FirstActionName, Right.FirstActionName);
     end));
@@ -424,7 +424,7 @@ begin
   fActionList.Add(lEntry);
   for lActionName in lEntry.ActionNames.Split([',']) do
   begin
-    fActionDic.Add(ansiLowercase(Trim(lActionName)), lEntry);
+    fActionDic.Add(ansiLowercase(trim(lActionName)), lEntry);
   end;
 end;
 
