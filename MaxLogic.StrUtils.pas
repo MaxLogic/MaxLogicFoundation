@@ -41,6 +41,10 @@ Function ReplacePlaceholder(
   aCasesensitive: boolean = true
   ): String;
 
+// will replace occurences of a system enviroment variable name withint the text with its value
+// like '%appdata%\tmp\%username%'
+Function ExpandEnvVars(const aText: String; const aStartToken: String = '%'; const aEndToken: String = '%'; ): String;
+
 Function CombineUrl(const aPart1, aPart2: String; aSeparator: String = '/'): String; overload;
 Function CombineUrl(const aParts: array of String; aSeparator: String = '/'): String; overload;
 
@@ -284,6 +288,34 @@ begin
       break;
   end;
 
+end;
+
+Function ExpandEnvVars(const aText: String; const aStartToken: String = '%'; const aEndToken: String = '%'; ): String;
+begin
+  Result := ReplacePlaceholder(
+    aText, aStartToken, aEndToken,
+
+      procedure(
+      // the text between startMarker and endMarker
+      const aValue: String;
+      aStartMarkerFoundAtIndex: Integer;
+      // the string to replace the placeholder (StartMarker+value+endmarker)
+      // default is the whole placeholder that s the value with the start and end markers, so if you do not touch that, it will act as action=raSkip
+      var aReplaceValue: String;
+      // default raReplace
+      var aAction: TReplacePlaceholderAction)
+    var
+      v: String;
+    begin
+      v := system.sysUtils.GetEnvironmentVariable(aValue);
+      if v = '' then
+        aAction := raSkip
+      else
+        aReplaceValue := v;
+    end,
+    1, false);
+
+  end;
 end;
 
 end.
