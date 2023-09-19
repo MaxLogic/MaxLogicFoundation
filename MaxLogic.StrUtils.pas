@@ -43,7 +43,7 @@ Function ReplacePlaceholder(
 
 // will replace occurences of a system enviroment variable name withint the text with its value
 // like '%appdata%\tmp\%username%'
-Function ExpandEnvVars(const aText: String; const aStartToken: String = '%'; const aEndToken: String = '%'; ): String;
+Function ExpandEnvVars(const aText: String; const aStartToken: String = '%'; const aEndToken: String = '%'): String;
 
 Function CombineUrl(const aPart1, aPart2: String; aSeparator: String = '/'): String; overload;
 Function CombineUrl(const aParts: array of String; aSeparator: String = '/'): String; overload;
@@ -290,7 +290,7 @@ begin
 
 end;
 
-Function ExpandEnvVars(const aText: String; const aStartToken: String = '%'; const aEndToken: String = '%'; ): String;
+Function ExpandEnvVars(const aText: String; const aStartToken: String = '%'; const aEndToken: String = '%'): String;
 begin
   Result := ReplacePlaceholder(
     aText, aStartToken, aEndToken,
@@ -315,7 +315,6 @@ begin
     end,
     1, false);
 
-  end;
 end;
 
 end.
