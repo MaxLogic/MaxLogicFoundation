@@ -61,6 +61,7 @@ Type
 
     fMaxColCountFound: Integer;
     fForcedColCount: Integer;
+    fCsvFileSize: int64;
 
     Function GetEof: Boolean; {$IFDEF USE_INLINE}Inline; {$ENDIF}
     Procedure DetectBom;
@@ -72,9 +73,10 @@ Type
     Constructor Create;
     Destructor Destroy; Override;
 
-    // this also calls detect delimiter
-    Procedure Open(Const Filename: String; aShareMode: Cardinal = fmShareDenyWrite); Overload;
-    Procedure Open(aStream: TStream; aTakeOwnerShipOfStream: Boolean = False); Overload;
+    // this also calls detect delimiter if aUseDelimiter = #0. ATTENTION: the Delimiter will be converted to a ansiChar
+    Procedure Open(Const Filename: String; aShareMode: Cardinal = fmShareDenyWrite; aUseDelimiter: Char = #0); Overload;
+    Procedure Open(Const Filename: String;aUseDelimiter: Char); Overload;
+    Procedure Open(aStream: TStream; aTakeOwnerShipOfStream: Boolean = False; aUseDelimiter: Char = #0); Overload;
 
     Procedure Close;
 
@@ -94,6 +96,9 @@ Type
     Property MaxColCountFound: Integer Read fMaxColCountFound;
     // you can force the CSV reader to always output that amount of columns
     Property ForcedColCount: Integer Read fForcedColCount Write fForcedColCount;
+
+    // some info about the underlying file
+    property CsvFileSize : int64 read fCsvFileSize ;
   End;
 
   TCsvWriter = Class(TCSVBase)
@@ -359,7 +364,7 @@ End;
 
 Procedure TCsvReader.Close;
 Begin
-
+  fCsvFileSize := 0;
   If assigned(fBuffer) Then
   Begin
     fBuffer.Free;
@@ -388,21 +393,30 @@ Begin
   result := fBuffer.Eof;
 End;
 
-Procedure TCsvReader.Open(Const Filename: String; aShareMode: Cardinal = fmShareDenyWrite);
+procedure TCsvReader.Open(const Filename: String; aUseDelimiter: Char);
+begin
+Open(Filename, fmShareDenyWrite, aUseDelimiter);
+end;
+
+Procedure TCsvReader.Open(Const Filename: String; aShareMode: Cardinal = fmShareDenyWrite; aUseDelimiter: Char = #0);
 Var
   fs: TFileStream;
 Begin
   fs := TFileStream.Create(Filename, fmOpenRead, aShareMode);
-  Open(fs, True);
+  Open(fs, True, aUseDelimiter);
 End;
 
-Procedure TCsvReader.Open(aStream: TStream; aTakeOwnerShipOfStream: Boolean = False);
+Procedure TCsvReader.Open(aStream: TStream; aTakeOwnerShipOfStream: Boolean = False; aUseDelimiter: Char = #0);
 Begin
   Close;
+  fCsvFileSize := aStream.Size;
   fBuffer := TBufferedFile.Create(cBufferSize);
   fBuffer.Open(aStream, aTakeOwnerShipOfStream);
   DetectBom;
-  fDelimiter := DetectDelimiter;
+  if aUseDelimiter = #0 then
+    fDelimiter := DetectDelimiter
+  else
+    fDelimiter:= ansiChar( aUseDelimiter );
 End;
 
 Function TCsvReader.ReadRow(Var row: TRawRow): Boolean;

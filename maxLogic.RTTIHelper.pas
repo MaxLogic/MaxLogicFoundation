@@ -193,7 +193,6 @@ var
   i32: integer;
   i64: int64;
   d: double;
-  b: Boolean;
   c: Char;
 begin
   vTmp := aValue;
