@@ -61,6 +61,38 @@ uses
   GpCommandLineParser;
 
 type
+  // raw form of the usage information
+  // use one of the formatters to output it into a different format
+  TRawCommandHelp = record
+    Names: TArray<String>; // names of the actions
+    Description: String;
+    CommandLineParser: IGpCommandLineParser;
+  end;
+
+  TUsageRawhelp = record
+    Title: String; // contains exe name + version
+    Version: String; // contains just the version of the exe
+    Description: String;
+    ParamUsageInfo: String;
+    Commands: TArray<TRawCommandHelp>;
+  end;
+
+  TPlainTextHelpFormatter = class
+  public
+    // set aWrapAtColumn=0 to disable line wrapping
+    class procedure Execute(const aRaw: TUsageRawhelp; aOutputUsage: TStrings; aWrapAtColumn: Integer = 80);
+  end;
+
+  TMarkDownHelpFormatter = class
+  private
+    procedure DoExec(const aRaw: TUsageRawhelp; aOutputUsage: TStrings);
+    function preProcessParamNames(const aValue: String; var aMaxLen: Integer): String;
+    function preProcessParamDesc(const aValue: String; var aMaxLen: Integer): String;
+    function writeCell(const aText: String; aChar: Char; aLen: Integer): String;
+  public
+    // set aWrapAtColumn=0 to disable line wrapping
+    class procedure Execute(const aRaw: TUsageRawhelp; aOutputUsage: TStrings);
+  end;
 
   TCLActionDispatcher = class
   private
@@ -104,7 +136,9 @@ type
     Procedure Register(const aActionNames: String; aProc: TProc; const aDescription: String = '')overload;
 
     Procedure OutputUsageToConsole;
-    procedure OutputUsageToStrings(aUsage: TStrings);
+    // set wrapAtColumn=0 to disable line breaks
+    procedure OutputUsageToStrings(aUsage: TStrings; aWrapAtColumn: Integer = 80);
+    function OutputUsage: TUsageRawhelp;
 
     Function Execute: Boolean; overload;
     Function Execute(const aCommandLine: String): Boolean; overload;
@@ -295,47 +329,50 @@ begin
     writeLn(l[x]);
 end;
 
-procedure TCLActionDispatcher.OutputUsageToStrings(aUsage: TStrings);
+procedure TCLActionDispatcher.OutputUsageToStrings(aUsage: TStrings; aWrapAtColumn: Integer = 80);
 var
+  raw: TUsageRawhelp;
+begin
+  raw := OutputUsage;
+  TPlainTextHelpFormatter.Execute(raw, aUsage, aWrapAtColumn);
+end;
+
+function TCLActionDispatcher.OutputUsage: TUsageRawhelp;
+const
+  br = sLineBreak;
+var
+  i: Integer;
   cp: IGpCommandLineParser;
   lEntry: TCLPActionEntry;
-  s: String;
   ar: TArray<TCLPActionEntry>;
-  lNames: TArray<String>;
   lArgs: Tobject;
-  first: Boolean;
 begin
+  Result := System.default(TUsageRawhelp);
+
   lArgs := nil;
-  aUsage.Add(ExtractFilename(ParamStr(0)) + ' ' + MaxLogic.ioUtils.GetVersionString);
-  aUsage.Add('');
-  if self.Description <> '' then
-  begin
-    aUsage.Add(self.Description);
-    aUsage.Add('');
-  end;
-  aUsage.Add('Parameters can be introduced by /, - and --. Values can be separated from parameter ' +
-      'names by : or =. When a short (single letter) name is used, separator is not required');
-  aUsage.Add('');
+  Result.Version := MaxLogic.ioUtils.GetVersionString;
+  Result.Title := ExtractFilename(ParamStr(0)) + ' ' + Result.Version;
+  Result.Description := Description;
+
+  Result.ParamUsageInfo :=
+    'Parameters can be introduced by `/`, `-` and `--`.' + br +
+    'Values can be separated from parameter names by `:` or `=`.' + br +
+    'When a short (single letter) name is used, a separator is not required';
 
   ar := fActionList.ToArray;
   TArray.Sort<TCLPActionEntry>(
     ar, TComparer<TCLPActionEntry>.Construct(
         function(const Left, Right: TCLPActionEntry): Integer
     begin
-      Result := TComparer<String>.Default.Compare(Left.FirstActionName, Right.FirstActionName);
+      Result := TComparer<String>.default.Compare(Left.FirstActionName, Right.FirstActionName);
     end));
 
+  setLength(Result.Commands, length(ar));
+  i := 0;
   for lEntry in ar do
   begin
-    lNames := lEntry.ActionNames.Split([',']);
-    aUsage.Add('Action: ' + lNames[0]);
-    if length(lNames) > 1 then
-    begin
-      aUsage.Add('Action aliases: ' +
-        String.join(', ', lNames, 2, length(lNames) - 1));
-    end;
-    if lEntry.Description <> '' then
-      aUsage.Add('Description: ' + lEntry.Description);
+    Result.Commands[i].Names := lEntry.ActionNames.Split([',']);
+    Result.Commands[i].Description := lEntry.Description;
 
     case lEntry.kind of
       akNormal:
@@ -345,24 +382,15 @@ begin
             begin
               cp := CreateCommandLineParser;
               cp.Parse(lArgs);
-              first := True;
-              for s in cp.Usage do
-              begin
-                if first then
-                begin
-                  aUsage.Add('Parameters / Options:');
-                  first := false;
-                end else if s <> '' then
-                  aUsage.Add('  ' + s);
-              end;
+              Result.Commands[i].CommandLineParser := cp;
             end;
           Finally
             FreeAndNil(lArgs);
           End;
         end;
-    end;
+    end; // case
 
-    aUsage.Add(''); // leave empty line between the commands
+    inc(i); // next element
   end;
 end;
 
@@ -444,6 +472,213 @@ begin
     Result := ''
   else
     Result := ActionNames.Split([','], 1)[0];
+end;
+
+{ TPlainTextHelpFormatter }
+
+class procedure TPlainTextHelpFormatter.Execute(const aRaw: TUsageRawhelp;
+aOutputUsage: TStrings; aWrapAtColumn: Integer);
+const
+  br = sLineBreak;
+var
+  l: TStrings;
+  lCommand: TRawCommandHelp;
+  cp: IGpCommandLineParser;
+  lFirst: Boolean;
+  s: String;
+begin
+  l := aOutputUsage;
+
+  l.Add(aRaw.Title + br);
+
+  if aRaw.Description <> '' then
+    l.Add(aRaw.Description + br);
+  l.Add(aRaw.ParamUsageInfo + br);
+
+  for lCommand in aRaw.Commands do
+  begin
+    if length(lCommand.Names) <> 0 then
+    begin
+      l.Add('Action: ' + lCommand.Names[0]);
+      if length(lCommand.Names) > 1 then
+      begin
+        l.Add('Action aliases: ' +
+          String.join(', ', lCommand.Names, 2, length(lCommand.Names) - 1));
+      end;
+    end;
+
+    if lCommand.Description <> '' then
+      l.Add('Description: ' + lCommand.Description);
+
+    cp := lCommand.CommandLineParser;
+    if cp <> nil then
+    begin
+      lFirst := True;
+      if aWrapAtColumn <> 0 then
+        dec(aWrapAtColumn, 2); // actually we are adding an additional ident of 2 spaces, so we need to ask the parser to take this into account and break 2 chars erlier
+      for s in cp.Usage(aWrapAtColumn) do
+      begin
+        if lFirst then // we want skip the First item in the list of the cp.Usage list
+        begin
+          l.Add('Parameters / Options:');
+          lFirst := false;
+        end else if s <> '' then
+          l.Add('  ' + s);
+      end;
+    end;
+    l.Add(''); // leave empty line between the commands
+  end;
+end;
+
+{ TMarkDownHelpFormatter }
+
+class procedure TMarkDownHelpFormatter.Execute(const aRaw: TUsageRawhelp;
+aOutputUsage: TStrings);
+var
+  lFormater: TMarkDownHelpFormatter;
+begin
+  gc(lFormater, TMarkDownHelpFormatter.Create);
+  lFormater.DoExec(aRaw, aOutputUsage);
+end;
+
+function TMarkDownHelpFormatter.preProcessParamDesc(const aValue: String;
+var aMaxLen: Integer): String;
+var
+  ar: TArray<String>;
+  s: String;
+  x: Integer;
+  lLen: Integer;
+begin
+  s := aValue;
+  s := StringReplace(s, sLineBreak, #10, [rfReplaceAll]);
+  ar := s.Split([#10]);
+  for x := 0 to length(ar) - 1 do
+  begin
+    lLen := length(ar[x]);
+    if (x <> length(ar) - 1) then
+      ar[x] := trim(ar[x]) + '<br>';
+    if lLen > aMaxLen then
+      aMaxLen := lLen;
+  end;
+  Result := String.join('', ar);
+end;
+
+function TMarkDownHelpFormatter.preProcessParamNames(const aValue: String;
+var aMaxLen: Integer): String;
+var
+  ar: TArray<String>;
+  lIsOptional: Boolean;
+  s: String;
+  x: Integer;
+begin
+  s := aValue;
+
+  lIsOptional := false;
+  if s[1] = '[' then
+  begin
+    lIsOptional := True;
+    s := copy(s, 2, length(s) - 2);
+  end;
+
+  ar := s.Split([',']);
+  for x := 0 to length(ar) - 1 do
+    ar[x] := '`' + trim(ar[x]) + '`';
+  Result := String.join(', ', ar);
+  if lIsOptional then
+    Result := '[' + Result + ']';
+
+  if length(Result) > aMaxLen then
+    aMaxLen := length(Result);
+
+end;
+
+function TMarkDownHelpFormatter.writeCell(const aText: String; aChar: Char;
+aLen: Integer): String;
+var
+  i: Integer;
+begin
+  Result := aText;
+  i := aLen - length(Result);
+  if i > 0 then
+    Result := Result + StringofChar(aChar, i);
+end;
+
+procedure TMarkDownHelpFormatter.DoExec(const aRaw: TUsageRawhelp; aOutputUsage: TStrings);
+const
+  br = sLineBreak;
+var
+  l: TStrings;
+  x, i: Integer;
+  lFirst: Boolean;
+  lCommand: TRawCommandHelp;
+  cp: IGpCommandLineParser;
+  s: String;
+  lFormatter: TMarkDownHelpFormatter;
+  lRows: TList<TArray<String>>;
+  lRow: TArray<String>;
+  lMaxParamNameLen, lMaxParamDescLineLen: Integer;
+begin
+  gc(lRows, TList < TArray < String >>.Create);
+  l := aOutputUsage;
+
+  l.Add('# ' + aRaw.Title + br);
+
+  if aRaw.Description <> '' then
+    l.Add(aRaw.Description + br);
+  l.Add(aRaw.ParamUsageInfo + br);
+
+  for lCommand in aRaw.Commands do
+  begin
+    if length(lCommand.Names) <> 0 then
+    begin
+      l.Add('## ' + lCommand.Names[0]);
+      if length(lCommand.Names) > 1 then
+        l.Add('Action aliases: ' + String.join(', ', lCommand.Names, 1, length(lCommand.Names) - 1) + br);
+    end;
+
+    if lCommand.Description <> '' then
+      l.Add(lCommand.Description);
+
+    lRows.Clear;
+    cp := lCommand.CommandLineParser;
+    if cp <> nil then
+    begin
+      lFirst := True;
+      for s in cp.Usage(0) do
+      begin
+        if lFirst then // we want skip the First item in the list of the cp.Usage list
+        begin
+          lFirst := false;
+          lRows.Add(['Parameter', 'Description']);
+          lMaxParamNameLen := length(lRows[0][0]);
+          lMaxParamDescLineLen := length(lRows[0][1]);
+          continue;
+        end;
+
+        if s <> '' then
+        begin
+          i := pos(' - ', s);
+          lRows.Add([
+            preProcessParamNames(trim(copy(s, 1, i - 1)), lMaxParamNameLen),
+            preProcessParamDesc(trim(copy(s, i + 3, length(s))), lMaxParamDescLineLen)]);
+        end;
+      end;
+
+      // now write them
+      l.Add('');
+      for x := 0 to lRows.Count - 1 do
+      begin
+        lRow := lRows[x];
+        s := '| ' + writeCell(lRow[0], ' ', lMaxParamNameLen) + ' | ' + writeCell(lRow[1], ' ', lMaxParamDescLineLen) + ' |';
+        l.Add(s);
+
+        if x = 0 then
+          l.Add(
+          '| ' + writeCell('---', '-', lMaxParamNameLen) + ' | ' + writeCell('---', '-', lMaxParamDescLineLen) + ' |');
+      end;
+      l.Add(''); // leave empty line between the commands
+    end;
+  end;
 end;
 
 end.
