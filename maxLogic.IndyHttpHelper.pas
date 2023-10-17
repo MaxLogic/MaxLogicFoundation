@@ -2,9 +2,17 @@ unit maxLogic.IndyHttpHelper;
 
 {$I JEDI.INC}
 
+// instead of indy use the net client per default
+{$IFNDEF INDYHELPER_FORCE_USE_INDY} // if your project really needs to use the old way... define this in your project
+{$DEFINE UseNetClient}
+{$ENDIF}
+
 
 {
-  Version: 1.7
+  Version: 1.8
+
+  History:
+  2023.10.18: swith to net client but leave the interface basically as it was to simplify upgrade of older projects
 
 }
 {
@@ -13,13 +21,15 @@ unit maxLogic.IndyHttpHelper;
 interface
 
 uses
-{$IFDEF MSWINDOWS}
-  Windows,
-{$ENDIF}
-  classes, sysUtils,
+  {$IFDEF MSWINDOWS} winapi.Windows, {$ENDIF}
+  system.classes, system.sysUtils,
+
+  {$IFDEF UseNetClient}
+  system.Net.HTTPClient, system.Net.URLClient,
+  {$ENDIF}
   idHTTP, idComponent, idGlobal, idStream, IdMultipartFormData, IdZLibCompressorBase, IdCookieManager, IdGlobalProtocols, IdHTTPHeaderInfo, IdException, IdStack, IdCompressorZLib,
   IdSSLOpenSSLHeaders, IdSSLOpenSSL, // ssl
-  IdAuthenticationNTLM, // NTLM - uses OpenSSL libraries
+  IdAuthenticationNTLM, // NTLM - uses OpenSSL libraries,
   IdIOHandler, IdIOHandlerSocket, IdIOHandlerStack, IdSSL, IdURI;
 
 const
@@ -39,6 +49,7 @@ type
     property TimeOut: Integer write SetTimeOut;
   public
     Options: TCreateOptions;
+    // actually it is read/write timeout
     ReadTimeOut: Integer;
     ConnectTimeout: Integer;
 
@@ -85,7 +96,7 @@ function download(const aurl: string; postParams: TStringList; out response: str
 implementation
 
 uses
-  MaxLogic.ioUtils,
+  maxLogic.ioUtils,
   autoFree, maxLogic.AnonymousProcToEvent, strUtils;
 
 type
@@ -173,9 +184,9 @@ begin
     LHTTP.request.CacheControl := 'no-cache';
 
   if (oSSL in Options.Options)
-{$IFDEF MSWINDOWS}
+  {$IFDEF MSWINDOWS}
     and SslDllsPresent
-{$ENDIF}
+  {$ENDIF}
   then
   begin
     LIO := TIdSSLIOHandlerSocketOpenSSL.Create(LHTTP);
@@ -266,7 +277,7 @@ end;
 
 var
   fglSslDllExists: byte = 0;
-{$IFDEF MSWINDOWS}
+  {$IFDEF MSWINDOWS}
 
 
 Function GetBuildInfo(Const Filename: String; Out v1, v2, v3, v4: word): String;
@@ -331,7 +342,7 @@ function SslDllsPresent: boolean;
       if FileExists(fn) then
       begin
         try
-          MaxLogic.ioUtils.GetBuildInfo(fn, v[0], v[1], v[2], v[3]);
+          maxLogic.ioUtils.GetBuildInfo(fn, v[0], v[1], v[2], v[3]);
 
           if v[0] = MinVersionReq[0] then
             if v[1] = MinVersionReq[1] then
@@ -351,13 +362,12 @@ function SslDllsPresent: boolean;
   end;
 
 begin
-{$IFNDEF MSWINDOWS}
+  {$IFNDEF MSWINDOWS}
   needs implementation !
-{$ENDIF}
+  {$ENDIF}
   // prevent double testing
   if fglSslDllExists = 1 then
     Exit(true);
-
 
   Result := TestDll('libeay32.dll', [1, 0, 2, 18]) and
     TestDll('ssleay32.dll', [1, 0, 2, 18]);
@@ -401,13 +411,22 @@ function downloadStream(const aurl: string; postParams: TStringList; response: T
   // TimeOuts: -1 means use the defailt from the Toptions
   ConnectTimeout: Integer = -1; ReadTimeOut: Integer = -1): boolean;
 var
+  {$IFNDEF UseNetClient}
   http: TIdHttp;
+  {$ELSE}
+  http: THTTPClient;
+  lHttpResult: IHTTPResponse;
+  {$ENDIF}
   Options: TOptions;
   lUrl: string;
 begin
   lUrl := aurl;
 
-{$IFDEF MSWINDOWS}
+  // create options
+  {$IFDEF UseNetClient}
+  Options := TOptions.New;
+  {$ELSE}
+  {$IFDEF MSWINDOWS}
   if SslDllsPresent then
     Options := TOptions.DefaultSsl()
   else
@@ -416,26 +435,43 @@ begin
     if startsText('https://', aurl) then
       Delete(lUrl, 5, 1);
   end;
-{$ELSE}
+  {$ELSE}
   if startsText('https://', aurl) then
     Options := TOptions.DefaultSsl()
   else
     Options := TOptions.New;
-{$ENDIF}
+  {$ENDIF}
+  {$ENDIF}
   if ConnectTimeout >= 0 then
     Options.ConnectTimeout := ConnectTimeout;
   if ReadTimeOut >= 0 then
     Options.ReadTimeOut := ReadTimeOut;
 
-  http := CreateHttp(Options, ProgressProc);
-  gc2(http);
-
+  {$IFNDEF UseNetClient}
+  gc(http, CreateHttp(Options, ProgressProc));
+  {$ELSE}
+  gc(http, THTTPClient.Create);
+  {$ENDIF}
   try
+    {$IFNDEF UseNetClient}
     if postParams = nil then
       http.get(lUrl, response)
     else
       http.post(lUrl, postParams, response);
+    {$ELSE}
+    // net http client version
+    gc(http, THTTPClient.Create);
+    http.ConnectionTimeout := Options.ConnectTimeout;
+    http.ResponseTimeout := Options.ReadTimeOut;
+    http.SendTimeout := Options.ReadTimeOut;
+    http.HandleRedirects := true;
 
+    if postParams = nil then
+      lHttpResult := http.get(lUrl, response)
+    else
+      lHttpResult := http.post(lUrl, postParams, response);
+
+    {$ENDIF}
     Result := true;
   except
     on e: Exception do
@@ -468,7 +504,7 @@ end;
 
 function TEventToProcForIdHttp.SSLOnVerifyPeer(Certificate: TIdX509;
   AOk:
-  boolean;
+    boolean;
   ADepth, AError: Integer): boolean;
 begin
   Result := AOk;
@@ -477,4 +513,3 @@ begin
 end;
 
 end.
-
