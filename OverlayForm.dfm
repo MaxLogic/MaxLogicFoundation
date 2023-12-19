@@ -1,0 +1,23 @@
+object OverlayFrm: TOverlayFrm
+  Left = 0
+  Top = 0
+  AlphaBlend = True
+  AlphaBlendValue = 128
+  BorderStyle = bsNone
+  Caption = 'Shadow'
+  ClientHeight = 281
+  ClientWidth = 543
+  Color = clFuchsia
+  TransparentColor = True
+  TransparentColorValue = clFuchsia
+  DoubleBuffered = True
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -11
+  Font.Name = 'Tahoma'
+  Font.Style = []
+  PopupMode = pmExplicit
+  Position = poDesigned
+  OnCreate = FormCreate
+  TextHeight = 13
+end
