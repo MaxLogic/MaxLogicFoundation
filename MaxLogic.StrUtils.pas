@@ -56,9 +56,9 @@ function MatchesFilter(const aText: string; const AFilter: TStringDynArray): boo
 // Windows Explorer uses StrCmpLogicalW to compare file names. The RTL/VCL does not declare this function so you need to do it yourself.
 // on non windows platform we are falling back on CompareStr
 Function StrCmpLogical(Const left, right: String): Integer; Inline;
- s{$IFDEF MSWINDOWS}
+{$IFDEF MSWINDOWS}
 Function StrCmpLogicalW(psz1, psz2: PWideChar): Integer; Stdcall; External 'shlwapi.dll' delayed;
-{4endif}
+{$endif}
 
 implementation
 
