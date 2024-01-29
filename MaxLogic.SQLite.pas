@@ -1,4 +1,4 @@
-Unit MaxLogic.SQLite.pas;
+Unit MaxLogic.SQLite;
 
 { Version: 2.1
   Description
