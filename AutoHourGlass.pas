@@ -18,7 +18,7 @@ Unit AutoHourGlass;
 Interface
 
 Uses
-  Windows, Classes, SysUtils, Forms, Controls, Graphics;
+  winApi.Windows, system.Classes, system.SysUtils, vcl.Forms, vcl.Controls, vcl.Graphics;
 
 Type
   TAutoHourGlass = Class(TInterfacedObject)

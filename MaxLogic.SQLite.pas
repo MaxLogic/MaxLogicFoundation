@@ -55,7 +55,7 @@ Implementation
 
 Uses
 {$IFDEF madExcept}madExcept, {$ENDIF}
-  clipBrd, autoFree;
+  vcl.clipBrd, autoFree;
 
 { TSqlLitePack }
 
