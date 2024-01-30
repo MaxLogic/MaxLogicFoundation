@@ -4,13 +4,13 @@ interface
 
 Uses
   {$IFDEF MSWINDOWS}
-  Windows, Forms, Messages, System.UITypes, dialogs,
+  winApi.Windows, vcl.Forms, winApi.Messages, System.UITypes, vcl.dialogs,
   {$ENDIF}
   {$IFDEF LINUX}
   posix.sysTypes,
   posix.pthread,
   {$ENDIF}
-  Classes, SysUtils, SyncObjs,
+  system.Classes, system.SysUtils, system.SyncObjs,
   generics.defaults, generics.Collections;
 
 Type
