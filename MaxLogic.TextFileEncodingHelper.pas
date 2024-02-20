@@ -22,7 +22,7 @@ Type
     fLineBreakChars: RawByteString;
     fLines: TArray<RawByteString>;
     Function DetectUsedLineBreak(Const aBody: RawByteString): Boolean;
-    Procedure LoadAllText(Const aFileName: String; Out Body: RawByteString; Out BodyLen: Integer);
+    Procedure LoadAllText(aStream: TStream; Out Body: RawByteString; Out BodyLen: Integer);
     Function GetCount: Integer;
     Procedure SplitLines(Const aBody: RawByteString);
     Procedure SplitUsing1ByteLineBreak(Const aBody: RawByteString; Var aCount, aCapacity: Integer);
@@ -34,6 +34,7 @@ Type
 
     Procedure Clear;
     Procedure LoadFromFile(Const aFileName: String);
+    procedure loadFromStream(aStream: TStream);
     Procedure ConvertTo(l: TStringList); Overload;
     // saves the lines using utf8 to a stream
     Procedure ConvertTo(Utf8Stream: TStream; Const aLineBreak: String); Overload;
@@ -48,9 +49,9 @@ Type
 Implementation
 
 Uses
-{$IFDEF MSWINDOWS}
+  {$IFDEF MSWINDOWS}
   maxInMemoryFile,
-{$ENDIF}
+  {$ENDIF}
   ioUtils, ansiStrings, System.WideStrUtils;
 
 { TTextFileEncodingHelper }
@@ -68,11 +69,29 @@ End;
 
 Procedure TTextFileEncodingHelper.LoadFromFile(Const aFileName: String);
 Var
+  fs: TFileStream;
+Begin
+  fs := nil;
+  Clear;
+  try
+    if TFile.Exists(aFileName) then
+    begin
+      fs := TFileStream.Create(aFileName, fmopenread);
+      loadFromStream(fs);
+    end;
+  finally
+    fs.Free;
+  end;
+
+End;
+
+procedure TTextFileEncodingHelper.loadFromStream(aStream: TStream);
+Var
   Body: RawByteString;
   BodyLen: Integer;
 Begin
   Clear;
-  LoadAllText(aFileName, Body, BodyLen);
+  LoadAllText(aStream, Body, BodyLen);
 
   If BodyLen = 0 Then
     Exit;
@@ -81,7 +100,7 @@ Begin
     SplitLines(Body)
   Else
     fLines := [Body];
-End;
+end;
 
 Procedure TTextFileEncodingHelper.ConvertTo(l: TStringList);
 Var
@@ -127,27 +146,25 @@ Begin
 
 End;
 
-Procedure TTextFileEncodingHelper.LoadAllText(Const aFileName: String; Out Body: RawByteString; Out BodyLen: Integer);
+Procedure TTextFileEncodingHelper.LoadAllText(aStream: TStream; Out Body: RawByteString; Out BodyLen: Integer);
 Var
-  fs: TFileStream;
   b1, b2: TBytes;
 Begin
-  fs := TFileStream.Create(aFileName, fmOpenRead);
-  BodyLen := fs.Size;
+  aStream.Position := 0;
+  BodyLen := aStream.Size;
   If BodyLen > 0 Then
   Begin
     // skip Bom
-    If System.WideStrUtils.HasUTF8BOM(fs) Then
+    If System.WideStrUtils.HasUTF8BOM(aStream) Then
     Begin
       dec(BodyLen, 3);
       fUtf8BomFoundInFile := True;
-      fs.Position := 3; // skip bom
+      aStream.Position := 3; // skip bom
     End;
 
     SetLength(Body, BodyLen);
-    fs.ReadBuffer(Body[1], BodyLen);
+    aStream.ReadBuffer(Body[1], BodyLen);
   End;
-  fs.Free;
 End;
 
 Procedure TTextFileEncodingHelper.Clear;
