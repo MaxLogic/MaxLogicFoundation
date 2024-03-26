@@ -452,26 +452,33 @@ begin
   {$ELSE}
   gc(http, THTTPClient.Create);
   {$ENDIF}
+
   try
     {$IFNDEF UseNetClient}
+
     if postParams = nil then
       http.get(lUrl, response)
     else
       http.post(lUrl, postParams, response);
+
     {$ELSE}
+
     // net http client version
-    gc(http, THTTPClient.Create);
     http.ConnectionTimeout := Options.ConnectTimeout;
     http.ResponseTimeout := Options.ReadTimeOut;
     http.SendTimeout := Options.ReadTimeOut;
-    http.HandleRedirects := true;
+    http.HandleRedirects := True;
+    Http.AutomaticDecompression:= [THTTPCompressionMethod.Any];
 
     if postParams = nil then
       lHttpResult := http.get(lUrl, response)
     else
       lHttpResult := http.post(lUrl, postParams, response);
 
+
+
     {$ENDIF}
+
     Result := true;
   except
     on e: Exception do
