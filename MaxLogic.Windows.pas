@@ -3,7 +3,7 @@ unit MaxLogic.Windows;
 Interface
 
 uses
-  Windows, classes, sysUtils, generics.Collections;
+  winApi.Windows, system.classes, system.sysUtils, system.generics.Collections;
 
 Type
   TSystemUser = record
