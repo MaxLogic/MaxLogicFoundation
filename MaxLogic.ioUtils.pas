@@ -71,6 +71,13 @@ function RecycleItem(CONST ItemName: string; CONST DeleteToRecycle: Boolean = TR
 Function CombinePath(const aParts: array of String; aAddFinalTrailingPathDelimiter: Boolean = False): String;
 function ConvertToValidDirectoryName(const aText: string; aReplaceInvalidCharsWith: Char = '_'): string;
 
+/// <summary>
+/// This function checks the provided filename to determine if it exceeds the Windows path length limit. It then appropriately prefixes the filename to support extended-length paths. The function also distinguishes between local and network paths, applying a different prefix based on the path type. Note that for network paths, the initial double backslashes (`\\`) are replaced with the `\\?\UNC\` prefix, while local paths simply receive the `\\?\` prefix.
+/// Remember, even with these prefixes, some Windows APIs and applications may not support extended-length paths or may require certain group policy settings to be enabled for support.
+/// on non windows systems the result is the same as the input
+/// </summary>
+function LongFileNameFix(const aFileName: String): String;
+
 Implementation
 
 Uses
@@ -80,9 +87,9 @@ Uses
   {$IFDEF CanUseApplicationInstance}
   forms,
   {$ENDIF}
-  ioUtils;
-{$IFDEF MSWINDOWS}
+  system.ioUtils, system.strUtils;
 
+{$IFDEF MSWINDOWS}
 
 Function LoatStringFromResource(Const aResName: String; Out aValue: String; Const aDefault: String = ''; aEncoding: TEncoding = Nil): Boolean;
 Var
@@ -402,6 +409,38 @@ begin
       Result[i] := aReplaceInvalidCharsWith;
   end;
   Result := Trim(Result);
+end;
+
+function LongFileNameFix(const aFileName: String): String;
+const
+  MaxPathLength = 260;
+  LocalPrefix = '\\?\';
+  NetworkPrefix = '\\?\UNC\';
+var
+  IsNetworkPath: Boolean;
+  NormalizedFileName: String;
+begin
+  Result := aFileName;
+  {$IFDEF MsWindows}
+  // do we really have to use the long path format?
+  if Length(Result) < MaxPathLength then
+    Exit;
+
+  // Check if the filename is already prefixed
+  if StartsText(LocalPrefix, Result) or StartsText(NetworkPrefix, Result) then
+    Exit;
+
+  IsNetworkPath := StartsText('\\', Result);
+  if IsNetworkPath then
+    // Remove the leading '\\' for network paths to correctly append the UNC prefix
+    Result := Copy(Result, 3, Length(Result));
+
+  if IsNetworkPath then
+    Result := NetworkPrefix + Result
+  else
+    Result := LocalPrefix + Result;
+
+  {$ENDIF}
 end;
 
 End.
