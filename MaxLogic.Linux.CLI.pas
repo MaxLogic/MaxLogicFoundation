@@ -14,19 +14,19 @@ Type
   /// <summary>
   /// executes a linux command.
   /// it will retrive the terminal output and call the aBufferReady each time we have a chunk of data
-  ///  attention: THE LINES WILL END WITH #10, SO YOU MIGHT WANT TO CALL tRIMlEFT ON THE RESULT
+  /// attention: THE LINES WILL END WITH #10, SO YOU MIGHT WANT TO CALL tRIMlEFT ON THE RESULT
+  /// Returns the exit code or -1 if the process failed
   /// </summary>
-Procedure LinuxCmd(Const aCommand: String; aBufferReady: TStrProc; aMaxLineLength: integer = 512 * 1024); Overload;
+function LinuxCmd(Const aCommand: String; aBufferReady: TStrProc; aMaxLineLength: integer = 512 * 1024): integer; overload;
 
-
-
-  /// <summary>
-  /// a simplified version of the above.
-  ///  best SUITED FOR COMMANDS THAT RETURN A SINGLE LINE AS OUTPUT
-  /// Please note, that this might not be suiteable for commands that will retrive large amount of text
-  ///  attention: A right trim will be performed on the result to remove the trailing line break
-  /// </summary>
+/// <summary>
+/// a simplified version of the above.
+/// best SUITED FOR COMMANDS THAT RETURN A SINGLE LINE AS OUTPUT
+/// Please note, that this might not be suiteable for commands that will retrive large amount of text
+/// attention: A right trim will be performed on the result to remove the trailing line break
+/// </summary>
 Function LinuxCmd(Const aCommand: String): String; Overload;
+Function LinuxCmd(Const aCommand: String; out aExitCode: integer): String; Overload;
 
 
 // following are internal methods. They could be in the implementation section but might be used somewhere else too. so I decided to put them here
@@ -34,9 +34,9 @@ Function LinuxCmd(Const aCommand: String): String; Overload;
 Type
   TStreamHandle = pointer;
 
-/// <summary>
-/// Man Page: http://man7.org/linux/man-pages/man3/fgets.3p.html
-/// </summary>
+  /// <summary>
+  /// Man Page: http://man7.org/linux/man-pages/man3/fgets.3p.html
+  /// </summary>
 Function fgets(buffer: pointer; size: int32; Stream: TStreamHandle): pointer; Cdecl; External libc Name _PU + 'fgets';
 
 /// <summary>
@@ -78,17 +78,23 @@ Begin
   End;
 End;
 
-Procedure LinuxCmd(Const aCommand: String; aBufferReady: TStrProc; aMaxLineLength: integer = 512 * 1024);
+function LinuxCmd(Const aCommand: String; aBufferReady: TStrProc; aMaxLineLength: integer = 512 * 1024): integer;
 Var
   Handle: TStreamHandle;
   Data: Array Of uint8;
   s: String;
   ansi: AnsiString;
 Begin
+  Result := -1;
   SetLength(Data, aMaxLineLength);
   ansi := AnsiString(aCommand);
 
   Handle := popen(pAnsiChar(ansi), 'r');
+  If Handle = nil Then
+  Begin
+    raise Exception.Create('Failed to execute command: ' + aCommand);
+    exit;
+  end;
   Try
     While fgets(@Data[0], Sizeof(Data), Handle) <> Nil Do
     Begin
@@ -97,20 +103,30 @@ Begin
         aBufferReady(s);
     End;
   Finally
-    pclose(Handle);
+    // pclose(handle); returns a value that if the process exited normally the top 8 bits are the exit code. So quick and dirty: ExitCode := pclose(handle) div 256; See: stackoverflow.com/questions/15058876
+    Result := pclose(Handle);
+    if Result <> -1 then
+      Result := Result div 256;
   End;
 End;
 
 Function LinuxCmd(Const aCommand: String): String;
+var
+  lExitCode: integer;
+begin
+  Result := LinuxCmd(aCommand, lExitCode);
+end;
+
+Function LinuxCmd(Const aCommand: String; out aExitCode: integer): String;
 Var
   s: String;
 Begin
   s := '';
 
-  LinuxCmd(aCommand,
-    Procedure(Const aText: String)
+  aExitCode := LinuxCmd(aCommand,
+      Procedure(Const aText: String)
     Begin
-        s := s + aText;
+      s := s + aText;
     End);
 
   Result := TrimRight(s);

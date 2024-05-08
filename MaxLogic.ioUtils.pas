@@ -11,7 +11,9 @@ Unit MaxLogic.ioUtils;
 }
 
 {$IF DEFINED(FRAMEWORK_VCL) OR DEFINED(FRAMEWORK_FMXs)}
+{$IFNDEF CONSOLE}
 {$DEFINE CanUseApplicationInstance}
+{$ENDIF}
 {$IFEND}
 
 Interface
@@ -190,7 +192,6 @@ Begin
 
     Result := '';
     Exit;
-    // ShowMessage(IntToStr(Dummy));
   End; { if }
   getmem(VerInfo, VerInfoSize);
   GetFileVersionInfo(PChar(Filename), 0, VerInfoSize, VerInfo);
