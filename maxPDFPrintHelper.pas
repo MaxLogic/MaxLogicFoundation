@@ -14,7 +14,7 @@ unit maxPDFPrintHelper;
 interface
 
 uses
-  Windows, classes, sysUtils, printers, registry, shellAPI, ShLwApi;
+  winApi.Windows, system.classes, system.sysUtils, vcl.printers, System.Win.registry, Winapi.shellAPI, Winapi.ShLwApi, generics.Collections;
 
 type
   TmaxPDFPrintHelper = class
@@ -28,7 +28,7 @@ type
     FshowPrinterDialog: boolean;
     FPrinterName: string;
     FPrinterSettings: string;
-    FlogDir: string;
+    FLogDir: string;
     procedure SetshowPrinterDialog(const Value: boolean);
     procedure SetPrinterName(const Value: string);
     procedure SetPrinterSettings(const Value: string);
@@ -62,7 +62,7 @@ type
     // leave blank to print to the default printer
     property PrinterName: string read FPrinterName write SetPrinterName;
     property showPrinterDialog: boolean read FshowPrinterDialog write SetshowPrinterDialog;
-    property logDir: string read FlogDir write SetlogDir;
+    property logDir: string read FLogDir write SetlogDir;
 
     // per default it is the same directory as the application Exe
     // it is a class property, so you need to set it up just once at start up
@@ -72,7 +72,8 @@ type
 implementation
 
 uses
-  autoFree, bsUTILS, pawel1, ioUtils, StrUtils;
+  autoFree, MaxLogic.ioUtils,
+  system.ioUtils, system.StrUtils;
 
 { TmaxPDFPrintHelper }
 
@@ -100,12 +101,12 @@ end;
 
 procedure TmaxPDFPrintHelper.Print;
 var
-  params: TStringList;
+  params: TList<String>;
   x: integer;
   s: string;
   garbos: TGarbos;
 begin
-  gc(params, TStringList.Create, garbos);
+  gc(params, TList<String>.Create, garbos);
 
   if not FshowPrinterDialog then
   begin
@@ -136,13 +137,19 @@ begin
   for x := 0 to fFiles.count - 1 do
     params.add(AnsiQuotedStr(fFiles[x], '"'));
 
-  s := pawel1.Implode(params, ' ');
+  s := String.Join(' ', params.ToArray);
 
-  if FlogDir <> '' then
-    pawel1.AddToLogFile('Run:' + cr +
-      fsumatraPdfExeFileName + ' ' + s, FlogDir + ClassName + '.log');
+  if FLogDir <> '' then
+    if TDirectory.Exists(FLogDir) then
+    begin
+      TFile.AppendAllText(
+        TPath.combine(FLogDir,  ClassName + '.log'),
+        'Run:' + sLineBreak +
+        fsumatraPdfExeFileName + ' ' + s + sLineBreak,
+        TEncoding.UTF8);
+    end;
 
-  pawel1.ExecuteFile(
+  MaxLogic.ioUtils.ExecuteFile(
     fsumatraPdfExeFileName,
     s,
     extractFilePath(fsumatraPdfExeFileName),
@@ -168,7 +175,7 @@ end;
 
 procedure TmaxPDFPrintHelper.SetlogDir(const Value: string);
 begin
-  FlogDir := Value;
+  FLogDir := Value;
 end;
 
 procedure TmaxPDFPrintHelper.SetPrinterName(const Value: string);
