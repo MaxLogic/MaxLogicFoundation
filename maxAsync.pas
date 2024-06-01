@@ -1792,13 +1792,15 @@ Begin
   Repeat
     IsLast := false;
     NoItem := false;
+    Item:= default(T); // prevent 'variable might not be initialized' compiler warning
 
     fCriticalSection.Enter;
     Try
       If fItems.count <> 0 Then
-        item := fItems.dequeue
-      Else
-      Begin
+      begin
+        item := fItems.dequeue;
+        NoItem := False;
+      end else begin
         NoItem := True;
 
         For x := 0 To fThreads.count - 1 Do
@@ -1808,7 +1810,6 @@ Begin
             break;
           End;
         IsLast := fThreads.count = 0
-
       End;
 
     Finally
@@ -1823,10 +1824,8 @@ Begin
       Finally
         fReadySignal.SetSignaled;
       End;
-    End
-    Else If Not NoItem Then
+    end Else If Not NoItem Then
       FProc(item);
-
   Until NoItem;
 End;
 
