@@ -45,6 +45,7 @@ var
   hr: hResult;
 
   KFId: array of TKnownFolderID;
+  pKFId: PKnownFolderID;
   Count: UINT;
   x: Integer;
   a: TArray<TKnownFolderInfo>;
@@ -59,11 +60,17 @@ begin
     exit;
 
   // When this method returns, contains a pointer to an array of all KNOWNFOLDERID values registered with the system. Use CoTaskMemFree to free these resources when they are no longer needed.
-  hr := KnownFolderManager.GetFolderIds(KFId, Count);
+  hr := KnownFolderManager.GetFolderIds(pKFId, Count);
   if hr <> S_OK then
     exit;
+  setLength(KFId, Count);
+  for x := 0 to Count - 1 do
+  begin
+    pKFId[x] := pKFId^;
+    Inc(pKFId, SizeOf(TKnownFolderID));
+  end;
 
-  SetLength(a, Count);
+  setLength(a, Count);
   i := 0;
   for x := 0 to Count - 1 do
   begin
@@ -94,7 +101,7 @@ begin
       FreeKnownFolderDefinitionFields(df);
     end;
   end;
-  SetLength(a, i);
+  setLength(a, i);
   result := a;
 
   CoTaskMemFree(KFId);

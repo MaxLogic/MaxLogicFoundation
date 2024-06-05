@@ -189,7 +189,6 @@ type
 // those ethods helps to recalculate a value that was stored (in a config or somewhere else) with a different scaleFactor then the one currently used by the control
 function ReScaleValue(const aValue: Double; aControl: TControl; const aOldScaleFactor: Single): Double; overload;
 function ReScaleValue(const aValue: integer; aControl: TControl; const aOldScaleFactor: Single): integer; overload;
-function ReScaleValue(const aValue: nativeInt; aControl: TControl; const aOldScaleFactor: Single): nativeInt; overload;
 
 // when we save scaleFactors as strings, we might loose some detail, so we assume all scale factor not different by more then 0.001 are the same
 function sameScaleFactor(const v1, v2: Single): boolean;
@@ -989,20 +988,6 @@ begin
 end;
 
 function ReScaleValue(const aValue: integer; aControl: TControl; const aOldScaleFactor: Single): integer;
-var
-  f1, f2: Double;
-begin
-  if sameScaleFactor(aControl.ScaleFactor, aOldScaleFactor) then
-    result := aValue
-  else
-  begin
-    f1 := aValue;
-    f2 := ReScaleValue(f1, aControl, aOldScaleFactor);
-    result := round(f2);
-  end;
-end;
-
-function ReScaleValue(const aValue: nativeInt; aControl: TControl; const aOldScaleFactor: Single): nativeInt; overload;
 var
   f1, f2: Double;
 begin
