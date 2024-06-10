@@ -26,11 +26,11 @@ Type
       WAIT_ABANDONED -  The specified object is a mutex object that was not released by the thread that owned the mutex object before the owning thread terminated. Ownership of the mutex object is granted to the calling thread and the mutex state is set to nonsignaled. If the mutex was protecting persistent state information, you should check it for consistency.
       WAIT_OBJECT_0 - The state of the specified object is signaled.
       WAIT_TIMEOUT - The function has failed. To get extended error information, call GetLastError.
-      WAIT_FAILED -  The function has failed. To get extended error information, call GetLa }
-    Function WaitForSignaled(TimeOut: dword = infinite): TWaitResult;
+      WAIT_FAILED -  The function has failed. To get extended error information, call GetLastError }
+    Function WaitForSignaled(TimeOut: Cardinal = infinite): TWaitResult;
     {$IFDEF MsWindows}
     // note if this is called outside of the main thread, it falls back to the simple WaitFor function, no messages are handled
-    Procedure MsgWaitForSignaled(TimeOut: dword = infinite);
+    Procedure MsgWaitForSignaled(TimeOut: Cardinal = infinite);
     {$ENDIF}
     function GetEvent: TEvent;
     property Event: TEvent read GetEvent;
@@ -46,10 +46,10 @@ Type
 
     Procedure SetSignaled;
     Procedure SetNonSignaled;
-    Function WaitForSignaled(TimeOut: dword = infinite): TWaitResult;
+    Function WaitForSignaled(TimeOut: Cardinal = infinite): TWaitResult;
     {$IFDEF MsWindows}
     // note if this is called outside of the main thread, it falls back to the simple WaitFor function, no messages are handled
-    Procedure MsgWaitForSignaled(TimeOut: dword = infinite);
+    Procedure MsgWaitForSignaled(TimeOut: Cardinal = infinite);
     {$ENDIF}
     property Event: TEvent read GetEvent;
   End;
@@ -58,7 +58,7 @@ Type
 Function InsideMainThread: boolean;
 
 {$IFDEF MSWINDOWS}
-Procedure MsgWaitForSingleObject(Handle: THandle; TimeOut: dword = infinite);
+Procedure MsgWaitForSingleObject(Handle: THandle; TimeOut: Cardinal = infinite);
 {$ENDIF}
 
 implementation
@@ -80,10 +80,10 @@ End;
 {$IFDEF MSWINDOWS}
 
 
-Procedure MsgWaitForSingleObject(Handle: THandle; TimeOut: dword = infinite);
+Procedure MsgWaitForSingleObject(Handle: THandle; TimeOut: Cardinal = infinite);
 Var
   StopWatch: TStopWatch;
-  TimeLeft: dword;
+  TimeLeft: Cardinal;
   diff: integer;
 Begin
   If Not InsideMainThread Then
@@ -148,7 +148,7 @@ end;
 
 {$IFDEF MsWindows}
 
-procedure TSignal.MsgWaitForSignaled(TimeOut: dword);
+procedure TSignal.MsgWaitForSignaled(TimeOut: Cardinal);
 begin
   MsgWaitForSingleObject(fEvent.Handle, TimeOut);
 end;
@@ -165,7 +165,7 @@ Begin
   fEvent.SetEvent;
 End;
 
-Function TSignal.WaitForSignaled(TimeOut: dword = infinite): TWaitResult;
+Function TSignal.WaitForSignaled(TimeOut: Cardinal = infinite): TWaitResult;
 Begin
   Result := fEvent.WaitFor(TimeOut);
 End;

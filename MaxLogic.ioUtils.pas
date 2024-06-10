@@ -418,7 +418,6 @@ const
   NetworkPrefix = '\\?\UNC\';
 var
   IsNetworkPath: Boolean;
-  NormalizedFileName: String;
 begin
   Result := aFileName;
   {$IFDEF MsWindows}
