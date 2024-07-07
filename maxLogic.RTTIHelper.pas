@@ -18,6 +18,9 @@ Type
     class Function ReadObjectProperty(Const aInstance: Tobject; Const aPropName: String): Tobject;
     class Function ReadProperty(Const aInstance: Tobject; Const aPropName: String): String;
     class Function ReadProp(Const aInstance: Tobject; Const aPropName: String): TValue;
+    // retrives the name of the type of that property, like "string, "integer" or "TCustomImage"
+    class function GetPropertyTypeName(const aInstance: Tobject; const aPropName: String): String;
+
     class Procedure WriteProperty(Const aInstance: Tobject; Const aPropName, aValue: String); overload;
     class Procedure WriteProperty(Const aInstance: Tobject; Const aPropName: String; const aValue: TValue); overload;
     class Function has(aInstance: Tobject; Const aPropertyName: String): Boolean;
@@ -49,8 +52,11 @@ Type
     class function CallEventHandler(Instance: Tobject; Event: TRttiProperty; const Args: array of TValue): TValue; overload;
   End;
 
-  {$IF CompilerVersion < 35.0} // Delphi 11 Alexandria
+  {$IF CompilerVersion < 35.0}
+
+  // Delphi 11 Alexandria
   TCustomAttributeClass = class of TCustomAttribute;
+
   TRttiObjectHelper = class helper for TRttiObject
     function GetAttribute(AAttrClass: TCustomAttributeClass): TCustomAttribute; overload;
     function GetAttribute<T: TCustomAttribute>: T; overload; inline;
@@ -162,6 +168,27 @@ Begin
     End;
   End;
 End;
+
+class function TRTTIHelper.GetPropertyTypeName(const aInstance: Tobject; const aPropName: String): String;
+var
+  TypObj: TRttiType;
+  Prop: TRttiProperty;
+begin
+  Result := '';
+
+  // Get the RTTI type for the given instance
+  TypObj := fCtx.GetType(aInstance.ClassInfo);
+  if not assigned(TypObj) then
+    Exit;
+
+  // Get the RTTI property for the given property name
+  Prop := TypObj.GetProperty(aPropName);
+  if not assigned(Prop) then
+    Exit;
+
+  // Get the name of the property type
+  Result := Prop.PropertyType.ToString;
+end;
 
 class Function TRTTIHelper.ReadProperty(Const aInstance: Tobject; Const aPropName: String): String;
 var
@@ -409,7 +436,9 @@ end;
 
 { TRttiObjectHelper }
 
-{$IF CompilerVersion < 35.0} // Delphi 11 Alexandria
+{$IF CompilerVersion < 35.0}
+
+// Delphi 11 Alexandria
 function TRttiObjectHelper.GetAttribute(
   AAttrClass: TCustomAttributeClass): TCustomAttribute;
 var
