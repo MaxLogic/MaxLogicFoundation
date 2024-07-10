@@ -2006,6 +2006,7 @@ var
   i, C: Integer;
   lLow, lHigh: Integer;
 begin
+  Result := False;
   if DupIgnore then
   begin
     Result := Find(aId, aLowIndex);
