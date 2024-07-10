@@ -60,6 +60,39 @@ Function StrCmpLogical(Const left, right: String): Integer; Inline;
 Function StrCmpLogicalW(psz1, psz2: PWideChar): Integer; Stdcall; External 'shlwapi.dll' delayed;
 {$endif}
 
+type
+{
+  TFilterEx - A record for advanced text filtering based on custom filter syntax.
+
+  This filtering algorithm is inspired by the Everything search tool's advanced search syntax.
+  (https://www.voidtools.com/support/everything/searching/#advanced_search)
+  It allows for complex filtering rules, including combinations of required terms, optional terms,
+  and wildcard searches.
+
+  Filter Syntax:
+  - "a b"         : The text must contain both 'a' and 'b'.
+  - "a b|c"       : The text must contain 'a' and either 'b' or 'c'.
+  - "a*"          : The text must start with 'a'.
+  - "a* *b|*c"    : The text must start with 'a' and end with either 'b' or 'c'.
+
+  Usage Example:
+  - Create a filter: var Filter := TFilterEx.Create('a b|c');
+  - Check if a text matches: if Filter.Matches('example text') then ...
+}
+  TFilterEx = record
+  private
+    fFilter: TArray<TArray<String>>;
+    // Prepares the internal filter structure based on the provided filter text.
+    procedure Prepare(const aText: String);
+  public
+    // Creates a TFilterEx instance from the given filter text.
+    class function Create(const aFilterText: String): TFilterEx; static;
+    /// <summary>
+    ///   Returns true if the given text matches the filter or if the filter is empty
+    /// </summary>
+    function Matches(const aText: String):Boolean;
+  end;
+
 implementation
 
 uses
@@ -331,5 +364,49 @@ Begin
   Result:= CompareStr(Left, Right);
   {$ENDIF}
 End;
+
+{ TFilterEx }
+
+class function TFilterEx.Create(const aFilterText: String): TFilterEx;
+begin
+  Result:= Default(TFIlterEx);
+  Result.Prepare(aFilterText);
+end;
+
+procedure TFilterEx.Prepare(const aText: String);
+var
+  ar: TArray<String>;
+begin
+  ar := aText.Split([' '], '"', '"', TStringSplitOptions.ExcludeEmpty);
+  SetLength(fFilter, length(ar));
+  for var X := 0 to High(ar) do
+  begin
+    fFilter[X] := ar[X].Split(['|'], TStringSplitOptions.ExcludeEmpty);
+    for var Y := 0 to High(fFilter[X]) do
+      if not fFilter[X][Y].contains('*') then
+        fFilter[X][Y] := '*' + fFilter[X][Y] + '*';
+
+  end;
+end;
+
+function TFilterEx.Matches(const aText: String): Boolean;
+var
+  lMatchesANy: Boolean;
+begin
+  Result := true;
+  for var ar in fFilter do
+  begin
+    lMatchesANy := False;
+    for var s in ar do
+      if system.masks.MatchesMask(aText, s) then
+      begin
+        lMatchesANy := true;
+        Break;
+      end;
+    if not lMatchesANy then
+      exit(False);
+  end;
+end;
+
 
 end.

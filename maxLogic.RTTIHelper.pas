@@ -5,7 +5,12 @@ Unit maxLogic.RTTIHelper;
 Interface
 
 Uses
-  classes, sysUtils, RTTI, Controls;
+  system.classes, system.sysUtils, system.RTTI,
+  {$IFNDEF CONSOLE}
+  Controls,
+  {$ENDIF}
+  // for cloning of an object
+  rest.JSON, rest.JSON.Types, rest.JsonReflect, system.JSON;
 
 Type
   TRTTIHelper = Class
@@ -50,6 +55,9 @@ Type
     // CallEventHandler(MyButton, 'OnClick', [MyButton]);
     class function CallEventHandler(Instance: Tobject; const EventName: string; const Args: array of TValue): TValue; overload;
     class function CallEventHandler(Instance: Tobject; Event: TRttiProperty; const Args: array of TValue): TValue; overload;
+
+    // clones an object using json serialization
+    class function CloneObject<T: Class, constructor>(aObj: T): T;
   End;
 
   {$IF CompilerVersion < 35.0}
@@ -64,6 +72,7 @@ Type
     function HasAttribute<T: TCustomAttribute>: Boolean; overload; inline;
   end;
   {$IFEND}
+
 
 Implementation
 
@@ -397,6 +406,7 @@ begin
     TNotifyEvent(MethodRecPtr^)(Args[0].AsObject);
     Exit;
   end;
+  {$IFNDEF CONSOLE}
   if HandlerValue.typeInfo = typeInfo(TMouseEvent) then
   begin
     TMouseEvent(MethodRecPtr^)(
@@ -412,6 +422,8 @@ begin
       Args[1].AsType<TShiftState>, Args[2].AsInteger, Args[3].AsInteger);
     Exit;
   end;
+  {$ENDIF}
+
   { still here? well, let's go for the generic approach }
   HandlerObj := MethodRecPtr.Data;
   for RttiMethod in fCtx.GetType(HandlerObj.ClassType).GetMethods do
@@ -421,6 +433,14 @@ begin
       Exit;
     end;
   raise EInsufficientRtti.Create(SEventHandlerHasInsufficientRTTI);
+end;
+
+class function TRTTIHelper.CloneObject<T>(aObj: T): T;
+var
+  lJson: String;
+begin
+  lJson := TJson.ObjectToJsonString(aObj);
+  Result := TJson.JsonToObject<T>(lJson);
 end;
 
 class function TRTTIHelper.CallEventHandler(Instance: Tobject; const EventName: string;
@@ -437,6 +457,7 @@ end;
 { TRttiObjectHelper }
 
 {$IF CompilerVersion < 35.0}
+
 
 // Delphi 11 Alexandria
 function TRttiObjectHelper.GetAttribute(

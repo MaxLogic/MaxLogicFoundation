@@ -150,7 +150,7 @@ Begin
           // When a process uses WriteFile to write to an anonymous pipe, the write operation is not completed until all bytes are
           // written. If the pipe buffer is full before all bytes are written, WriteFile does not return until another process
           // or thread uses ReadFile to make more buffer space available.
-          WasOK := Windows.ReadFile(StdOutPipeRead, pCommandLine, 255, BytesRead, Nil);
+          WasOK := winApi.Windows.ReadFile(StdOutPipeRead, pCommandLine, 255, BytesRead, Nil);
           If BytesRead > 0 Then
           Begin
             pCommandLine[BytesRead] := #0;

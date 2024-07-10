@@ -11,9 +11,9 @@ Uses
 
 Type
 
-{$IFNDEF UNICODE}
+  {$IFNDEF UNICODE}
   UnicodeString = WideString;
-{$ENDIF}
+  {$ENDIF}
   // forward declarations
   TDFMObject = Class;
   TDFMProperty = Class;
@@ -127,8 +127,10 @@ Type
 
     // case-in-sensitive
     Function Find(Const Name: String): TDFMObject;
-    // aObjectClassNamePattern may contain *
-    Function GetObjectsByClass(Const aObjectClassNamePattern: String): TArray<TDFMObject>;
+
+    // aObjectClassNamePattern may contain * and ?
+    // if aRecursive is set to true, then also all child objects will be iterated
+    Function GetObjectsByClass(Const aObjectClassNamePattern: String; aRecursive: Boolean = false): TArray<TDFMObject>;
 
     Property Name: String Read fName Write SetName;
     Property ObjectClassName: String Read fClassName;
@@ -702,7 +704,6 @@ Begin
   OutText.Free;
 End;
 
-
 Procedure TDFMObject.SetName(Const Value: String);
 Begin
   fName := Value;
@@ -745,7 +746,7 @@ Begin
       exit(fObjects[x]);
 End;
 
-Function TDFMObject.GetObjectsByClass(Const aObjectClassNamePattern: String): TArray<TDFMObject>;
+Function TDFMObject.GetObjectsByClass(Const aObjectClassNamePattern: String; aRecursive: Boolean = false): TArray<TDFMObject>;
 Var
   l: TList<TDFMObject>;
   x: integer;
@@ -753,12 +754,19 @@ Begin
   l := TList<TDFMObject>.Create;
   Try
     For x := 0 To ObjectCount - 1 Do
-      If Masks.MatchesMask(self.Objects[x].ObjectClassName, aObjectClassNamePattern) Then
+      If masks.MatchesMask(self.Objects[x].ObjectClassName, aObjectClassNamePattern) Then
         l.add(Objects[x]);
+
     Result := l.ToArray;
   Finally
     l.Free;
-  End;
+  end;
+
+  if aRecursive then
+    For x := 0 To ObjectCount - 1 Do
+      Result := Result +
+        self.Objects[x].GetObjectsByClass(aObjectClassNamePattern);
+
 End;
 
 { TDFMProperty }
@@ -814,7 +822,7 @@ Begin
         Begin
           If x <> 0 Then
             Result := Result + sLineBreak;
-          Result := RESULT + fItems[x].ValueAsString;
+          Result := Result + fItems[x].ValueAsString;
         End;
       End;
     vaSet,
