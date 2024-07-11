@@ -3,7 +3,7 @@ unit MaxLogic.StrUtils;
 interface
 
 uses
-  system.classes, system.sysUtils, system.Types;
+  system.classes, system.sysUtils, system.Types, generics.Collections;
 
 function StringMatches(Value, Pattern: string;
   casesensitive: boolean = true): boolean;
@@ -80,10 +80,20 @@ type
   - Check if a text matches: if Filter.Matches('example text') then ...
 }
   TFilterEx = record
+  private type
+    TFilterItem = record
+      IsNegated: Boolean;
+      OrElements: TArray<String>;
+      OrgText: String;
+    end;
+
   private
-    fFilter: TArray<TArray<String>>;
+    fFilter: TArray<TFilterItem>;
+    fOrgFilterText: String;
     // Prepares the internal filter structure based on the provided filter text.
     procedure Prepare(const aText: String);
+    // we need to take care because of the special ~and quotes
+    function SplitBySpace(const aText: String): TArray<String>;
   public
     // Creates a TFilterEx instance from the given filter text.
     class function Create(const aFilterText: String): TFilterEx; static;
@@ -96,7 +106,7 @@ type
 implementation
 
 uses
-  StrUtils, masks;
+  StrUtils, masks, autoFree;
 
 function StringMatches(Value, Pattern: string;
   casesensitive: boolean = true): boolean;
@@ -376,35 +386,110 @@ end;
 procedure TFilterEx.Prepare(const aText: String);
 var
   ar: TArray<String>;
+  fi: TFilterItem ;
+  l: TStringList;
+  p: String;
 begin
-  ar := aText.Split([' '], '"', '"', TStringSplitOptions.ExcludeEmpty);
+  gc(l, TStringList.create);
+  l.StrictDelimiter:= true;
+  l.Delimiter := '|';
+  l.QuoteChar:= '"';
+
+  fOrgFilterText:= aText;
+  ar := SplitBySpace(trim(aText));
   SetLength(fFilter, length(ar));
   for var X := 0 to High(ar) do
   begin
-    fFilter[X] := ar[X].Split(['|'], TStringSplitOptions.ExcludeEmpty);
-    for var Y := 0 to High(fFilter[X]) do
-      if not fFilter[X][Y].contains('*') then
-        fFilter[X][Y] := '*' + fFilter[X][Y] + '*';
+    fi := default(TFilterItem);
+    p := trim(ar[x]);
+    if p='' then
+      continue;
+    fi.OrgText:= p;
+    if startsText('!', p) then
+    begin
+      delete(p, 1, 1);
+      fi.IsNegated:= true;
+      if p='' then
+        continue;
+    end;
 
+    l.DelimitedText:= p;
+
+    setLength(fi.OrElements, l.Count);
+    for var Y := 0 to l.count -1 do
+    begin
+      p:= l[y];
+      if not p.contains('*') then
+        p:= '*' + p + '*';
+      fi.OrElements[y]:= p;
+    end;
+    fFilter[x]:= fi;
   end;
+
+end;
+
+function TFilterEx.SplitBySpace(const aText: String): TArray<String>;
+var
+  s, p: String;
+  i1, i2: integer;
+  l: TList<String>;
+  lIsInQuote: boolean;
+  c: char;
+begin
+  s:= aText + ' ';
+  gc(l, TList<String>.create);
+  lIsInQuote:= false;
+  i1:= 1;
+  i2:= 1;// why not 2? because the first char may contain a '"' char....
+
+  while i2<=length(s) do
+  begin
+    c:= s[i2];
+    if lIsInQuote then
+    begin
+      if c='"' then
+        lIsInQuote:= false;
+
+    end else if c = '"' then
+      lIsInQuote:= true
+    else if c = ' ' then
+    begin
+      if i1 <> i2 then
+      begin
+        p:= copy(s, i1, (i2-i1));
+        l.add(p);
+      end;
+      i1:= i2+1;
+    end;
+    inc(i2);
+  end;
+
+  Result:= l.ToArray;
 end;
 
 function TFilterEx.Matches(const aText: String): Boolean;
 var
   lMatchesANy: Boolean;
+  fi: TFilterItem;
+  r: Boolean;
 begin
   Result := true;
-  for var ar in fFilter do
+  for fi in fFilter do
   begin
     lMatchesANy := False;
-    for var s in ar do
+    for var s in fi.OrElements do
       if system.masks.MatchesMask(aText, s) then
       begin
-        lMatchesANy := true;
-        Break;
+        lMatchesANy:= true;
+        break;
       end;
-    if not lMatchesANy then
-      exit(False);
+
+    if fi.IsNegated then
+    begin
+      if lMatchesANy  then
+        exit(false);
+    end else if not lMatchesANy then
+      exit(false);
   end;
 end;
 
