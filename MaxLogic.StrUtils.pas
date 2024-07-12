@@ -1,9 +1,13 @@
 unit MaxLogic.StrUtils;
 
+{$IFDEF MSWINDOWS}
+{$WARN SYMBOL_PLATFORM OFF}
+{$endif}
+
 interface
 
 uses
-  system.classes, system.sysUtils, system.Types, generics.Collections;
+  system.classes, system.sysUtils, system.Types, generics.Collections, system.StrUtils;
 
 function StringMatches(Value, Pattern: string;
   casesensitive: boolean = true): boolean;
@@ -57,33 +61,38 @@ function MatchesFilter(const aText: string; const AFilter: TStringDynArray): boo
 // on non windows platform we are falling back on CompareStr
 Function StrCmpLogical(Const left, right: String): Integer; Inline;
 {$IFDEF MSWINDOWS}
+
 Function StrCmpLogicalW(psz1, psz2: PWideChar): Integer; Stdcall; External 'shlwapi.dll' delayed;
-{$endif}
+{$ENDIF}
+
 
 type
-{
-  TFilterEx - A record for advanced text filtering based on custom filter syntax.
+  {
+    TFilterEx - A record for advanced text filtering based on custom filter syntax.
 
-  This filtering algorithm is inspired by the Everything search tool's advanced search syntax.
-  (https://www.voidtools.com/support/everything/searching/#advanced_search)
-  It allows for complex filtering rules, including combinations of required terms, optional terms,
-  and wildcard searches.
+    This filtering algorithm is inspired by the Everything search tool's advanced search syntax.
+    (https://www.voidtools.com/support/everything/searching/#advanced_search)
+    It allows for complex filtering rules, including combinations of required terms, optional terms,
+    and wildcard searches.
 
-  Filter Syntax:
-  - "a b"         : The text must contain both 'a' and 'b'.
-  - "a b|c"       : The text must contain 'a' and either 'b' or 'c'.
-  - "a*"          : The text must start with 'a'.
-  - "a* *b|*c"    : The text must start with 'a' and end with either 'b' or 'c'.
+    Filter Syntax:
+    - "a b"         : The text must contain both 'a' and 'b'.
+    - "a b|c"       : The text must contain 'a' and either 'b' or 'c'.
+    - "a*"          : The text must start with 'a'.
+    - "a* *b|*c"    : The text must start with 'a' and end with either 'b' or 'c'.
 
-  Usage Example:
-  - Create a filter: var Filter := TFilterEx.Create('a b|c');
-  - Check if a text matches: if Filter.Matches('example text') then ...
-}
+    Usage Example:
+    - Create a filter: var Filter := TFilterEx.Create('a b|c');
+    - Check if a text matches: if Filter.Matches('example text') then ...
+  }
   TFilterEx = record
   private type
+    TKind = (kMask, kContains, kStarts, kEnds);
+
     TFilterItem = record
-      IsNegated: Boolean;
+      IsNegated: boolean;
       OrElements: TArray<String>;
+      OrElementKinds: TArray<TKind>;
       OrgText: String;
     end;
 
@@ -94,24 +103,42 @@ type
     procedure Prepare(const aText: String);
     // we need to take care because of the special ~and quotes
     function SplitBySpace(const aText: String): TArray<String>;
+    procedure Preprocess(var p: String; out k: TKind); inline;
   public
     // Creates a TFilterEx instance from the given filter text.
     class function Create(const aFilterText: String): TFilterEx; static;
     /// <summary>
-    ///   Returns true if the given text matches the filter or if the filter is empty
+    /// Returns true if the given text matches the filter or if the filter is empty
     /// </summary>
-    function Matches(const aText: String):Boolean;
+    function Matches(const aText: String): boolean;
   end;
 
 implementation
 
 uses
-  StrUtils, masks, autoFree;
+  system.Masks, autoFree;
+
+function OccurrencesOfChar(const S: string; const C: char): Integer;
+var
+  pc: pChar;
+begin
+  result := 0;
+  if S <> '' then
+  begin
+    pc := @S[1];
+    for var i := 1 to Length(S) do
+    begin
+      if pc^ = C then
+        inc(result);
+      inc(pc);
+    end;
+  end;
+end;
 
 function StringMatches(Value, Pattern: string;
   casesensitive: boolean = true): boolean;
 var
-  s: string;
+  S: string;
   i1, i2, len, x: Integer;
   ExactStart, ExactEnd: boolean;
   l: TStringList;
@@ -148,7 +175,7 @@ begin
   l.Delimiter := '*';
   l.DelimitedText := Pattern;
 
-  Result := true;
+  result := true;
   i1 := 1;
   for x := 0 to l.Count - 1 do
   begin
@@ -156,23 +183,23 @@ begin
 
     if i2 <= 0 then
     begin
-      Result := false;
+      result := false;
       break;
     end;
 
     if (x = 0) and (ExactStart) and (i2 <> 1) then
     begin
-      Result := false;
+      result := false;
       break;
     end;
 
     if (ExactEnd) and (x = l.Count - 1) then
     begin
       len := Length(l[x]);
-      s := copy(Value, (Length(Value) - len) + 1, len);
-      if l[x] <> s then
+      S := copy(Value, (Length(Value) - len) + 1, len);
+      if l[x] <> S then
       begin
-        Result := false;
+        result := false;
         break;
       end;
     end;
@@ -189,20 +216,20 @@ Var
 Begin
   l := Length(AString);
   If l > TotalLength Then
-    Result := AString
+    result := AString
   Else
   Begin
-    SetLength(Result, TotalLength);
+    SetLength(result, TotalLength);
     For x := 1 To TotalLength - l Do
-      Result[x] := AChar;
+      result[x] := AChar;
     For x := TotalLength - l + 1 To TotalLength Do
-      Result[x] := AString[x - (TotalLength - l)];
+      result[x] := AString[x - (TotalLength - l)];
   End;
 End;
 
 Function putBefore(Num: Integer; AChar: char; TotalLength: Integer): String; Overload;
 Begin
-  Result := putBefore(IntToStr(Num), AChar, TotalLength);
+  result := putBefore(IntToStr(Num), AChar, TotalLength);
 End;
 
 Function ExtractString(
@@ -214,7 +241,7 @@ Var
   i1, i2: Integer;
   lStartMarker, lEndMarker, lText: String;
 Begin
-  Result := false;
+  result := false;
   If aCasesensitive Then
     aStartMarkerFoundAtIndex := PosEx(aStartMarker, aText, aStartoffset)
   Else
@@ -236,7 +263,7 @@ Begin
 
     If i2 >= 1 Then
     Begin
-      Result := true;
+      result := true;
       aValue := copy(aText, i1, i2 - i1);
     End;
   End;
@@ -254,7 +281,7 @@ var
   lAction: TReplacePlaceholderAction;
   lFound: boolean;
 Begin
-  Result := '';
+  result := '';
   repeat
 
     lFound := ExtractString(
@@ -280,7 +307,7 @@ Begin
           end;
       End;
 
-      Result := Result +
+      result := result +
         copy(aText, aStartoffset, (lStartMarkerFoundAtIndex - aStartoffset)) +
         lReplacementValue;
 
@@ -290,12 +317,12 @@ Begin
 
   // append the rest of the aText
   if aStartoffset < Length(aText) then
-    Result := Result + copy(aText, aStartoffset, Length(aText));
+    result := result + copy(aText, aStartoffset, Length(aText));
 End;
 
 Function CombineUrl(const aPart1, aPart2: String; aSeparator: String = '/'): String;
 begin
-  Result := CombineUrl([aPart1, aPart2], aSeparator);
+  result := CombineUrl([aPart1, aPart2], aSeparator);
 end;
 
 Function CombineUrl(const aParts: array of String; aSeparator: String = '/'): String;
@@ -304,19 +331,19 @@ var
 begin
   case Length(aParts) of
     0:
-      Result := '';
+      result := '';
     1:
-      Result := aParts[0];
+      result := aParts[0];
   else begin
-      Result := aParts[0];
+      result := aParts[0];
       for x := 1 to Length(aParts) - 1 do
       begin
-        if not endsText(aSeparator, Result) then
-          Result := Result + aSeparator;
+        if not endsText(aSeparator, result) then
+          result := result + aSeparator;
         if startsText(aSeparator, aParts[x]) then
-          Result := Result + copy(aParts[x], Length(aSeparator) + 1, Length(aParts[x]))
+          result := result + copy(aParts[x], Length(aSeparator) + 1, Length(aParts[x]))
         else
-          Result := Result + aParts[x];
+          result := result + aParts[x];
       end;
     end;
   end;
@@ -330,11 +357,11 @@ begin
   if Length(AFilter) = 0 then
     Exit(true);
 
-  Result := false;
+  result := false;
   for LFilter in AFilter do
   begin
-    Result := masks.MatchesMask(aText, LFilter);
-    if Result then
+    result := system.Masks.MatchesMask(aText, LFilter);
+    if result then
       break;
   end;
 
@@ -342,7 +369,7 @@ end;
 
 Function ExpandEnvVars(const aText: String; const aStartToken: String = '%'; const aEndToken: String = '%'): String;
 begin
-  Result := ReplacePlaceholder(
+  result := ReplacePlaceholder(
     aText, aStartToken, aEndToken,
 
       procedure(
@@ -369,9 +396,9 @@ end;
 Function StrCmpLogical(Const left, right: String): Integer;
 Begin
   {$IFDEF MSWINDOWS}
-  Result := StrCmpLogicalW(PWideChar(left), PWideChar(right));
+  result := StrCmpLogicalW(PWideChar(left), PWideChar(right));
   {$ELSE}
-  Result:= CompareStr(Left, Right);
+  result := CompareStr(left, right);
   {$ENDIF}
 End;
 
@@ -379,119 +406,167 @@ End;
 
 class function TFilterEx.Create(const aFilterText: String): TFilterEx;
 begin
-  Result:= Default(TFIlterEx);
-  Result.Prepare(aFilterText);
+  result := Default (TFilterEx);
+  result.Prepare(aFilterText);
 end;
 
 procedure TFilterEx.Prepare(const aText: String);
 var
   ar: TArray<String>;
-  fi: TFilterItem ;
+  fi: TFilterItem;
   l: TStringList;
   p: String;
+  k: TKind;
 begin
-  gc(l, TStringList.create);
-  l.StrictDelimiter:= true;
+  gc(l, TStringList.Create);
+  l.StrictDelimiter := true;
   l.Delimiter := '|';
-  l.QuoteChar:= '"';
+  l.QuoteChar := '"';
 
-  fOrgFilterText:= aText;
-  ar := SplitBySpace(trim(aText));
-  SetLength(fFilter, length(ar));
-  for var X := 0 to High(ar) do
+  fOrgFilterText := aText;
+  ar := SplitBySpace(AnsiLowercase(trim(aText)));
+  SetLength(fFilter, Length(ar));
+  for var x := 0 to High(ar) do
   begin
-    fi := default(TFilterItem);
+    fi := default (TFilterItem);
     p := trim(ar[x]);
-    if p='' then
+    if p = '' then
       continue;
-    fi.OrgText:= p;
+    fi.OrgText := p;
     if startsText('!', p) then
     begin
-      delete(p, 1, 1);
-      fi.IsNegated:= true;
-      if p='' then
+      Delete(p, 1, 1);
+      fi.IsNegated := true;
+      if p = '' then
         continue;
     end;
 
-    l.DelimitedText:= p;
+    l.DelimitedText := p;
 
-    setLength(fi.OrElements, l.Count);
-    for var Y := 0 to l.count -1 do
+    SetLength(fi.OrElements, l.Count);
+    SetLength(fi.OrElementKinds, l.Count);
+    for var Y := 0 to l.Count - 1 do
     begin
-      p:= l[y];
-      if not p.contains('*') then
-        p:= '*' + p + '*';
-      fi.OrElements[y]:= p;
+      p := l[Y];
+      Preprocess(p, k);
+      fi.OrElements[Y] := p;
+      fi.OrElementKinds[Y] := k;
     end;
-    fFilter[x]:= fi;
+    fFilter[x] := fi;
   end;
+end;
 
+procedure TFilterEx.Preprocess(var p: String; out k: TKind);
+var
+  i1, i2: Integer;
+begin
+  if pos('?', p) > 0 then
+    k := kMask
+  else begin
+    i1 := pos('*', p);
+    if i1 < 1 then
+      k := kContains
+    else if i1 = Length(p) then
+    begin
+      Delete(p, Length(p), 1);
+      k := kStarts;
+    end else if i1 = 1 then
+    begin
+      i2 := 2;
+      i2 := PosEx('*', p, i2);
+      if i2 < 1 then
+      begin
+        Delete(p, 1, 1);
+        k := kEnds;
+      end else if i2 = Length(p) then
+      begin
+        p := copy(p, 2, Length(p) - 2);
+        k := kContains;
+      end
+      else
+        k := kMask;
+    end
+    else
+      k := kMask;
+  end;
 end;
 
 function TFilterEx.SplitBySpace(const aText: String): TArray<String>;
 var
-  s, p: String;
-  i1, i2: integer;
+  S, p: String;
+  i1, i2: Integer;
   l: TList<String>;
   lIsInQuote: boolean;
-  c: char;
+  C: char;
 begin
-  s:= aText + ' ';
-  gc(l, TList<String>.create);
-  lIsInQuote:= false;
-  i1:= 1;
-  i2:= 1;// why not 2? because the first char may contain a '"' char....
+  S := aText + ' ';
+  gc(l, TList<String>.Create);
+  lIsInQuote := false;
+  i1 := 1;
+  i2 := 1; // why not 2? because the first char may contain a '"' char....
 
-  while i2<=length(s) do
+  while i2 <= Length(S) do
   begin
-    c:= s[i2];
+    C := S[i2];
     if lIsInQuote then
     begin
-      if c='"' then
-        lIsInQuote:= false;
+      if C = '"' then
+        lIsInQuote := false;
 
-    end else if c = '"' then
-      lIsInQuote:= true
-    else if c = ' ' then
+    end else if C = '"' then
+      lIsInQuote := true
+    else if C = ' ' then
     begin
       if i1 <> i2 then
       begin
-        p:= copy(s, i1, (i2-i1));
+        p := copy(S, i1, (i2 - i1));
         l.add(p);
       end;
-      i1:= i2+1;
+      i1 := i2 + 1;
     end;
     inc(i2);
   end;
 
-  Result:= l.ToArray;
+  result := l.ToArray;
 end;
 
-function TFilterEx.Matches(const aText: String): Boolean;
+function TFilterEx.Matches(const aText: String): boolean;
 var
-  lMatchesANy: Boolean;
+  lMatchesANy: boolean;
   fi: TFilterItem;
-  r: Boolean;
+  S: String;
+  lText: String;
 begin
-  Result := true;
+  result := true;
+
+  lText := AnsiLowercase(aText);
   for fi in fFilter do
   begin
-    lMatchesANy := False;
-    for var s in fi.OrElements do
-      if system.masks.MatchesMask(aText, s) then
-      begin
-        lMatchesANy:= true;
-        break;
+    lMatchesANy := false;
+    for var x := 0 to Length(fi.OrElements) - 1 do
+    begin
+      S := fi.OrElements[x];
+      case fi.OrElementKinds[x] of
+        kMask:
+          lMatchesANy := system.Masks.MatchesMask(lText, S);
+        kContains:
+          lMatchesANy := lText.Contains(S);
+        kStarts:
+          lMatchesANy := StartsStr(S, lText);
+        kEnds:
+          lMatchesANy := EndsStr(S, lText);
       end;
+      if lMatchesANy then
+        break;
+    end;
 
     if fi.IsNegated then
     begin
-      if lMatchesANy  then
-        exit(false);
+      if lMatchesANy then
+        Exit(false);
     end else if not lMatchesANy then
-      exit(false);
+      Exit(false);
   end;
 end;
-
 
 end.

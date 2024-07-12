@@ -1,4 +1,4 @@
-unit MaxLogic.FastList;
+Tunit MaxLogic.FastList;
 
 { *******************************************************
 
@@ -104,6 +104,7 @@ private
   function DoFind(const id: TKey;
     var L, H: Integer;
     out index: Integer): boolean;
+  inline;
 public
   // you have direct access to the underlying itens, but, do not change the iid, otherwise you will need to resort the array
   Items: array of TIDSortedListItem;
@@ -148,6 +149,10 @@ public
   procedure TrimExcess;
   virtual;
 
+  // re-sort the underlying array
+  // useful if you used the insert method to append values
+  Procedure Sort;
+
   // please note, this will work only if TKey and TValue are neither strings,pointers, classes or interfaces
   // that is here mostly for backwards compatibility
   procedure SaveToStream(Stream: TStream);
@@ -168,6 +173,8 @@ public
   property GrowthFactor: single read FGrowthFactor write SetGrowthFactor;
   // ATTENTION: Existing values are not checked to be unique. this applies only to adding values
   property DupIgnore: boolean read FDupIgnore write SetDupIgnore;
+  // ATTENTION: call sort() to re-sort the underlying array
+  property Comparer: IComparer<TKey> read fComparer write fComparer;
   end;
 
   TIdIntegerSortedList = TSortedList<Integer, Pointer>;
@@ -1810,6 +1817,18 @@ begin
     raise EArgumentOutOfRangeException.CreateRes(@SArgumentOutOfRange);
 end;
 
+procedure TSortedList<TKey, TValue>.Sort;
+var
+  lComparer: IComparer<TIDSortedListItem>;
+begin
+  lComparer := TComparer<TIDSortedListItem>.Construct(function(const Item1, Item2: TIDSortedListItem): Integer
+    begin
+      Result := fComparer.Compare(Item1.IID, Item2.IID);
+    end);
+
+  TArray.Sort<TIDSortedListItem>(Items, lComparer, 0, fCount);
+end;
+
 { TIDSortedList2 }
 
 procedure TIDSortedList2.add(p1, p2: Pointer; id: Integer);
@@ -1876,17 +1895,17 @@ begin
 end;
 
 procedure TIDSortedList2.SetItem_Data1(index: Integer;
-  const
-    Value:
-    Pointer);
+const
+  Value:
+  Pointer);
 begin
   Items[index].Data.Data1 := Value;
 end;
 
 procedure TIDSortedList2.SetItem_Data2(index: Integer;
-  const
-    Value:
-    Pointer);
+const
+  Value:
+  Pointer);
 begin
 
   Items[index].Data.Data2 := Value;
@@ -1982,9 +2001,9 @@ begin
 end;
 
 procedure TSortedList<TKey, TValue>.SetGrowthFactor(
-  const
-    Value:
-    single);
+const
+  Value:
+  single);
 begin
   if Value > 1.0 then
     FGrowthFactor := Value;
@@ -2044,7 +2063,7 @@ begin
 end;
 
 function TSortedList<TKey, TValue>.FindValuesBetween(const aLeftKey, aRightKey: TKey;
-  out aLowIndex, aHighIndex: Integer): boolean;
+out aLowIndex, aHighIndex: Integer): boolean;
 var
   C: Integer;
   lLow, lHigh: Integer;
