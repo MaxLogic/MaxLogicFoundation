@@ -113,6 +113,9 @@ type
     function Matches(const aText: String): boolean;
   end;
 
+Procedure Split(Const line: String; Delimiter: char; strings: TStringList); overload;
+Procedure Split(Const line: String; Delimiter: char; out strings: TArray<String>); overload;
+
 implementation
 
 uses
@@ -567,6 +570,32 @@ begin
     end else if not lMatchesANy then
       Exit(false);
   end;
+end;
+
+{ other }
+
+Procedure Split(Const line: String; Delimiter: char; out strings: TArray<String>);
+Var
+  l: TStringList;
+Begin
+  l := TStringList.Create;
+  l.StrictDelimiter := true;
+  l.Delimiter := Delimiter;
+  l.DelimitedText := line;
+  Strings:= l.ToStringArray;
+  l.Free;
+end;
+
+Procedure Split(Const line: String; Delimiter: char; strings: TStringList);
+Var
+  l: TStringList;
+Begin
+  l := TStringList.Create;
+  l.StrictDelimiter := true;
+  l.Delimiter := Delimiter;
+  l.DelimitedText := line;
+  strings.Assign(l);
+  l.Free;
 end;
 
 end.

@@ -78,6 +78,9 @@ function ConvertToValidDirectoryName(const aText: string; aReplaceInvalidCharsWi
 /// </summary>
 function LongFileNameFix(const aFileName: String): String;
 
+// ensures the last char is TPath.DirectorySeparatorChar
+function SLASH(const ApATH: String): String;
+
 Implementation
 
 Uses
@@ -440,6 +443,14 @@ begin
     Result := LocalPrefix + Result;
 
   {$ENDIF}
+end;
+
+function SLASH(const ApATH: String): String;
+begin
+  if (aPath <> '') and (aPath[length(aPath)] <> TPath.DirectorySeparatorChar) then
+    Result:= aPath + TPath.DirectorySeparatorChar
+  else
+    Result:= aPath;
 end;
 
 End.

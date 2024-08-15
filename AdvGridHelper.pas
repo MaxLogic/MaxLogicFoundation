@@ -4,8 +4,8 @@ Unit AdvGridHelper;
 Interface
 
 Uses
-  windows, SysUtils, classes, AdvGrid, AdvGridWorkbook, Graphics, forms,
-  ExtCtrls, generics.collections;
+  winApi.windows, system.SysUtils, system.classes, AdvGrid, AdvGridWorkbook, vcl.Graphics, vcl.forms,
+  vcl.ExtCtrls, generics.collections;
 
 Type
   TGridAdjuster = Class(TObject)
@@ -46,7 +46,7 @@ Procedure ResizeColumns(Grid: TadvStringGrid; PreventShrinkingOfColumns: boolean
 Implementation
 
 Uses
-  pawel1, IniFiles, BaseGrid, math;
+  IniFiles, BaseGrid, math, MaxLogic.HtmlUtils;
 
 CONST
   CELL_MARGINS = 10;
@@ -115,7 +115,7 @@ Var
 Begin
   For c := 0 To Grid.colCount - 1 Do
   Begin
-      w := 0;
+    w := 0;
     For r := 0 To Grid.rowCount - 1 Do
       If Grid.CellSpan(c, r).x = 0 Then
         w := Max(w, ws[c, r]);
@@ -173,9 +173,9 @@ Begin
   For r := 0 To Grid.rowCount - 1 Do
     For c := 0 To Grid.colCount - 1 Do
     Begin
-        s := Grid.cells[c, r];
+      s := Grid.cells[c, r];
       If Grid.EnableHTML Then
-        s := pawel1.HtmlToText(s);
+        s := HtmlToText(s);
 
       ws[c, r] := 0;
       If s <> '' Then
@@ -187,7 +187,7 @@ Begin
             w := integer(WidthCache_hdr.objects[CacheIndex])
           Else
           Begin
-              w := hdr.TextWidth(s);
+            w := hdr.TextWidth(s);
             WidthCache_hdr.addObject(s, pointer(w));
           End;
         End
@@ -197,7 +197,7 @@ Begin
             w := integer(WidthCache_nrm.objects[CacheIndex])
           Else
           Begin
-              w := nrm.TextWidth(s);
+            w := nrm.TextWidth(s);
             WidthCache_nrm.addObject(s, pointer(w));
           End;
         End;
@@ -235,16 +235,16 @@ Begin
     For r := Grid.rowCount - 1 Downto 0 Do
       If Grid.CellSpan(c, r).x > 0 Then
       Begin
-          cp := Grid.CellProperties[c, r];
+        cp := Grid.CellProperties[c, r];
         If (cp.CellSpanX > 0) And cp.IsBaseCell Then
         Begin
-            w := 0;
+          w := 0;
           For i := 0 To cp.CellSpanX Do
             inc(w, cw[i + c]);
 
           If ws[c, r] > w Then
           Begin
-              diff := ws[c, r] - w;
+            diff := ws[c, r] - w;
             diff := diff / (cp.CellSpanX + 1);
             iDiff := RoundUp(diff);
             For i := 0 To cp.CellSpanX Do
@@ -263,7 +263,7 @@ Var
 Begin
   For x := 0 To Grid.SelectedRowCount - 1 Do
   Begin
-      i := Grid.SelectedRow[x];
+    i := Grid.SelectedRow[x];
     RowIndices.add(i);
   End;
 End;
