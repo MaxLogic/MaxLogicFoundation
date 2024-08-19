@@ -115,6 +115,7 @@ type
 
 Procedure Split(Const line: String; Delimiter: char; strings: TStringList); overload;
 Procedure Split(Const line: String; Delimiter: char; out strings: TArray<String>); overload;
+function Split(Delimiter: char;  Const line: String): TArray<String>; overload;
 
 implementation
 
@@ -573,6 +574,11 @@ begin
 end;
 
 { other }
+
+function Split(Delimiter: char;  Const line: String): TArray<String>;
+begin
+  Split(Line, delimiter, Result);
+end;
 
 Procedure Split(Const line: String; Delimiter: char; out strings: TArray<String>);
 Var

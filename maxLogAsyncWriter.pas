@@ -23,9 +23,13 @@ Unit maxLogAsyncWriter;
   2014-05-13: Limited the pagesize to 1 MB.
   2014-04-26 - extended the delay to 300 ms
   2014-03-20: first implementation }
+
 Interface
 
 Uses
+  {$IFDEF madExcept}
+  madExcept,
+  {$ENDIF}
   windows, classes, sysUtils, maxAsync, generics.collections,
   synCommons, SynCrypto, diagnostics;
 
@@ -1063,6 +1067,11 @@ Begin
 End;
 
 Initialization
+
+  {$IFDEF madExcept}
+  HideLeak ('TBinaryLogWriter.Create');
+  // this is a singelton and is destroyed in the finalisation section
+  {$ENDIF}
 
 
 Finalization

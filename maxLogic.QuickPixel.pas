@@ -14,7 +14,7 @@ unit maxLogic.QuickPixel;
 interface
 
 uses
-  Windows, sysUtils, Classes, Graphics, Dialogs, bsUTILS;
+  winApi.Windows, system.sysUtils, system.Classes, Graphics, Dialogs, types;
 
 type
 
@@ -145,46 +145,35 @@ function GetPaletteEntries(Palette: HPALETTE; StartIndex, NumEntries: UINT;
   PaletteEntries: pPaletteEntry): UINT; stdcall;
 function GetBpp(PixelFormat: TPixelFormat): Byte;
 
-// copies from a hBitmap to a TBitmap
-function CopyBmp(aSource: HBITMAP; aDestination: TBitmap): boolean;
+// copies from a HBitmap to a TBitmap
+function CopyBmp(aSource: HBitmap; aDestination: TBitmap): boolean;
 
 implementation
 
 uses
-  system.math, autoFree;
+  system.math, autoFree, MaxLogic.ioUtils;
 
 const
   CR = #13 + #10;
 
-function CopyBmp(aSource: HBITMAP; aDestination: TBitmap): boolean;
+function CopyBmp(aSource: HBitmap; aDestination: TBitmap): boolean;
 var
   lSrc: TBitmap;
 begin
-  if aSource = 0 then
+  Result:= False;
+  if (aSource = 0) then
     Exit(False);
 
   // http://docwiki.embarcadero.com/Libraries/Berlin/en/Vcl.Graphics.TBitmap.Handle
-  // Handle is the HBITMAP encapsulated by the bitmap object. Avoid grabbing the handle directly since it causes the HBITMAP to be copied if more than one TBitmap shares the handle.
+  // Handle is the HBitmap encapsulated by the bitmap object. Avoid grabbing the handle directly since it causes the HBitmap to be copied if more than one TBitmap shares the handle.
   // ok but we wanna a real copy, so we need to create a bitmap, grap the handle, and then copy it to the actuall result bitmap
-  result := true;
-  lSrc := TBitmap.Create;
-  lSrc.Handle := aSource;
-  { if (lSrc.width <> 0)and (lSrc.height<>0) then
-    aDestination.assign(lSrc)
-    else
-    result:= false;
-  }
-  aDestination.PixelFormat := lSrc.PixelFormat;
-  aDestination.Width := lSrc.Width;
-  aDestination.Height := lSrc.Height;
-
-  aDestination.Canvas.copyRect(
-    aDestination.Canvas.ClipRect,
-    lSrc.Canvas,
-    aDestination.Canvas.ClipRect);
-
-  lSrc.ReleaseHandle;
-  lSrc.Free;
+  try
+    aDestination.Handle := aSource;
+    aDestination.FreeImage; // creates an independant copy
+    Result := True;
+  except
+    Result:= False;
+  end;
 end;
 
 function fstr(s: single; vs, ns: Byte): string;
@@ -813,7 +802,7 @@ begin
     lMask := TBitmap.Create;
     qpMask := nil;
     try
-      lMask.Handle := FBitmap.MaskHandle;
+      copyBmp(FBitmap.MaskHandle,  lMask) ;
       qpMask := TQuickPixel.Create(lMask);
       if not FBitmap.transparent then // well, sometimes it still is transparent
       begin
@@ -928,7 +917,7 @@ begin
   if PaletteCount > 0 then
   begin
     SetLength(Palette, PaletteCount);
-    PaletteCount := Windows.GetPaletteEntries(
+    PaletteCount := winApi.Windows.GetPaletteEntries(
       FBitmap.Palette,
       0,
       PaletteCount,

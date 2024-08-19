@@ -171,6 +171,7 @@ function sameScaleFactor(const v1, v2: Single): Boolean;
 
 function TryScale(aOwner: TComponent; const p: TPoint): TPoint;
 
+
 implementation
 
 uses
@@ -253,6 +254,7 @@ begin
   if Center then
     OffsetRect(Result, (cw - w) div 2, (ch - h) div 2);
 end;
+
 
 function TryScale(aOwner: TComponent; const p: TPoint): TPoint;
 var
@@ -382,27 +384,19 @@ var
   p: TPoint;
 begin
   Result := nil;
+  if aImageList.Count = 0 then
+    Exit;
 
   lMarker := GetOrAddMarker(aImageList, lIsNew);
-  if not lIsNew then
-  begin
-    if lMarker <> nil then
-      Result := lMarker.VirtualImageList;
-    Exit; // we already processed this
-  end;
+  if (not lIsNew) and Assigned(lMarker.VirtualImageList) then
+    Exit(lMarker.VirtualImageList); // we already processed this
+
+  gc(lBitmap, TBitmap.Create);
+  if not maxLogic.QuickPixel.CopyBmp(aImageList.GetImageBitmap, lBitmap) then
+    Exit;
 
   vl := CreateVirtualImgList(aImageList.Owner, lMarker, aImageList.Width, aImageList.Height);
   Result := lMarker.VirtualImageList;
-
-  gc(lBitmap, TBitmap.Create);
-
-  b := TBitmap.Create;
-  try
-    b.Handle := aImageList.GetImageBitmap;
-    lBitmap.assign(b);
-  finally
-    b.Free;
-  end;
 
   qpItem := nil;
   b := TBitmap.Create;
@@ -418,7 +412,9 @@ begin
     ImagesperColumn := lBitmap.Height div aImageList.Height;
 
     b.assign(lBitmap);
+    b.FreeImage; // creates an independant copy
     b.SetSize(aImageList.Width, aImageList.Height);
+
     srcRect := rect(0, 0, aImageList.Width, aImageList.Height);
     qpItem := TQuickPixel.Create(b);
     for var lglyphIndex := 0 to aImageList.Count - 1 do
@@ -440,19 +436,6 @@ begin
     qpItem.Free;
     b.Free;
   end;
-
-  {
-    lBitmap.SetSize(aImageList.Width, aImageList.Height);
-    lBitmap.pixelformat := pf32bit;
-
-    for i := 0 to aImageList.Count - 1 do
-    begin
-    aImageList.GetBitmap(i, lBitmap); // Copy the image from the ImageList to the bitmap
-    lImageName := 'IL_' + IntToHex(nativeInt(Pointer(aImageList)), 1) + '_' + i.ToString;
-    AddToImageCol(lImageName, lBitmap);
-    vl.Add(lImageName, lImageName, False);
-    end; }
-
 end;
 
 function THighDpiAdjuster.AdjustUsingRttiLookingForGlyphAndImageName(
@@ -579,7 +562,7 @@ begin
   if c is TImage then
     AdjustTImage(TImage(c))
   else if (c is TImageList) and (not(c is TVirtualImageList)) then
-    AdjustTImageList(c as TImageList)
+      AdjustTImageList(c as TImageList)
   else begin
     if not AdjustUsingRttiLookingForGlyphAndImageName(c) then
       RedirectImageListReferenceToVirtualImage(c);
@@ -724,6 +707,7 @@ begin
   begin
     lGarbo := gc(lBmp, TBitmap.Create);
     lBmp.assign(aGraphic);
+    lBmp.FreeImage; // creates an independant copy
     TQuickPixel.MaskToAlphaChannel(lBmp);
     aGraphic := lBmp;
   end;
@@ -1018,6 +1002,7 @@ begin
   lBitmap.assign(aGlyph);
   if (lBitmap.Width = 0) or (lBitmap.Height = 0) then
     Exit;
+  lBitmap.FreeImage; // creates an independant copy
 
   TQuickPixel.MaskToAlphaChannel(lBitmap);
 
@@ -1032,6 +1017,7 @@ begin
     lItem := TGlyphCollectionItem.Create;
     Items.Add(lItem);
     lItem.Image.assign(lBitmap);
+    lItem.Image.FreeImage; // creates an independant copy
 
     if x <> 0 then
     begin
