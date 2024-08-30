@@ -253,9 +253,12 @@ Begin
     End;
 
   If RequireQuote Then
-    s := self.FQuoteChar +
-      StringReplace(s, FQuoteChar, FQuoteChar + FQuoteChar, [rfReplaceAll]) +
-      self.FQuoteChar;;
+  begin
+    var lQuoteChar:= string(FQuoteChar); // prevent compuler warning: Implicit string cast from 'AnsiChar' to 'string'
+    s := lQuoteChar +
+      StringReplace(s, lQuoteChar, lQuoteChar + lQuoteChar, [rfReplaceAll]) +
+      lQuoteChar;
+  end;
 
   bytes := fEncoding.getbytes(s);
   If length(bytes) <> 0 Then
