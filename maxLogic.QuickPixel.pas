@@ -151,7 +151,7 @@ function CopyBmp(aSource: HBitmap; aDestination: TBitmap): boolean;
 implementation
 
 uses
-  system.math, autoFree, MaxLogic.ioUtils;
+  system.math, autoFree, maxLogic.ioUtils;
 
 const
   CR = #13 + #10;
@@ -160,7 +160,7 @@ function CopyBmp(aSource: HBitmap; aDestination: TBitmap): boolean;
 var
   lSrc: TBitmap;
 begin
-  Result:= False;
+  Result := False;
   if (aSource = 0) then
     Exit(False);
 
@@ -172,36 +172,36 @@ begin
     aDestination.FreeImage; // creates an independant copy
     Result := True;
   except
-    Result:= False;
+    Result := False;
   end;
 end;
 
 function fstr(s: single; vs, ns: Byte): string;
 begin
-  str(s: vs: ns, result);
+  str(s: vs: ns, Result);
 end;
 
 function PixelFormatToStr(PixelFormat: TPixelFormat): string;
 begin
   case PixelFormat of
     pfDevice:
-      result := 'pfDevice';
+      Result := 'pfDevice';
     pf1bit:
-      result := 'pf1bit';
+      Result := 'pf1bit';
     pf4bit:
-      result := 'pf4bit';
+      Result := 'pf4bit';
     pf8bit:
-      result := 'pf8bit';
+      Result := 'pf8bit';
     pf15bit:
-      result := 'pf15bit';
+      Result := 'pf15bit';
     pf16bit:
-      result := 'pf16bit';
+      Result := 'pf16bit';
     pf24bit:
-      result := 'pf24bit';
+      Result := 'pf24bit';
     pf32bit:
-      result := 'pf32bit';
+      Result := 'pf32bit';
     pfCustom:
-      result := 'pfCustom';
+      Result := 'pfCustom';
   end;
 end;
 
@@ -209,28 +209,28 @@ function GetBpp(PixelFormat: TPixelFormat): Byte;
 begin
   case PixelFormat of
     pf1bit:
-      result := 1;
+      Result := 1;
     pf4bit:
-      result := 4;
+      Result := 4;
     pf8bit:
-      result := 8;
+      Result := 8;
     pf15bit:
-      result := 15;
+      Result := 15;
     pf16bit:
-      result := 16;
+      Result := 16;
     pf24bit:
-      result := 24;
+      Result := 24;
     pf32bit:
-      result := 21;
+      Result := 21;
   else
     MessageDlg('Unknown PixelFormat', mtError, [mbOK], 0);
-    result := 0;
+    Result := 0;
   end;
 end;
 
 function RandomColor: TColor;
 begin
-  result := (random(256) shl 16) + (random(256) shl 8) + random(256);
+  Result := (random(256) shl 16) + (random(256) shl 8) + random(256);
   ;
 end;
 
@@ -246,7 +246,7 @@ const
 function RGBTopf15Bit(Rgb: TRGB): word;
 begin
   with Rgb do
-    result :=
+    Result :=
       (Trunc(R * pf24Topf15Ratio) shl 10) or
       (Trunc(G * pf24Topf15Ratio) shl 5) or
       Trunc(B * pf24Topf15Ratio);
@@ -258,9 +258,9 @@ var
 begin
   w := Trunc(s);
   if w > $FF then
-    result := $FF
+    Result := $FF
   else
-    result := w;
+    Result := w;
 end;
 
 // pf15bit:   0 rrrrr ggggg bbbbb
@@ -269,7 +269,7 @@ var
   m: word;
 begin
   m := $FF shr 3;
-  with result do
+  with Result do
   begin
     B := Trb((w and m) * pf15Topf24Ratio);
     G := Trb(((w shr 5) and m) * pf15Topf24Ratio);
@@ -284,7 +284,7 @@ var
   be: Byte;
 begin
   m := $FF shr 3;
-  with result do
+  with Result do
   begin
     be := (w and m);
     B := Trb(be * pf15Topf24Ratio);
@@ -298,26 +298,26 @@ end;
 
 function pf1bitsToBool(Bits, PixelIndex: Byte): boolean;
 begin
-  result := pf1bitsToByte(Bits, PixelIndex) = 1;
+  Result := pf1bitsToByte(Bits, PixelIndex) = 1;
 end;
 
 function pf1bitsToByte(Bits, PixelIndex: Byte): Byte;
 begin
   Bits := Bits and (1 shl (7 - PixelIndex));
   Bits := Bits shr (7 - PixelIndex);
-  result := Bits;
+  Result := Bits;
 end;
 
 function pf4bitsToByte(Bits: Byte; FirstPixel: boolean): Byte;
 begin
   if FirstPixel then
   begin
-    result := (Bits shr 4);
+    Result := (Bits shr 4);
   end
   else
   begin
 
-    result := Bits and ($FF shr 4);
+    Result := Bits and ($FF shr 4);
   end;
 end;
 
@@ -328,7 +328,7 @@ function GetPaletteEntries; external gdi32 name 'GetPaletteEntries';
 
 function RGBToRGBA(Rgb: TRGB): TRGBA;
 begin
-  with result do
+  with Result do
   begin
     R := Rgb.R;
     G := Rgb.G;
@@ -339,7 +339,7 @@ end;
 
 function RGBAToRGB(Rgba: TRGBA): TRGB;
 begin
-  with result do
+  with Result do
   begin
     R := Rgba.R;
     G := Rgba.G;
@@ -352,24 +352,24 @@ begin
   if Color < 0 then
     Color := GetSysColor(Color and $000000FF);
 
-  result.R := ($000000FF and Color);
-  result.G := ($0000FF00 and Color) shr 8;
-  result.B := ($00FF0000 and Color) shr 16;
+  Result.R := ($000000FF and Color);
+  Result.G := ($0000FF00 and Color) shr 8;
+  Result.B := ($00FF0000 and Color) shr 16;
 end;
 
 function RGBToColor(Rgb: TRGB): TColor;
 begin
-  result := (Rgb.B shl 16) or (Rgb.G shl 8) or Rgb.R
+  Result := (Rgb.B shl 16) or (Rgb.G shl 8) or Rgb.R
 end;
 
 function RGBAToColor(Rgba: TRGBA): TColor;
 begin
-  result := (Rgba.A shl 24) or (Rgba.B shl 16) or (Rgba.G shl 8) or Rgba.R
+  Result := (Rgba.A shl 24) or (Rgba.B shl 16) or (Rgba.G shl 8) or Rgba.R
 end;
 
 function PaletteToCOlor(const p: TPaletteEntry): TColor;
 begin
-  result :=
+  Result :=
   // (p.peFlags shl 24) or
     (p.peBlue shl 16) or
     (p.peGreen shl 8) or
@@ -381,10 +381,10 @@ begin
   if Color < 0 then
     Color := GetSysColor(Color and $000000FF);
 
-  result.R := ($000000FF and Color);
-  result.G := ($0000FF00 and Color) shr 8;
-  result.B := ($00FF0000 and Color) shr 16;
-  result.A := ($FF000000 and Color) shr 24;
+  Result.R := ($000000FF and Color);
+  Result.G := ($0000FF00 and Color) shr 8;
+  Result.B := ($00FF0000 and Color) shr 16;
+  Result.A := ($FF000000 and Color) shr 24;
 end;
 { TQuickPixel }
 
@@ -393,7 +393,7 @@ var
   lHasVisiblePixels, lHasInvisiblePixels, lHasSemiTransparentPixels: boolean;
 begin
   ScanAlphaChannel(lHasVisiblePixels, lHasInvisiblePixels, lHasSemiTransparentPixels);
-  result := not lHasSemiTransparentPixels;
+  Result := not lHasSemiTransparentPixels;
 end;
 
 procedure TQuickPixel.ApplyMask(aMask: TBitmap;
@@ -411,7 +411,7 @@ begin
         if m.RGBPixel[x, y].R <> 0 then
           self.RGBPixel[x, y] := lTrans;
       end;
-    FBitmap.transparent := true;
+    FBitmap.transparent := True;
     FBitmap.TransparentMode := tmFixed;
     FBitmap.TransparentColor := aUseTransparentColor;
   finally
@@ -571,7 +571,7 @@ begin
     raise exception.Create('Bits are accesable only for FixelFormat pf1bit')
   else
   begin
-    result := self.GetPaletteIndex(x, y) = 1;
+    Result := self.GetPaletteIndex(x, y) = 1;
   end;
 end;
 
@@ -582,17 +582,17 @@ var
 begin
   index := GetPaletteIndex(x, y);
   PaletteEntry := self.Palette[index];
-  result := true;
+  Result := True;
 end;
 
 function TQuickPixel.GetHeight: integer;
 begin
-  result := FBitmap.Height;
+  Result := FBitmap.Height;
 end;
 
 function TQuickPixel.GetLineScan(y: integer): Pointer;
 begin
-  result := self.FScanLines[y];
+  Result := self.FScanLines[y];
 end;
 
 function TQuickPixel.GetPaletteIndex(x, y: integer): word;
@@ -607,19 +607,19 @@ begin
         ByteIndex := x div 8;
         BitIndex := x - (ByteIndex * 8);
         inc(pb, ByteIndex);
-        result := pf1bitsToByte(pb^, BitIndex)
+        Result := pf1bitsToByte(pb^, BitIndex)
       end;
     pf4bit:
       begin
         ByteIndex := x div 2;
         inc(pb, ByteIndex);
-        result := pf4bitsToByte(pb^, 0 = x - (ByteIndex * 2))
+        Result := pf4bitsToByte(pb^, 0 = x - (ByteIndex * 2))
 
       end;
     pf8bit:
       begin
         inc(pb, x);
-        result := pb^;
+        Result := pb^;
       end;
   else
     raise exception.Create(PixelFormatToStr(PixelFormat) + ' is not a Pallette supported Pixel Format');
@@ -635,34 +635,34 @@ begin
       pf8bit,
       pf1bit:
       begin
-        result := Colors[GetPaletteIndex(x, y)];
+        Result := Colors[GetPaletteIndex(x, y)];
       end;
 
     pf15bit:
       begin
         pw := FScanLines[y];
         inc(pw, x);
-        result := RGBToColor(pf15bitToRGB(pw^));
+        Result := RGBToColor(pf15bitToRGB(pw^));
       end;
     pf16bit:
       begin
         pw := FScanLines[y];
         inc(pw, x);
-        result := RGBToColor(pf16bitToRGB(pw^));
+        Result := RGBToColor(pf16bitToRGB(pw^));
       end;
     pf24bit:
-      result := RGBToColor(GetRGB(x, y));
+      Result := RGBToColor(GetRGB(x, y));
     pf32bit:
-      result := RGBAToColor(GetRGBA(x, y));
+      Result := RGBAToColor(GetRGBA(x, y));
   else
-    result := FBitmap.Canvas.pixels[x, y];
+    Result := FBitmap.Canvas.pixels[x, y];
   end;
 
 end;
 
 function TQuickPixel.GetPixelFormat: TPixelFormat;
 begin
-  result := FBitmap.PixelFormat;
+  Result := FBitmap.PixelFormat;
 end;
 
 function TQuickPixel.GetRGB(x, y: integer): TRGB;
@@ -680,40 +680,40 @@ begin
       pf8bit:
       begin
         if GetByPalette(x, y, PaletteEntry) then
-          with result do
+          with Result do
           begin
             R := PaletteEntry.peRed;
             G := PaletteEntry.peGreen;
             B := PaletteEntry.peBlue;
           end
         else
-          result := ColorToRGB(FBitmap.Canvas.pixels[x, y]);
+          Result := ColorToRGB(FBitmap.Canvas.pixels[x, y]);
       end;
     pf15bit:
       begin
         pw := FScanLines[y];
         inc(pw, x);
-        result := pf15bitToRGB(pw^);
+        Result := pf15bitToRGB(pw^);
       end;
     pf16bit:
       begin
         pw := FScanLines[y];
         inc(pw, x);
-        result := pf16bitToRGB(pw^);
+        Result := pf16bitToRGB(pw^);
       end;
     pf24bit:
       begin
         p24 := pRGB(pb);
         inc(p24, x);
-        result := p24^;
+        Result := p24^;
       end;
     pf32bit:
       begin
         inc(pb, x * 4);
-        result := pRGB(pb)^;
+        Result := pRGB(pb)^;
       end;
   else
-    result := ColorToRGB(FBitmap.Canvas.pixels[x, y]);
+    Result := ColorToRGB(FBitmap.Canvas.pixels[x, y]);
   end;
 end;
 
@@ -730,7 +730,7 @@ begin
       pf8bit:
       begin
         if GetByPalette(x, y, PaletteEntry) then
-          with result do
+          with Result do
           begin
             R := PaletteEntry.peRed;
             G := PaletteEntry.peGreen;
@@ -738,40 +738,40 @@ begin
             A := $FF - PaletteEntry.peFlags;
           end
         else
-          result := ColorToRGBA(FBitmap.Canvas.pixels[x, y]);
+          Result := ColorToRGBA(FBitmap.Canvas.pixels[x, y]);
       end;
     pf15bit:
       begin
         pw := FScanLines[y];
         inc(pw, x);
-        result := RGBToRGBA(pf15bitToRGB(pw^));
+        Result := RGBToRGBA(pf15bitToRGB(pw^));
       end;
     pf16bit:
       begin
         pw := FScanLines[y];
         inc(pw, x);
-        result := RGBToRGBA(pf16bitToRGB(pw^));
+        Result := RGBToRGBA(pf16bitToRGB(pw^));
       end;
     pf24bit:
       begin
         pb := FScanLines[y];
         inc(pb, x * 3);
-        result := RGBToRGBA(pRGB(pb)^);
+        Result := RGBToRGBA(pRGB(pb)^);
       end;
     pf32bit:
       begin
         p := FScanLines[y];
         inc(p, x);
-        result := p^;
+        Result := p^;
       end;
   else
-    result := ColorToRGBA(FBitmap.Canvas.pixels[x, y]);
+    Result := ColorToRGBA(FBitmap.Canvas.pixels[x, y]);
   end;
 end;
 
 function TQuickPixel.GetWidth: integer;
 begin
-  result := FBitmap.Width;
+  Result := FBitmap.Width;
 end;
 
 procedure TQuickPixel.MakeNegative;
@@ -802,7 +802,7 @@ begin
     lMask := TBitmap.Create;
     qpMask := nil;
     try
-      copyBmp(FBitmap.MaskHandle,  lMask) ;
+      CopyBmp(FBitmap.MaskHandle, lMask);
       qpMask := TQuickPixel.Create(lMask);
       if not FBitmap.transparent then // well, sometimes it still is transparent
       begin
@@ -813,9 +813,9 @@ begin
           for var x := 0 to lMask.Width - 1 do
           begin
             if qpMask.RGBPixel[x, y].R = 0 then
-              lHas0 := true
+              lHas0 := True
             else
-              lHas1 := true;
+              lHas1 := True;
             if lHas1 and lHas0 then
               break;
           end;
@@ -823,7 +823,7 @@ begin
             break;
         end;
         if lHas1 and lHas0 then
-          FBitmap.transparent := true
+          FBitmap.transparent := True
       end;
 
       if FBitmap.transparent then
@@ -860,11 +860,11 @@ begin
     begin
       case self.RGBAPixel[x, y].A of
         0:
-          aHasInvisiblePixels := true;
+          aHasInvisiblePixels := True;
         255:
-          aHasVisiblePixels := true;
+          aHasVisiblePixels := True;
       else
-        aHasSemiTransparentPixels := true;
+        aHasSemiTransparentPixels := True;
       end;
       // does it make sense to continue scanning?
       if aHasVisiblePixels and aHasInvisiblePixels and aHasSemiTransparentPixels then
@@ -1011,7 +1011,7 @@ begin
     lNeedReassignBitmap := False
   else begin
     FBitmap.PixelFormat := pf32bit;
-    lNeedReassignBitmap := true;
+    lNeedReassignBitmap := True;
   end;
 
   if lNeedReassignBitmap then
@@ -1236,7 +1236,7 @@ end;
 
 class function TRGB.Equal(const Rgb1, Rgb2: TRGB): boolean;
 begin
-  result := (Rgb1.R = Rgb2.R) and (Rgb1.G = Rgb2.G) and (Rgb1.B = Rgb2.B);
+  Result := (Rgb1.R = Rgb2.R) and (Rgb1.G = Rgb2.G) and (Rgb1.B = Rgb2.B);
 end;
 
 procedure TRGB.Clear(SetAllTo: Byte);
@@ -1248,49 +1248,49 @@ end;
 
 class function TRGB.Create(R, G, B: Byte): TRGB;
 begin
-  result.R := R;
-  result.G := G;
-  result.B := B;
+  Result.R := R;
+  Result.G := G;
+  Result.B := B;
 end;
 
 function TRGB.Equal(const aRgb: TRGB): boolean;
 begin
-  result := TRGB.Equal(self, aRgb);
+  Result := TRGB.Equal(self, aRgb);
 end;
 
 class function TRGB.FromColor(aColor: TColor): TRGB;
 begin
-  result := ColorToRGB(aColor);
+  Result := ColorToRGB(aColor);
 end;
 
 function TRGB.ToColor: TColor;
 begin
-  result := RGBToColor(self);
+  Result := RGBToColor(self);
 end;
 
 { TRGBA }
 
 class function TRGBA.Create(R, G, B, A: Byte): TRGBA;
 begin
-  result.R := R;
-  result.G := G;
-  result.B := B;
-  result.A := A;
+  Result.R := R;
+  Result.G := G;
+  Result.B := B;
+  Result.A := A;
 end;
 
 function TRGBA.Equal(const aRgba: TRGBA): boolean;
 begin
-  result := cardinal(self) = cardinal(aRgba);
+  Result := cardinal(self) = cardinal(aRgba);
 end;
 
 class function TRGBA.FromColor(aColor: TColor): TRGBA;
 begin
-  result := ColorToRGBA(aColor);
+  Result := ColorToRGBA(aColor);
 end;
 
 function TRGBA.ToColor: TColor;
 begin
-  result := RGBAToColor(self);
+  Result := RGBAToColor(self);
 end;
 
 end.
