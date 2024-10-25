@@ -4,20 +4,25 @@ Interface
 
 Uses
   System.SysUtils,
+  // set the `UseWSL` conditional on windows to enforce a emulation using the windows subsystem for linux on windows
+  {$IF Defined(MsWindows) AND Defined(UseWSL)}
+  MaxLogic.ioUtils,
+  {$ELSE}
   Posix.Base, Posix.Fcntl,
+  {$IFEND}
   System.Classes,
   System.Generics.Collections;
 
 Type
-  TStrProc = reference To Procedure(Const aText: String);
+  TStrProc = TProc<String>;
 
-  /// <summary>
-  /// executes a linux command.
-  /// it will retrive the terminal output and call the aBufferReady each time we have a chunk of data
-  /// attention: THE LINES WILL END WITH #10, SO YOU MIGHT WANT TO CALL tRIMlEFT ON THE RESULT
-  /// Returns the exit code or -1 if the process failed
-  /// </summary>
-function LinuxCmd(Const aCommand: String; aBufferReady: TStrProc; aMaxLineLength: integer = 512 * 1024): integer; overload;
+/// <summary>
+/// executes a linux command.
+/// it will retrive the terminal output and call the aBufferReady each time we have a chunk of data
+/// attention: THE LINES WILL END WITH #10, SO YOU MIGHT WANT TO CALL tRIMlEFT ON THE RESULT
+/// Returns the exit code or -1 if the process failed
+/// </summary>
+function LinuxCmd(Const aCommand: String; aBufferReady: TStrProc; aBufferSize: integer = 512 * 1024): integer; overload;
 
 /// <summary>
 /// a simplified version of the above.
@@ -30,13 +35,13 @@ Function LinuxCmd(Const aCommand: String; out aExitCode: integer): String; Overl
 
 
 // following are internal methods. They could be in the implementation section but might be used somewhere else too. so I decided to put them here
-
+{$IF NOT(Defined(MsWindows) AND Defined(UseWSL))}
 Type
   TStreamHandle = pointer;
 
-  /// <summary>
-  /// Man Page: http://man7.org/linux/man-pages/man3/fgets.3p.html
-  /// </summary>
+/// <summary>
+/// Man Page: http://man7.org/linux/man-pages/man3/fgets.3p.html
+/// </summary>
 Function fgets(buffer: pointer; size: int32; Stream: TStreamHandle): pointer; Cdecl; External libc Name _PU + 'fgets';
 
 /// <summary>
@@ -53,11 +58,14 @@ Function pclose(filehandle: TStreamHandle): int32; Cdecl; External libc Name _PU
 /// Utility function to return a buffer of ASCII-Z data as a string.
 /// </summary>
 Function BufferToString(buffer: pointer; MaxSize: uint32): String;
+{$IFEND}
 
 Implementation
 
 Uses
   StrUtils;
+
+{$IF NOT(Defined(MsWindows) AND Defined(UseWSL))}
 
 Function BufferToString(buffer: pointer; MaxSize: uint32): String;
 Var
@@ -78,7 +86,7 @@ Begin
   End;
 End;
 
-function LinuxCmd(Const aCommand: String; aBufferReady: TStrProc; aMaxLineLength: integer = 512 * 1024): integer;
+function LinuxCmd(Const aCommand: String; aBufferReady: TStrProc; aBufferSize: integer = 512 * 1024): integer;
 Var
   Handle: TStreamHandle;
   Data: Array Of uint8;
@@ -86,7 +94,7 @@ Var
   ansi: AnsiString;
 Begin
   Result := -1;
-  SetLength(Data, aMaxLineLength);
+  SetLength(Data, aBufferSize);
   ansi := AnsiString(aCommand);
 
   Handle := popen(pAnsiChar(ansi), 'r');
@@ -110,6 +118,23 @@ Begin
   End;
 End;
 
+{$ELSE}
+function LinuxCmd(Const aCommand: String; aBufferReady: TStrProc; aBufferSize: integer = 512 * 1024): integer; overload;
+begin
+  MaxLogic.ioUtils.ExecuteFile(
+    'bash ' + AnsiQuotedStr(aCommand, '`'),
+    '', // working dir
+    Result,
+    // stdOut
+    aBufferReady,
+
+    // errOut
+     nil, // the linuxCmd does not capture the ErrOut at all... so let us be consequent and do not capture it as well
+    True);
+end;
+{$IFEND}
+
+
 Function LinuxCmd(Const aCommand: String): String;
 var
   lExitCode: integer;
@@ -124,7 +149,7 @@ Begin
   s := '';
 
   aExitCode := LinuxCmd(aCommand,
-      Procedure(Const aText: String)
+      procedure(aText: String)
     Begin
       s := s + aText;
     End);

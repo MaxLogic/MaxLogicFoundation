@@ -3,8 +3,9 @@ Unit maxLogAsyncWriter;
 { copyright Pawel Piotrowski
   Description: this is a class that helps using old style log writing f existing legacy applications
 
-  Version: 2.9
+  Version: 2.10
   History:
+  2024-10-10: Linux compatible
   2018-28: all logs are now written to the blog format, which is a encrypted binary log format
   2018-10-10: rebuild to prevent deadlocks that seemed to occur with the previous version
   2017-05-16: the object is created only if it is needed
@@ -30,7 +31,10 @@ Uses
   {$IFDEF madExcept}
   madExcept,
   {$ENDIF}
-  windows, classes, sysUtils, maxAsync, generics.collections,
+  {$IFDEF MsWindows}
+  windows,
+  {$ENDIF}
+  classes, sysUtils, maxAsync, generics.collections,
   synCommons, SynCrypto, diagnostics;
 
 Type
