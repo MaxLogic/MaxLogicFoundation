@@ -9,6 +9,9 @@ interface
 uses
   system.classes, system.sysUtils, system.Types, generics.Collections, system.StrUtils;
 
+const
+  CR = sLineBreak;
+
 function StringMatches(Value, Pattern: string;
   casesensitive: boolean = true): boolean;
 Function putBefore(Const AString: String; AChar: char; TotalLength: Integer): String; Overload;
@@ -115,7 +118,9 @@ type
 
 Procedure Split(Const line: String; Delimiter: char; strings: TStringList); overload;
 Procedure Split(Const line: String; Delimiter: char; out strings: TArray<String>); overload;
-function Split(Delimiter: char;  Const line: String): TArray<String>; overload;
+function Split(Delimiter: char; Const line: String): TArray<String>; overload;
+
+Function fstr(Const d: double; vs: Integer = 2; ns: Integer = 2): String;
 
 implementation
 
@@ -575,9 +580,9 @@ end;
 
 { other }
 
-function Split(Delimiter: char;  Const line: String): TArray<String>;
+function Split(Delimiter: char; Const line: String): TArray<String>;
 begin
-  Split(Line, delimiter, Result);
+  Split(line, Delimiter, result);
 end;
 
 Procedure Split(Const line: String; Delimiter: char; out strings: TArray<String>);
@@ -588,7 +593,7 @@ Begin
   l.StrictDelimiter := true;
   l.Delimiter := Delimiter;
   l.DelimitedText := line;
-  Strings:= l.ToStringArray;
+  strings := l.ToStringArray;
   l.Free;
 end;
 
@@ -602,6 +607,14 @@ Begin
   l.DelimitedText := line;
   strings.Assign(l);
   l.Free;
+end;
+
+Function fstr(Const d: double; vs: Integer = 2; ns: Integer = 2): String;
+Var
+  S: String;
+Begin
+  S := '0.' + putBefore('0', '0', ns);
+  result := FormatFloat(S, d);
 end;
 
 end.

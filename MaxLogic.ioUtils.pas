@@ -22,7 +22,9 @@ Uses
   {$IFDEF MadExcept}MadExcept, {$ENDIF}
   {$IFDEF MSWINDOWS}
   windows,
-  {$ENDIF}
+  {$ELSEIF DEFINED(LINUX)}
+  LibC,
+  {$IFEND}
   classes, sysUtils;
 
 Function GetCurrentDLLName: String;
@@ -91,6 +93,9 @@ function LongFileNameFix(const aFileName: String): String;
 // ensures the last char is TPath.DirectorySeparatorChar
 function SLASH(const ApATH: String): String;
 
+// NOTE: Environment Changes Scope: As on Windows, changes made by setenv in this way only affect the current process and its child processes. They do not affect the system-wide environment or persist after the application terminates.
+procedure SetEnvironmentPath(const ApATH: String);
+
 Implementation
 
 Uses
@@ -103,6 +108,7 @@ Uses
   system.ioUtils, system.strUtils;
 
 {$IFDEF MSWINDOWS}
+
 
 Function LoatStringFromResource(Const aResName: String; Out aValue: String; Const aDefault: String = ''; aEncoding: TEncoding = Nil): Boolean;
 Var
@@ -556,10 +562,40 @@ end;
 
 function SLASH(const ApATH: String): String;
 begin
-  if (aPath <> '') and (aPath[length(aPath)] <> TPath.DirectorySeparatorChar) then
-    Result:= aPath + TPath.DirectorySeparatorChar
+  if (ApATH <> '') and (ApATH[Length(ApATH)] <> TPath.DirectorySeparatorChar) then
+    Result := ApATH + TPath.DirectorySeparatorChar
   else
-    Result:= aPath;
+    Result := ApATH;
+end;
+
+procedure SetEnvironmentPath(const ApATH: String);
+const
+  cName = 'PATH';
+var
+  lEnvVarValue: String;
+  lPath: String;
+begin
+  lPath := ExpandFileName(ApATH);
+
+  lEnvVarValue := sysUtils.GetEnvironmentVariable(cName);
+
+  // Remove trailing semicolons
+  while EndsText(';', lEnvVarValue) do
+    SetLength(lEnvVarValue, Length(lEnvVarValue) - 1);
+
+  // Append new path
+  lEnvVarValue := lEnvVarValue + ';' + lPath;
+
+  // Use the appropriate function to set the environment variable
+  {$IFDEF MSWINDOWS}
+  if not windows.SetEnvironmentVariable(PChar(cName), PChar(lEnvVarValue)) then
+    raise Exception.Create('Failed to set environment variable.');
+  {$ELSEIF DEFINED(LINUX)}
+  if setenv(PAnsiChar(AnsiString(cName)), PAnsiChar(AnsiString(lEnvVarValue)), 1) <> 0 then
+    raise Exception.Create('Failed to set environment variable.');
+  {$ELSE}
+  {$MESSAGE ERROR 'Not implemented for this platform!'}
+  {$ENDIF}
 end;
 
 End.

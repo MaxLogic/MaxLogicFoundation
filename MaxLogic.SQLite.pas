@@ -15,7 +15,9 @@ Uses
   // firedac
   FireDAC.Phys.SQLiteWrapper.Stat,
   FireDAC.Stan.Intf, FireDAC.Stan.Option, FireDAC.Stan.Error, FireDAC.UI.Intf, FireDAC.Phys.Intf,
-  FireDAC.DApt, FireDAC.Stan.Def, FireDAC.Stan.Pool, FireDAC.Stan.Async, FireDAC.Phys, FireDAC.VCLUI.Wait, FireDAC.Stan.ExprFuncs,
+  FireDAC.DApt, FireDAC.Stan.Def, FireDAC.Stan.Pool, FireDAC.Stan.Async, FireDAC.Phys,
+  // FireDAC.VCLUI.Wait,
+  FireDAC.Stan.ExprFuncs,
   FireDAC.Phys.SQLiteDef, FireDAC.Phys.SQLite, FireDAC.Comp.Client;
 
 Type
@@ -55,7 +57,8 @@ Implementation
 
 Uses
 {$IFDEF madExcept}madExcept, {$ENDIF}
-  vcl.clipBrd, autoFree;
+  // vcl.clipBrd,
+  autoFree;
 
 { TSqlLitePack }
 

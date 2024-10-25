@@ -17,7 +17,6 @@ Unit maxAsync;
 {$DEFINE ForceQueueNotAvailable}
 {$ENDIF}
 
-
 {
   Version: 2.30
 
@@ -1658,7 +1657,7 @@ Begin
   Inherited Create;
   {$IFDEF MSWINDOWS}
   fCriticalSection := TFixedRtlCriticalSection.Create;
-  {$ELSE} !
+  {$else}
     fCriticalSection := TFixedCriticalSection.Create;
   {$ENDIF}
   fItems := TQueue<T>.Create;
