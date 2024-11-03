@@ -133,7 +133,7 @@ type
     function Clone: iMemoryBuffer;
   end;
 
-  TMemoryBlock = class(TInterfacedObject, iMemoryBuffer)
+  TMemoryBuffer = class(TInterfacedObject, iMemoryBuffer)
   private
     // Total allocated capacity of the memory buffer, in bytes.
     fCapacity: nativeUInt;
@@ -270,27 +270,27 @@ implementation
 uses
   system.math;
 
-{ TMemoryBlock }
+{ TMemoryBuffer }
 
-procedure TMemoryBlock.Clear;
+procedure TMemoryBuffer.Clear;
 begin
   fPosition := 0;
   fSize := 0;
 end;
 
-function TMemoryBlock.Clone: iMemoryBuffer;
+function TMemoryBuffer.Clone: iMemoryBuffer;
 var
-  lNew: TMemoryBlock;
+  lNew: TMemoryBuffer;
 begin
   // note: the constructor initializes capacity and size by the initial size given
-  lNew := TMemoryBlock.Create(Self.Size, Self.BufferIncrementSize);
+  lNew := TMemoryBuffer.Create(Self.Size, Self.BufferIncrementSize);
   move(Self.fMemory^, lNew.fMemory^, Self.Size);
   lNew.fPosition := Self.fPosition;
   Result := lNew;
 
 end;
 
-constructor TMemoryBlock.Create(aInitialSize,
+constructor TMemoryBuffer.Create(aInitialSize,
   aBufferIncrements: nativeUInt);
 begin
   inherited Create;
@@ -300,7 +300,7 @@ begin
   Size := aInitialSize;
 end;
 
-destructor TMemoryBlock.Destroy;
+destructor TMemoryBuffer.Destroy;
 begin
   if Self.FFreeMemoryOnDestroy then
     ReleaseMemory;
@@ -308,43 +308,43 @@ begin
   inherited;
 end;
 
-procedure TMemoryBlock.EnsureBufferSize(aRequiredSize: nativeUInt);
+procedure TMemoryBuffer.EnsureBufferSize(aRequiredSize: nativeUInt);
 begin
   if aRequiredSize >= fCapacity then
     Capacity := (aRequiredSize + Self.BufferIncrementSize); // set the new size to be the required size + the Buffer inc value, this way we will have room for more memory movements later on.
 end;
 
-function TMemoryBlock.GetBufferIncrementSize: nativeUInt;
+function TMemoryBuffer.GetBufferIncrementSize: nativeUInt;
 begin
   Result := FBufferIncrementSize;
 end;
 
-function TMemoryBlock.GetCapacity: nativeUInt;
+function TMemoryBuffer.GetCapacity: nativeUInt;
 begin
   Result := fCapacity;
 end;
 
-function TMemoryBlock.GetMemory: pByte;
+function TMemoryBuffer.GetMemory: pByte;
 begin
   Result := fMemory;
 end;
 
-function TMemoryBlock.GetFreeMemoryOnDestroy: Boolean;
+function TMemoryBuffer.GetFreeMemoryOnDestroy: Boolean;
 begin
   Result := FFreeMemoryOnDestroy;
 end;
 
-function TMemoryBlock.GetPosition: nativeUInt;
+function TMemoryBuffer.GetPosition: nativeUInt;
 begin
   Result := fPosition;
 end;
 
-function TMemoryBlock.GetSize: nativeUInt;
+function TMemoryBuffer.GetSize: nativeUInt;
 begin
   Result := fSize;
 end;
 
-function TMemoryBlock.ReadAnsiString(aSize: Integer): AnsiString;
+function TMemoryBuffer.ReadAnsiString(aSize: Integer): AnsiString;
 begin
   if aSize <= 0 then
     Exit('');
@@ -355,7 +355,7 @@ begin
   ReadBuffer(Result[1], aSize);
 end;
 
-function TMemoryBlock.ReadBuffer(var aBuffer; aSize: Integer): Integer;
+function TMemoryBuffer.ReadBuffer(var aBuffer; aSize: Integer): Integer;
 var
   pb: pByte;
 begin
@@ -366,7 +366,7 @@ begin
   Inc(fPosition, Result);
 end;
 
-function TMemoryBlock.ReadBytes(aSize: Integer): TBytes;
+function TMemoryBuffer.ReadBytes(aSize: Integer): TBytes;
 begin
   if aSize <= 0 then
     Exit(nil);
@@ -376,21 +376,21 @@ begin
   ReadBuffer(Result[0], aSize);
 end;
 
-function TMemoryBlock.ReadDouble: double;
+function TMemoryBuffer.ReadDouble: double;
 begin
   if fPosition + SizeOf(Result) > fSize then
     raise EReadError.Create('Read beyond buffer size');
   ReadBuffer(Result, SizeOf(Result));
 end;
 
-function TMemoryBlock.ReadInt32: int32;
+function TMemoryBuffer.ReadInt32: int32;
 begin
   if fPosition + SizeOf(Result) > fSize then
     raise EReadError.Create('Read beyond buffer size');
   ReadBuffer(Result, SizeOf(Result));
 end;
 
-function TMemoryBlock.ReadUtf8String: String;
+function TMemoryBuffer.ReadUtf8String: String;
 var
   lBytes: TBytes;
 begin
@@ -398,17 +398,17 @@ begin
   Result := TEncoding.utf8.GetString(lBytes);
 end;
 
-procedure TMemoryBlock.ReleaseMemory;
+procedure TMemoryBuffer.ReleaseMemory;
 begin
   Capacity := 0; // frees memory and sets size and position also to 0
 end;
 
-procedure TMemoryBlock.SetBufferIncrementSize(const Value: nativeUInt);
+procedure TMemoryBuffer.SetBufferIncrementSize(const Value: nativeUInt);
 begin
   FBufferIncrementSize := Value;
 end;
 
-procedure TMemoryBlock.SetCapacity(const Value: nativeUInt);
+procedure TMemoryBuffer.SetCapacity(const Value: nativeUInt);
 begin
   if fCapacity = Value then
     Exit;
@@ -423,53 +423,53 @@ begin
     fSize := fCapacity;
 end;
 
-procedure TMemoryBlock.SetFreeMemoryOnDestroy(const Value: Boolean);
+procedure TMemoryBuffer.SetFreeMemoryOnDestroy(const Value: Boolean);
 begin
   FFreeMemoryOnDestroy := Value;
 end;
 
-procedure TMemoryBlock.SetPosition(const Value: nativeUInt);
+procedure TMemoryBuffer.SetPosition(const Value: nativeUInt);
 begin
   fPosition := Value;
   fSize := max(fSize, fPosition);
   EnsureBufferSize(fPosition);
 end;
 
-procedure TMemoryBlock.SetSize(const Value: nativeUInt);
+procedure TMemoryBuffer.SetSize(const Value: nativeUInt);
 begin
   fSize := Value;
   if fSize > fCapacity then
     EnsureBufferSize(fSize);
 end;
 
-procedure TMemoryBlock.TrimMemory;
+procedure TMemoryBuffer.TrimMemory;
 begin
   Capacity := Size;
 end;
 
-procedure TMemoryBlock.Write(aValue: Integer);
+procedure TMemoryBuffer.Write(aValue: Integer);
 begin
   WriteBuffer(aValue, SizeOf(aValue));
 end;
 
-procedure TMemoryBlock.Write(const aValue: double);
+procedure TMemoryBuffer.Write(const aValue: double);
 begin
   WriteBuffer(aValue, SizeOf(aValue));
 end;
 
-procedure TMemoryBlock.Write(const aValue: AnsiString);
+procedure TMemoryBuffer.Write(const aValue: AnsiString);
 begin
   if aValue <> '' then
     WriteBuffer(aValue[1], Length(aValue));
 end;
 
-procedure TMemoryBlock.Write(const aValue: TBytes);
+procedure TMemoryBuffer.Write(const aValue: TBytes);
 begin
   if Length(aValue) <> 0 then
     WriteBuffer(aValue[0], Length(aValue))
 end;
 
-procedure TMemoryBlock.WriteUtf8String(const aValue: String);
+procedure TMemoryBuffer.WriteUtf8String(const aValue: String);
 var
   lBytes: TBytes;
   lLen: int32;
@@ -484,7 +484,7 @@ begin
     Write(lBytes);
 end;
 
-procedure TMemoryBlock.WriteBuffer(const aBuffer; aSize: nativeInt);
+procedure TMemoryBuffer.WriteBuffer(const aBuffer; aSize: nativeInt);
 var
   pb: pByte;
 begin
