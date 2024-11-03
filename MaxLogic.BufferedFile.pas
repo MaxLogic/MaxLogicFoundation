@@ -178,7 +178,7 @@ Var
   InBufferOffset: int64;
   requestedInBufferOffset: int64;
 Begin
-  InBufferOffset := (nativeInt(FCursor) - nativeInt(fStartBuffer));
+  InBufferOffset := (nativeUInt(FCursor) - nativeUInt(fStartBuffer));
   requestedInBufferOffset := InBufferOffset + aCount;
 
   // are we still in the boundaries of the buffer?
