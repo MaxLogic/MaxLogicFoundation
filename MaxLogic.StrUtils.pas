@@ -119,8 +119,8 @@ type
 Procedure Split(Const line: String; Delimiter: char; strings: TStringList); overload;
 Procedure Split(Const line: String; Delimiter: char; out strings: TArray<String>); overload;
 function Split(Delimiter: char; Const line: String): TArray<String>; overload;
-
 Function fstr(Const d: double; vs: Integer = 2; ns: Integer = 2): String;
+function GuidToHex(const aGuid: TGuid): String;
 
 implementation
 
@@ -615,6 +615,12 @@ Var
 Begin
   S := '0.' + putBefore('0', '0', ns);
   result := FormatFloat(S, d);
+end;
+
+function GuidToHex(const aGuid: TGuid): String;
+begin
+  SetLength(Result, SizeOf(TGuid)*2);
+  BinToHex(@aGuid, PChar(Result), SizeOf(TGuid));
 end;
 
 end.
