@@ -20,10 +20,12 @@ Interface
 
 Uses
   {$IFDEF MadExcept}MadExcept, {$ENDIF}
-  {$IFDEF MSWINDOWS}
+  {$IF DEFINED( MsWINDOWS)}
   windows,
-  {$ELSEIF DEFINED(LINUX)}
-  LibC,
+  {$ELSEIF DEFINED(POSIX)}
+  Posix.Stdlib,
+  Posix.Unistd,
+  Posix.Dlfcn,
   {$IFEND}
   classes, sysUtils;
 
@@ -590,7 +592,7 @@ begin
   {$IFDEF MSWINDOWS}
   if not windows.SetEnvironmentVariable(PChar(cName), PChar(lEnvVarValue)) then
     raise Exception.Create('Failed to set environment variable.');
-  {$ELSEIF DEFINED(LINUX)}
+  {$ELSEIF DEFINED(POSIX)}
   if setenv(PAnsiChar(AnsiString(cName)), PAnsiChar(AnsiString(lEnvVarValue)), 1) <> 0 then
     raise Exception.Create('Failed to set environment variable.');
   {$ELSE}
