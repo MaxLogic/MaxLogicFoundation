@@ -92,6 +92,14 @@ type
     // Writes an ANSI string to the buffer at the current position. Does not store the length of the string.
     procedure Write(const aValue: AnsiString); overload;
 
+    // Writes an UTF8 string to the buffer at the current position, without storing the string length.
+    procedure Write(const aValue: Utf8String); overload;
+
+    procedure Write(const aValue: ansiChar); overload;
+    procedure Write(const aValue: WideChar); overload;
+
+
+
     // Writes a byte array (TBytes) to the buffer at the current position.
     procedure Write(const aValue: TBytes); overload;
 
@@ -228,6 +236,15 @@ type
 
     // Writes an ANSI string to the buffer at the current position, without storing the string length.
     procedure Write(const aValue: AnsiString); overload;
+
+
+    // Writes an UTF8 string to the buffer at the current position, without storing the string length.
+    procedure Write(const aValue: Utf8String); overload;
+
+    procedure Write(const aValue: ansiChar); overload;
+    procedure Write(const aValue: WideChar); overload;
+
+
 
     // Writes a byte array (TBytes) to the buffer at the current position.
     procedure Write(const aValue: TBytes); overload;
@@ -467,6 +484,22 @@ procedure TMemoryBuffer.Write(const aValue: TBytes);
 begin
   if Length(aValue) <> 0 then
     WriteBuffer(aValue[0], Length(aValue))
+end;
+
+procedure TMemoryBuffer.Write(const aValue: WideChar);
+begin
+  writeBuffer(aValue, SizeOf(aValue));
+end;
+
+procedure TMemoryBuffer.Write(const aValue: ansiChar);
+begin
+  writeBuffer(aValue, SizeOf(aValue));
+end;
+
+procedure TMemoryBuffer.Write(const aValue: Utf8String);
+begin
+  if aValue <> '' then
+    WriteBuffer(aValue[1], Length(aValue));
 end;
 
 procedure TMemoryBuffer.WriteUtf8String(const aValue: String);
