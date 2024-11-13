@@ -21,7 +21,7 @@ Interface
 Uses
   {$IFDEF MadExcept}MadExcept, {$ENDIF}
   {$IF DEFINED( MsWINDOWS)}
-  windows,
+  windows, ComObj, WinInet, ShLwApi,
   {$ELSEIF DEFINED(POSIX)}
   Posix.Stdlib,
   Posix.Unistd,
@@ -64,7 +64,7 @@ Procedure ExecuteFile(Const Cmd, ACurrentDir: String; AWait: Boolean;
 
 type
   TStrProc = TProc<String>;
-// similar to the above, but now we also get the stdOut and errOut and the exit code
+  // similar to the above, but now we also get the stdOut and errOut and the exit code
 Procedure ExecuteFile(Const Cmd, ACurrentDir: String;
   out aExitCode: Integer;
   aOnStdOut: TStrProc = nil;
@@ -79,7 +79,7 @@ Procedure ExecuteFile(Const Cmd, ACurrentDir: String;
 Function SafeAppendToFile(const aFileName, aText: String; aRetryCount: Integer = 5; aWaitBetweenRetries: Integer = 10; aEncoding: TEncoding = nil): Boolean;
 
 {$IFDEF MSWINDOWS}
-function RecycleItem(CONST ItemName: string; CONST DeleteToRecycle: Boolean = TRUE; CONST ShowConfirm: Boolean = TRUE; CONST TotalSilence: Boolean = False): Boolean;
+function RecycleItem(CONST ItemName: string; CONST DeleteToRecycle: Boolean = True; CONST ShowConfirm: Boolean = True; CONST TotalSilence: Boolean = False): Boolean;
 {$ENDIF}
 
 Function CombinePath(const aParts: array of String; aAddFinalTrailingPathDelimiter: Boolean = False): String;
@@ -97,6 +97,7 @@ function SLASH(const ApATH: String): String;
 
 // NOTE: Environment Changes Scope: As on Windows, changes made by setenv in this way only affect the current process and its child processes. They do not affect the system-wide environment or persist after the application terminates.
 procedure SetEnvironmentPath(const ApATH: String);
+function FilePathToURL(const aFilePath: string): String;
 
 Implementation
 
@@ -129,7 +130,7 @@ Begin
       SetLength(BYTES, RS.size);
       RS.readbuffer(BYTES[0], RS.size);
       aValue := aEncoding.GetString(BYTES);
-      Result := TRUE;
+      Result := True;
     End;
   Finally
     RS.Free;
@@ -272,8 +273,8 @@ Begin
 End;
 {$ENDIF}
 
-
 {$IFDEF MsWindows}
+
 
 Procedure ExecuteFile(Const Cmd, ACurrentDir: String;
   out aExitCode: Integer;
@@ -287,7 +288,7 @@ var
   SecurityAttr: TSecurityAttributes;
   StdOutPipeRead, StdOutPipeWrite: THandle;
   StdErrPipeRead, StdErrPipeWrite: THandle;
-  Buffer: array[0..255] of AnsiChar;
+  Buffer: array [0 .. 255] of AnsiChar;
   BytesRead: DWORD;
   ProcessCompleted: Boolean;
 
@@ -315,7 +316,7 @@ begin
   // Set up security attributes for the pipes
   ZeroMemory(@SecurityAttr, SizeOf(SecurityAttr));
   SecurityAttr.nLength := SizeOf(SecurityAttr);
-  SecurityAttr.bInheritHandle := TRUE;
+  SecurityAttr.bInheritHandle := True;
   SecurityAttr.lpSecurityDescriptor := nil;
 
   // Create pipes for StdOut and StdErr
@@ -372,7 +373,6 @@ begin
   end;
 end;
 
-
 Procedure ExecuteFile(
   Const aFileName: String;
   Const AParameter, ACurrentDir: String; AWait: Boolean;
@@ -403,15 +403,15 @@ Procedure ExecuteFile(
   aRunHidden: Boolean = False); Overload;
 Var
   si: TStartupInfo;
-  pI: TProcessInformation;
+  pi: TProcessInformation;
   lCmd, lDir: String;
 Begin
   lDir := ACurrentDir;
 
-  ZeroMemory(@si, sizeOf(si));
+  ZeroMemory(@si, SizeOf(si));
   With si Do
   Begin
-    cb := sizeOf(si);
+    cb := SizeOf(si);
     dwFlags := STARTF_USESHOWWINDOW;
     If aRunHidden Then
       wShowWindow := SW_HIDE
@@ -419,27 +419,27 @@ Begin
       wShowWindow := SW_NORMAL;
   End;
 
-  ZeroMemory(@pI, sizeOf(pI));
+  ZeroMemory(@pi, SizeOf(pi));
 
   lCmd := Cmd;
   UniqueString(lCmd);
 
   If CreateProcess(Nil, PChar(lCmd), Nil, Nil, False,
     CREATE_DEFAULT_ERROR_MODE Or CREATE_NEW_CONSOLE Or NORMAL_PRIORITY_CLASS,
-    Nil, PChar(lDir), si, pI) Then
+    Nil, PChar(lDir), si, pi) Then
   Begin
     Try
       If AWait Then
       Begin
-        {$IFDEF madExcept}MadExcept.PauseFreezeCheck(TRUE);
+        {$IFDEF madExcept}MadExcept.PauseFreezeCheck(True);
         {$ENDIF}
-        WaitForSingleObject(pI.hProcess, INFINITE);
+        WaitForSingleObject(pi.hProcess, INFINITE);
         {$IFDEF madExcept}MadExcept.PauseFreezeCheck(False);
         {$ENDIF}
       End;
     Finally
-      closeHandle(pI.hProcess);
-      closeHandle(pI.hThread);
+      CloseHandle(pi.hProcess);
+      CloseHandle(pi.hThread);
     End;
   End;
 End;
@@ -448,13 +448,13 @@ End;
 {$IFDEF MSWINDOWS}
 
 
-function RecycleItem(CONST ItemName: string; CONST DeleteToRecycle: Boolean = TRUE; CONST ShowConfirm: Boolean = TRUE; CONST TotalSilence: Boolean = False): Boolean;
+function RecycleItem(CONST ItemName: string; CONST DeleteToRecycle: Boolean = True; CONST ShowConfirm: Boolean = True; CONST TotalSilence: Boolean = False): Boolean;
 VAR
   SHFileOpStruct: TSHFileOpStruct;
 begin
-  FillChar(SHFileOpStruct, sizeOf(SHFileOpStruct), #0);
+  FillChar(SHFileOpStruct, SizeOf(SHFileOpStruct), #0);
   {$IFDEF CanUseApplicationInstance}
-  if assigned(Application) and assigned(Application.MainForm) then
+  if Assigned(Application) and Assigned(Application.MainForm) then
     SHFileOpStruct.wnd := Application.MainForm.Handle { Others are using 0. But Application.MainForm.Handle is better because otherwise, the 'Are you sure you want to delete' will be hidden under program's window }
   else
     {$ENDIF}
@@ -496,7 +496,7 @@ begin
   repeat
     try
       TFile.AppendAllText(aFileName, aText, aEncoding);
-      Exit(TRUE);
+      Exit(True);
     Except
       inc(RetryCounter);
       sleep(aWaitBetweenRetries);
@@ -599,5 +599,53 @@ begin
   {$MESSAGE ERROR 'Not implemented for this platform!'}
   {$ENDIF}
 end;
+
+{$IFDEF MsWindows}
+
+
+function FilePathToURL(const aFilePath: string): string;
+var
+  lBufferLen: DWORD;
+begin
+  lBufferLen := INTERNET_MAX_URL_LENGTH;
+  SetLength(Result, lBufferLen);
+  OleCheck(UrlCreateFromPath(PChar(aFilePath), PChar(Result), @lBufferLen, 0));
+  SetLength(Result, lBufferLen);
+end;
+{$ELSE}
+function FilePathToURL2(const aFilePath: string): String;
+var
+  lLen: Integer;
+  Procedure Append(const s: String);
+  begin
+    if Length(Result) <= lLen + Length(s) then
+      SetLength(Result, (lLen + Length(s)) * 2);
+    for var x := 1 to Length(s) do
+      Result[lLen + x] := s[x];
+    inc(lLen, Length(s));
+  end;
+  function makeHex(const c: Char): String;
+  begin
+    Result := '%' + IntToHex(Ord(c));
+  end;
+
+begin
+  Result := 'file:///';
+  lLen := Length(Result);
+  SetLength(Result, Length(aFilePath) * 3);
+  for var x := 1 to Length(aFilePath) do
+  begin
+    if charInSet(aFilePath[x], ['a' .. 'z', 'A' .. 'Z', '0' .. '9', '-', '_', '/', ',', '.', ':', '!', '@']) then
+      Append(aFilePath[x])
+    else if aFilePath[x] = '\' then
+      Append('/')
+    else
+      Append(makeHex(aFilePath[x]));
+  end;
+  SetLength(Result, lLen); // truncate
+end;
+{$ENDIF}
+
+
 
 End.

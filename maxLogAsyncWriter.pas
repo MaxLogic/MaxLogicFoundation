@@ -35,7 +35,8 @@ Uses
   windows,
   {$ENDIF}
   classes, sysUtils, maxAsync, generics.collections,
-  synCommons, SynCrypto, diagnostics;
+  synCommons, SynCrypto,
+  diagnostics;
 
 Type
   // forward declaration
