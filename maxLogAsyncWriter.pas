@@ -308,7 +308,7 @@ Begin
   fdic := TObjectDictionary<String, TFileHolder>.Create([doOwnsValues]);
   fItems := TList<TLogItem>.Create;
   fAsync := maxAsync.SimpleAsyncCall(
-    Procedure
+      Procedure
     Begin
       asyncprocess;
     End
@@ -408,7 +408,7 @@ Begin
 End;
 
 Function TMaxLogAsyncWriter.retriveItems(
-  Out items: TItems): boolean;
+Out items: TItems): boolean;
 Begin
   result := false;
   lock;
@@ -572,7 +572,7 @@ Begin
   End;
 End;
 
-Procedure TMaxLogAsyncWriter.TFileHolder.write( Const s: String);
+Procedure TMaxLogAsyncWriter.TFileHolder.write(Const s: String);
 Begin
   fLastAccessTimeStamp := AppStopWatch.elapsedMilliseconds;
   If Not assigned(fWriter) Then
@@ -789,11 +789,11 @@ Begin
   // init aes key
   // 230 bytes
   b := [$8C, $53, $05, $53, $2D, $C2, $C1, $3C, $47, $B5, $E6, $4E, $50, $CC, $9F, $12, $3F, $F6, $2F, $6F, $7C, $15, $38, $2E, $42, $96, $38, $B5, $F9, $7B, $3A, $5B, $8F, $74, $AE, $33, $AE, $B7, $74, $C2
-    , $79, $D6, $42, $57, $40, $3A, $33, $D0, $D5, $37, $87, $58, $DC, $65, $78, $E0, $7C, $BB, $90, $B3, $94, $1F, $9D, $51, $C0, $35, $B1, $24, $FD, $63, $4A, $AA, $DE, $A6, $45, $4D, $AD, $17, $12, $78, $B5
-    , $77, $A4, $C6, $11, $CB, $78, $5E, $0D, $9F, $EA, $99, $34, $FC, $DB, $07, $87, $0C, $A3, $F8, $2D, $6C, $4B, $70, $4E, $74, $28, $ED, $28, $CD, $61, $A6, $78, $DD, $71, $9C, $45, $84, $AF, $40, $83, $24
-    , $EF, $76, $B4, $14, $CA, $B1, $63, $1C, $A0, $B6, $D7, $F6, $5A, $A0, $A6, $6C, $4B, $61, $2F, $B4, $24, $0F, $8D, $7D, $0B, $A3, $49, $D3, $91, $F9, $DD, $1F, $78, $D2, $D4, $7C, $29, $A6, $F7, $BC, $E5
-    , $5B, $85, $17, $82, $68, $12, $25, $00, $17, $6C, $E0, $16, $5D, $83, $E9, $6A, $27, $7B, $0C, $39, $4F, $FB, $96, $4C, $7D, $6D, $56, $62, $6E, $C6, $99, $EC, $EA, $9B, $07, $44, $DF, $45, $B3, $96, $DF
-    , $21, $8D, $E1, $09, $C9, $87, $6F, $E1, $3A, $46, $FB, $52, $13, $33, $3B, $A7, $12, $9A, $AB, $56, $7F, $35, $14, $9E, $9D, $75];
+      , $79, $D6, $42, $57, $40, $3A, $33, $D0, $D5, $37, $87, $58, $DC, $65, $78, $E0, $7C, $BB, $90, $B3, $94, $1F, $9D, $51, $C0, $35, $B1, $24, $FD, $63, $4A, $AA, $DE, $A6, $45, $4D, $AD, $17, $12, $78, $B5
+      , $77, $A4, $C6, $11, $CB, $78, $5E, $0D, $9F, $EA, $99, $34, $FC, $DB, $07, $87, $0C, $A3, $F8, $2D, $6C, $4B, $70, $4E, $74, $28, $ED, $28, $CD, $61, $A6, $78, $DD, $71, $9C, $45, $84, $AF, $40, $83, $24
+      , $EF, $76, $B4, $14, $CA, $B1, $63, $1C, $A0, $B6, $D7, $F6, $5A, $A0, $A6, $6C, $4B, $61, $2F, $B4, $24, $0F, $8D, $7D, $0B, $A3, $49, $D3, $91, $F9, $DD, $1F, $78, $D2, $D4, $7C, $29, $A6, $F7, $BC, $E5
+      , $5B, $85, $17, $82, $68, $12, $25, $00, $17, $6C, $E0, $16, $5D, $83, $E9, $6A, $27, $7B, $0C, $39, $4F, $FB, $96, $4C, $7D, $6D, $56, $62, $6E, $C6, $99, $EC, $EA, $9B, $07, $44, $DF, $45, $B3, $96, $DF
+      , $21, $8D, $E1, $09, $C9, $87, $6F, $E1, $3A, $46, $FB, $52, $13, $33, $3B, $A7, $12, $9A, $AB, $56, $7F, $35, $14, $9E, $9D, $75];
 
   If maxCryptoHelper.Decryptor.decrypt(b, outData) Then
   Begin
@@ -1073,10 +1073,10 @@ End;
 
 Initialization
 
-  {$IFDEF madExcept}
-  HideLeak ('TBinaryLogWriter.Create');
-  // this is a singelton and is destroyed in the finalisation section
-  {$ENDIF}
+{$IFDEF madExcept}
+HideLeak('TBinaryLogWriter.Create');
+// this is a singelton and is destroyed in the finalisation section
+{$ENDIF}
 
 
 Finalization

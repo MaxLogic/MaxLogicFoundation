@@ -16,8 +16,18 @@ interface
 
 uses
   system.SysUtils, system.Classes, generics.Collections,
-  PJConsoleApp, // see https://lib-docs.delphidabbler.com/ConsoleApp/3/Examples/Example1.html
-  PJPipe; // see https://lib-docs.delphidabbler.com/IOUtils/1/API.html
+
+  { see
+  https://lib-docs.delphidabbler.com/ConsoleApp/3/Examples/Example1.html
+  https://github.com/ddablib/consoleapp
+  }
+  PJConsoleApp,
+
+  {see
+  https://github.com/ddablib/ioutils
+  https://lib-docs.delphidabbler.com/IOUtils/1/API.html
+  }
+  PJPipe;
 
 Type
   TPdfTk = class
