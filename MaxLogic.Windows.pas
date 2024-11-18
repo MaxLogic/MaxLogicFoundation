@@ -41,7 +41,7 @@ function QueryFullProcessImageName(
   ): BOOL;
 stdcall external kernel32 name 'QueryFullProcessImageNameW';
 
-function RunAsAdmin(hWnd: HWND; filename: string; Parameters: string): Boolean;
+function RunAsAdmin(hWnd: hWnd; filename: string; Parameters: string): Boolean;
 
 Implementation
 
@@ -165,6 +165,7 @@ Begin
   Finally
     closeHandle(StdOutPipeRead);
   End;
+  Result := trim(Result);
 End;
 
 // Capture console output in [Realtime] and return its char right away
@@ -287,29 +288,29 @@ begin
   end;
 end;
 
-function RunAsAdmin(hWnd: HWND; filename: string; Parameters: string): Boolean;
+function RunAsAdmin(hWnd: hWnd; filename: string; Parameters: string): Boolean;
 {
-    source: https://stackoverflow.com/questions/923350/delphi-prompt-for-uac-elevation-when-needed
+  source: https://stackoverflow.com/questions/923350/delphi-prompt-for-uac-elevation-when-needed
 
-    See Step 3: Redesign for UAC Compatibility (UAC)
-    http://msdn.microsoft.com/en-us/library/bb756922.aspx
+  See Step 3: Redesign for UAC Compatibility (UAC)
+  http://msdn.microsoft.com/en-us/library/bb756922.aspx
 
-    This code is released into the public domain. No attribution required.
+  This code is released into the public domain. No attribution required.
 }
 var
-    sei: TShellExecuteInfo;
+  sei: TShellExecuteInfo;
 begin
-    ZeroMemory(@sei, SizeOf(sei));
-    sei.cbSize := SizeOf(TShellExecuteInfo);
-    sei.Wnd := hwnd;
-    sei.fMask := SEE_MASK_FLAG_DDEWAIT or SEE_MASK_FLAG_NO_UI;
-    sei.lpVerb := PChar('runas');
-    sei.lpFile := PChar(Filename); // PAnsiChar;
-    if parameters <> '' then
-        sei.lpParameters := PChar(parameters); // PAnsiChar;
-    sei.nShow := SW_SHOWNORMAL; //Integer;
+  ZeroMemory(@sei, sizeOf(sei));
+  sei.cbSize := sizeOf(TShellExecuteInfo);
+  sei.Wnd := hWnd;
+  sei.fMask := SEE_MASK_FLAG_DDEWAIT or SEE_MASK_FLAG_NO_UI;
+  sei.lpVerb := PChar('runas');
+  sei.lpFile := PChar(filename); // PAnsiChar;
+  if Parameters <> '' then
+    sei.lpParameters := PChar(Parameters); // PAnsiChar;
+  sei.nShow := SW_SHOWNORMAL; // Integer;
 
-    Result := ShellExecuteEx(@sei);
+  Result := ShellExecuteEx(@sei);
 end;
 
 end.

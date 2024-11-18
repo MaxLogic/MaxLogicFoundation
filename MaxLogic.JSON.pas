@@ -47,7 +47,7 @@ End;
 
 Class Function TJSONSerializable.JsonToObject<T>(Const JSON: String): T;
 Begin
-  result := TJson.JsonToObject<T>(JSON);
+  result := REST.Json.TJson.JsonToObject<T>(JSON);
 End;
 
 class function TJSONSerializable.clone<T>(const aInstance: TObject): T;

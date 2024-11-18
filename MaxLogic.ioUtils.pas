@@ -22,6 +22,7 @@ Uses
   {$IFDEF MadExcept}MadExcept, {$ENDIF}
   {$IF DEFINED( MsWINDOWS)}
   windows, ComObj, WinInet, ShLwApi,
+  maxConsoleRunner,
   {$ELSEIF DEFINED(POSIX)}
   Posix.Stdlib,
   Posix.Unistd,
@@ -63,7 +64,8 @@ Procedure ExecuteFile(Const Cmd, ACurrentDir: String; AWait: Boolean;
   aRunHidden: Boolean = False); Overload;
 
 type
-  TStrProc = TProc<String>;
+  TStrProc = maxConsoleRunner.TDataReadyProc;
+
   // similar to the above, but now we also get the stdOut and errOut and the exit code
 Procedure ExecuteFile(Const Cmd, ACurrentDir: String;
   out aExitCode: Integer;
@@ -280,96 +282,21 @@ Procedure ExecuteFile(Const Cmd, ACurrentDir: String;
   out aExitCode: Integer;
   aOnStdOut: TStrProc = nil;
   aOnErrOut: TStrProc = nil;
-  aRunHidden: Boolean = True); Overload;
+  aRunHidden: Boolean = True);
 var
-  si: TStartupInfo;
-  pi: TProcessInformation;
-  lCmd, lDir: String;
-  SecurityAttr: TSecurityAttributes;
-  StdOutPipeRead, StdOutPipeWrite: THandle;
-  StdErrPipeRead, StdErrPipeWrite: THandle;
-  Buffer: array [0 .. 255] of AnsiChar;
-  BytesRead: DWORD;
-  ProcessCompleted: Boolean;
-
-  procedure ReadPipeOutput(Pipe: THandle; Callback: TStrProc);
-  var
-    OutputText: string;
-  begin
-    if Assigned(Callback) then
-    begin
-      while ReadFile(Pipe, Buffer, SizeOf(Buffer) - 1, BytesRead, nil) do
-      begin
-        if BytesRead > 0 then
-        begin
-          Buffer[BytesRead] := #0; // Null-terminate the string
-          OutputText := string(Buffer);
-          Callback(OutputText);
-        end;
-      end;
-    end;
-  end;
-
+  lRunner: TmaxConsoleRunner;
 begin
-  lDir := ACurrentDir;
-
-  // Set up security attributes for the pipes
-  ZeroMemory(@SecurityAttr, SizeOf(SecurityAttr));
-  SecurityAttr.nLength := SizeOf(SecurityAttr);
-  SecurityAttr.bInheritHandle := True;
-  SecurityAttr.lpSecurityDescriptor := nil;
-
-  // Create pipes for StdOut and StdErr
-  CreatePipe(StdOutPipeRead, StdOutPipeWrite, @SecurityAttr, 0);
-  CreatePipe(StdErrPipeRead, StdErrPipeWrite, @SecurityAttr, 0);
-
+  lRunner := TmaxConsoleRunner.Create;
   try
-    // Initialize startup info
-    ZeroMemory(@si, SizeOf(si));
-    si.cb := SizeOf(si);
-    si.dwFlags := STARTF_USESHOWWINDOW or STARTF_USESTDHANDLES;
-    if aRunHidden then
-      si.wShowWindow := SW_HIDE
-    else
-      si.wShowWindow := SW_NORMAL;
-    si.hStdOutput := StdOutPipeWrite;
-    si.hStdError := StdErrPipeWrite;
-    si.hStdInput := GetStdHandle(STD_INPUT_HANDLE); // Use default input
+    lRunner.DecodeCommand(Cmd);
+    lRunner.OnStdDataRead := aOnStdOut;
+    lRunner.OnErrorDataRead := aOnErrOut;
+    lRunner.RunHidden := aRunHidden;
 
-    // Initialize process information
-    ZeroMemory(@pi, SizeOf(pi));
-
-    // Prepare command string
-    lCmd := Cmd;
-    UniqueString(lCmd);
-
-    // Create the process
-    if CreateProcess(nil, PChar(lCmd), nil, nil, True, CREATE_NO_WINDOW or CREATE_NEW_CONSOLE or NORMAL_PRIORITY_CLASS,
-      nil, PChar(lDir), si, pi) then
-    begin
-      CloseHandle(StdOutPipeWrite); // Close write end of stdout pipe
-      CloseHandle(StdErrPipeWrite); // Close write end of stderr pipe
-
-      try
-        // Wait for the process to complete
-        WaitForSingleObject(pi.hProcess, INFINITE);
-
-        // Read from the output pipes
-        ReadPipeOutput(StdOutPipeRead, aOnStdOut);
-        ReadPipeOutput(StdErrPipeRead, aOnErrOut);
-
-        // Get the exit code of the process
-        if not GetExitCodeProcess(pi.hProcess, DWORD(aExitCode)) then
-          aExitCode := -1; // In case something goes wrong, return -1 as the exit code
-      finally
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-      end;
-    end;
+    lRunner.execute;
+    aExitCode := lRunner.ExitCode;
   finally
-    // Clean up the pipes
-    CloseHandle(StdOutPipeRead);
-    CloseHandle(StdErrPipeRead);
+    lRunner.Free;
   end;
 end;
 
@@ -613,6 +540,7 @@ begin
   SetLength(Result, lBufferLen);
 end;
 {$ELSE}
+
 function FilePathToURL2(const aFilePath: string): String;
 var
   lLen: Integer;
@@ -645,7 +573,6 @@ begin
   SetLength(Result, lLen); // truncate
 end;
 {$ENDIF}
-
 
 
 End.
