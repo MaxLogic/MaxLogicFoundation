@@ -541,7 +541,7 @@ begin
 end;
 {$ELSE}
 
-function FilePathToURL2(const aFilePath: string): String;
+function FilePathToURL(const aFilePath: string): String;
 var
   lLen: Integer;
   Procedure Append(const s: String);
