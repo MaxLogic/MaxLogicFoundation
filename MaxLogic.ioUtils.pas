@@ -95,10 +95,11 @@ function ConvertToValidDirectoryName(const aText: string; aReplaceInvalidCharsWi
 function LongFileNameFix(const aFileName: String): String;
 
 // ensures the last char is TPath.DirectorySeparatorChar
-function SLASH(const ApATH: String): String;
+function Slash(const aPath: String): String;
+function UnSlash(const aPath: String): String;
 
 // NOTE: Environment Changes Scope: As on Windows, changes made by setenv in this way only affect the current process and its child processes. They do not affect the system-wide environment or persist after the application terminates.
-procedure SetEnvironmentPath(const ApATH: String);
+procedure SetEnvironmentPath(const aPath: String);
 function FilePathToURL(const aFilePath: string): String;
 
 Implementation
@@ -489,22 +490,30 @@ begin
   {$ENDIF}
 end;
 
-function SLASH(const ApATH: String): String;
+function UnSlash(const aPath: String): String;
 begin
-  if (ApATH <> '') and (ApATH[Length(ApATH)] <> TPath.DirectorySeparatorChar) then
-    Result := ApATH + TPath.DirectorySeparatorChar
+  if (aPath <> '') and (aPath[Length(aPath)] = TPath.DirectorySeparatorChar) then
+    Result := Copy(aPath, 1, Length(aPath) - 1)
   else
-    Result := ApATH;
+    Result := aPath;
 end;
 
-procedure SetEnvironmentPath(const ApATH: String);
+function Slash(const aPath: String): String;
+begin
+  if (aPath <> '') and (aPath[Length(aPath)] <> TPath.DirectorySeparatorChar) then
+    Result := aPath + TPath.DirectorySeparatorChar
+  else
+    Result := aPath;
+end;
+
+procedure SetEnvironmentPath(const aPath: String);
 const
   cName = 'PATH';
 var
   lEnvVarValue: String;
   lPath: String;
 begin
-  lPath := ExpandFileName(ApATH);
+  lPath := ExpandFileName(aPath);
 
   lEnvVarValue := sysUtils.GetEnvironmentVariable(cName);
 
@@ -540,6 +549,7 @@ begin
   SetLength(Result, lBufferLen);
 end;
 {$ELSE}
+
 
 function FilePathToURL(const aFilePath: string): String;
 var
