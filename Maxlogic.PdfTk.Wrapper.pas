@@ -50,6 +50,12 @@ Type
     Function Decrypt(const aInputFileName, aPassword, aOutputFileName: String): integer;
     Function Encrypt(const aInputFileName, aPassword, aOutputFileName: String; aAllowPrintingWithoutPw: Boolean = True; const aPasswordForOpening: String = ''): integer;
 
+    /// <summary>
+    ///   This will extract all embeded files to the out directory
+    ///  Most useful for embeded xml files for digital invoices
+    /// </summary>
+    function ExtractEmbededFiles(const aPdfFilename, aOutDir: String): integer;
+
     property LastError: TStringList read fLastError;
   end;
 
@@ -100,6 +106,17 @@ begin
     ifThen(aAllowPrintingWithoutPw, ' allow printing', '');
 
   Result := PdfTk(cmd);
+end;
+
+function TPdfTk.ExtractEmbededFiles(const aPdfFilename, aOutDir: String):integer;
+var
+  lCmd: String;
+begin
+  ForceDirectories(aOutDir);
+  lCmd := Q(aPdfFileName) +
+  ' unpack_files output ' + Q(aOutDir);
+
+  Result := PdfTk(lCmd);
 end;
 
 function TPdfTk.Merge(const aInputFiles: TArray<String>;
