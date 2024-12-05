@@ -121,6 +121,8 @@ Procedure Split(Const line: String; Delimiter: char; out strings: TArray<String>
 function Split(Delimiter: char; Const line: String): TArray<String>; overload;
 Function fstr(Const d: double; vs: Integer = 2; ns: Integer = 2): String;
 function GuidToHex(const aGuid: TGuid): String;
+function Join(const aSeparator: String; const aValues: TArray<Integer>): String;
+
 
 implementation
 
@@ -622,5 +624,16 @@ begin
   SetLength(Result, SizeOf(TGuid)*2);
   BinToHex(@aGuid, PChar(Result), SizeOf(TGuid));
 end;
+
+function Join(const aSeparator: String; const aValues: TArray<Integer>): String;
+var
+  lValues: TArray<String>;
+begin
+  SetLength(lValues, Length(aValues));
+  for var x := 0 to length(aValues)-1 do
+    lValues[x]:= aValues[x].ToString;
+  Result:= String.Join(aSeparator, lValues);
+end;
+
 
 end.
