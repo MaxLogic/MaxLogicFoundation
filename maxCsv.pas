@@ -33,17 +33,17 @@ Type
 
   TRawRowHelper = Record Helper For TRawRow
   Public
-    Function ToUnicode: TRow;
+    Function ToUnicode: TRow; inline;
   End;
 
   TCSVBase = Class
-  Private Const
+  protected Const
     CR = #13 + #10;
-  Private
+  protected
     fDelimiter: ansichar;
     FQuoteChar: ansichar;
-    Procedure SetQuoteChar(Const Value: ansichar);
-    Procedure SetSeparator(Const Value: ansichar);
+    Procedure SetQuoteChar(Const Value: ansichar); virtual;
+    Procedure SetSeparator(Const Value: ansichar); virtual;
   Public
     Constructor Create;
     Destructor Destroy; Override;
@@ -54,7 +54,10 @@ Type
 
   TCsvReader = Class(TCSVBase)
   Private Const
-    cBufferSize = 16 * 1024;
+    cBufferSize = 1024 * 1024;
+  private
+    class var fPotentialDelimiters:array[ansiChar] of Boolean;
+    class constructor CreateClass;
   Private
     fBuffer: TBufferedFile;
     fUtf8BomDetected: Boolean;
@@ -62,6 +65,7 @@ Type
     fMaxColCountFound: Integer;
     fForcedColCount: Integer;
     fCsvFileSize: int64;
+
 
     Function GetEof: Boolean; {$IFDEF USE_INLINE}Inline; {$ENDIF}
     Procedure DetectBom;
@@ -103,20 +107,24 @@ Type
 
   TCsvWriter = Class(TCSVBase)
   Private Const
-    cBufferSize = 16 * 1024;
+    cBufferSize = 1024 * 1024;
   Private
     fBufferSize: Integer;
     fStream: TStream;
     fOwnsStream: Boolean;
     fBuffer: TMemoryStream;
     fEncoding: TEncoding;
-    FLineBreak: AnsiString;
+    FLineBreak: rawByteString;
     FCloseRowWithDelimiter: Boolean;
+    fControlChars:array[Char] of Boolean;
 
     Procedure WriteCell(Const Value: String); Overload;
     Procedure WriteCell(Const Value: rawByteString); Overload;
-    procedure SetLineBreak(const Value: AnsiString);
+    procedure SetLineBreak(const Value: rawByteString);
     procedure SetCloseRowWithDelimiter(const Value: Boolean);
+    procedure UpdateControlChars;
+    procedure SetQuoteChar(Const Value: ansichar); override;
+    Procedure SetSeparator(Const Value: ansichar); override;
   Public
     Constructor Create(aStream: TStream; aEncoding: TEncoding = Nil; aBufferSize: Integer = cBufferSize); Overload;
     Constructor Create(Const aFilename: String; aEncoding: TEncoding = Nil; aBufferSize: Integer = cBufferSize); Overload;
@@ -132,7 +140,7 @@ Type
     // flushes the internal buffer to the file stream. will be called automatically when the buffer exceeds the defined buffer size and on destroy
     Procedure Flush;
 
-    property LineBreak: AnsiString read FLineBreak write SetLineBreak;
+    property LineBreak: rawByteString read FLineBreak write SetLineBreak;
     property CloseRowWithDelimiter: Boolean read FCloseRowWithDelimiter write SetCloseRowWithDelimiter;
   End;
 
@@ -222,6 +230,7 @@ Begin
     fEncoding := TEncoding.UTF8;
   fBufferSize := aBufferSize;
   fBuffer.Size := fBufferSize; // preallocate memory
+  UpdateControlChars;
 End;
 
 Destructor TCsvWriter.Destroy;
@@ -246,7 +255,9 @@ Begin
   RequireQuote := False;
 
   For x := 1 To length(s) Do
-    If charInSet(s[x], [FQuoteChar, fDelimiter, #10, #13]) Then
+    // optimization:
+    // If charInSet(s[x], [FQuoteChar, fDelimiter, #10, #13]) Then
+    if fControlChars[s[x]] then
     Begin
       RequireQuote := True;
       Break;
@@ -334,9 +345,36 @@ begin
   FCloseRowWithDelimiter := Value;
 end;
 
-procedure TCsvWriter.SetLineBreak(const Value: AnsiString);
+procedure TCsvWriter.SetLineBreak(const Value: rawByteString);
 begin
   FLineBreak := Value;
+  UpdateControlChars;
+end;
+
+procedure TCsvWriter.SetQuoteChar(const Value: ansichar);
+begin
+  inherited;
+  UpdateControlChars;
+end;
+
+procedure TCsvWriter.SetSeparator(const Value: ansichar);
+begin
+  inherited;
+  UpdateControlChars;
+end;
+
+procedure TCsvWriter.UpdateControlChars;
+var
+  c: Char;
+  lChar: ansiChar;
+begin
+  FillChar(fControlChars[#0], SizeOf(fControlChars), 0);
+  for lChar  in [FQuoteChar, fDelimiter, #10, #13] do
+  begin
+    c:= wideChar(Ord(lChar));
+    fControlChars[c]:= True;
+  end;
+
 end;
 
 Procedure TCsvWriter.WriteCell(Const Value: rawByteString);
@@ -384,6 +422,16 @@ Begin
   Inherited Create;
 
 End;
+
+class constructor TCsvReader.CreateClass;
+var
+  c: ansiChar;
+begin
+  // this should be a bit faster then using charInSet
+  FillChar(fPotentialDelimiters[#0], SizeOf(fPotentialDelimiters), 0);
+  for c in [',', ';', '|', #9] do
+    fPotentialDelimiters[c]:= True;
+end;
 
 Destructor TCsvReader.Destroy;
 Begin
@@ -482,7 +530,7 @@ Var
   LineEndDetected: Boolean;
   s: rawByteString;
 Begin
-  result := ',';
+  Result := ',';
   LineEndDetected := False;
 
   If fBuffer.Eof Then // do nothing if there is no data
@@ -495,13 +543,17 @@ Begin
     ReadQuotedColValue(s, LineEndDetected);
     // after reading, the cursor is moved to the next column start, so we need to go one back
     fBuffer.Seek(-1);
-    If charInSet(fBuffer.CharCursor, [',', ';', '|', #9]) Then
+    // optimization:
+    // If charInSet(fBuffer.CharCursor, [',', ';', '|', #9]) Then
+    if fPotentialDelimiters[fBuffer.CharCursor] then
       result := fBuffer.CharCursor;
   End Else Begin
     For x := 1 To 1024 Do
     Begin
       fBuffer.NextByte;
-      If charInSet(fBuffer.CharCursor, [',', ';', '|', #9]) Then
+      // optimization:
+      // If charInSet(fBuffer.CharCursor, [',', ';', '|', #9]) Then
+      if fPotentialDelimiters[fBuffer.CharCursor] then
       Begin
         result := fBuffer.CharCursor;
         Break;
