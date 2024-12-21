@@ -1,6 +1,6 @@
 Unit AutoFree;
 
-{$I JEDI.INC}
+{f$I JEDI.INC}
 
 
 { Copyright: Pawel Piotrowski, MaxLogic, www.maxlogic.eu

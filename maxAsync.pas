@@ -8,9 +8,9 @@ Unit maxAsync;
   NeverUninstall;NeverSleepOnMMThreadContention;UseSwitchToThread;UseReleaseStack   v }
 
 // forward unhandled exceptions to main thread?
-{$IFDEF MSWINDOWS}
+{$IFDEF MSWINDOWS} {$IFNDEF CONSOLE}
 {$DEFINE FORWARD_EXCEPTIONS_TO_MAIN_THREAD}
-{$ENDIF}
+{$ENDIF}{$ENDIF}
 
 // TThread.ForceQueueis not avaiable in XE8.. not sure when it was introduced?
 {$IF CompilerVersion <= 29.0}
@@ -61,7 +61,10 @@ Interface
 
 Uses
   {$IFDEF MSWINDOWS}
-  Windows, Forms, Messages, System.UITypes, dialogs,
+  Windows, Messages,
+  {$IFNDEF CONSOLE}
+  Forms, dialogs, System.UITypes,
+  {$ENDIF}
   {$ENDIF}
   {$IFDEF LINUX}
   posix.sysTypes,
@@ -492,52 +495,42 @@ Public
   End;
 
   TmaxAsyncGlobal = Class
-    Strict Private Class
+  Strict private
+    class var FNumberOfProcessors: dword;
+    class var fWaitingThreadDataList: TList<iThreadData>;
+    class var fAllThreads: TList<TThreadData>;
+    {$IFDEF MSWINDOWS}
+    class var fCS: TRTLCriticalSection;
+    {$ELSE}
+    class var fCS: TCriticalSection;
+    {$ENDIF}
+    class var fGlobalThreadListDestroyed: boolean;
+  Private
+    Class Constructor CreateClass;
+    Class Destructor Destroyclass;
+    Class Procedure ReleaseThreadData(Const aThreadData: iThreadData);
+    Class Function GetThreadData: iThreadData;
+    Class Procedure AddToWaiting(ThreadData: iThreadData);
 
-Var
-  FNumberOfProcessors: dword;
-  fWaitingThreadDataList: TList<iThreadData>;
-  fAllThreads: TList<TThreadData>;
-  {$IFDEF MSWINDOWS}
-  fCS: TRTLCriticalSection;
-  {$ELSE}
-  fCS: TCriticalSection;
-  {$ENDIF}
-  fGlobalThreadListDestroyed: boolean;
-Private
-  Class Constructor CreateClass;
-  Class Destructor Destroyclass;
-  Class
-  Procedure ReleaseThreadData(Const aThreadData: iThreadData);
-  Class
-  Function GetThreadData: iThreadData;
-  Class
-  Procedure AddToWaiting(ThreadData: iThreadData);
-
-  Class
-  Procedure addToAllThreadList(aData: TThreadData);
-  Class
-  Procedure removeFromAllThreadList(aData: TThreadData);
-Public
-  Class Property NumberOfProcessors: dword Read FNumberOfProcessors;
-  Class
-  Function GetThreadName(const aThreadId: TThreadId): String;
+    Class Procedure addToAllThreadList(aData: TThreadData);
+    Class Procedure removeFromAllThreadList(aData: TThreadData);
+  Public
+    Class Property NumberOfProcessors: dword Read FNumberOfProcessors;
+    Class Function GetThreadName(const aThreadId: TThreadId): String;
   End;
 
-  {$IFDEF MSWINDOWS}
+  {$IFDEF MSWINDOWS} {$IFNDEF CONSOLE}
   // helps to wait for multiple signas or multiple async Items
   TWaiter = Class
-    Public
-  // returns false if the timeout is expired, otherwise true
-  // ProcessMessages will be set to false if we are not in the main VCL Thread
-    Class Function WaitFor(Const async: TArray<iAsync>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): boolean;
-  Overload;
-  Class Function WaitFor(Const Signals: TArray<iSignal>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): boolean;
-  Overload;
-  Class Function WaitFor(Const aEvents: TArray<TEvent>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): boolean;
-  Overload;
+  Public
+    // returns false if the timeout is expired, otherwise true
+    // ProcessMessages will be set to false if we are not in the main VCL Thread
+    Class Function WaitFor(Const async: TArray<iAsync>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): Boolean; Overload;
+    Class Function WaitFor(Const Signals: TArray<iSignal>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): Boolean; Overload;
+    Class Function WaitFor(Const aEvents: TArray<TEvent>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): Boolean; Overload;
   End;
-  {$ENDIF}
+  {$ENDIF}{$ENDIF}
+
   IReaderWriterLock = Interface
     ['{044BC96C-BBD4-4B75-9487-048257D27679}']
   Procedure BeginRead;
@@ -597,12 +590,13 @@ Public
   Procedure MsgWaitForSingleObject(Handle: THandle; TimeOut: dword = infinite);
   inline;
   {$ENDIF}
-  {$IFDEF MSWINDOWS}
+
+  {$IFDEF MSWINDOWS} {$IFNDEF CONSOLE}
   Function MessageDlg(Const Msg: String; DlgType: TMsgDlgType;
     Buttons: TMsgDlgButtons; HelpCtx: Longint): integer;
   Function MessageDlgThreadSafe(Const Msg: String; DlgType: TMsgDlgType;
     Buttons: TMsgDlgButtons; HelpCtx: Longint): integer;
-  {$ENDIF}
+  {$ENDIF}{$ENDIF}
 
   // how to kill a thread:
   // TerminateThread(fThread.Handle, 1);
@@ -616,18 +610,14 @@ Uses
   {$ENDIF}
   math, Diagnostics;
 
-{$IFDEF MSWINDOWS}
-
-
+{$IFDEF MSWINDOWS} {$IFNDEF CONSOLE}
 Function MessageDlg(Const Msg: String; DlgType: TMsgDlgType; Buttons: TMsgDlgButtons; HelpCtx: Longint): integer;
 Begin
   result := MessageDlgThreadSafe(Msg, DlgType, Buttons, HelpCtx)
 End;
-{$ENDIF}
+{$ENDIF}{$ENDIF}
 
-{$IFDEF MSWINDOWS}
-
-
+{$IFDEF MSWINDOWS} {$IFNDEF CONSOLE}
 Function MessageDlgThreadSafe(Const Msg: String; DlgType: TMsgDlgType; Buttons: TMsgDlgButtons; HelpCtx: Longint): integer;
 Var
   lResult: integer;
@@ -645,7 +635,7 @@ Begin
     result := lResult;
   End;
 End;
-{$ENDIF}
+{$ENDIF}{$ENDIF}
 
 
 Function SimpleAsyncCall(aProc: TThreadProcedure; Const TaskName: String = ''; SyncedAfterDone: TThreadProcedure = Nil
@@ -1538,10 +1528,8 @@ End;
 
 { TWaiter }
 
-{$IFDEF MSWINDOWS}
-
-
-Class Function TWaiter.WaitFor(Const async: TArray<iAsync>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): boolean;
+{$IFDEF MSWINDOWS} {$IFNDEF CONSOLE}
+                                    Class Function TWaiter.WaitFor(Const async: TArray<iAsync>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): boolean;
 Var
   events: TArray<TEvent>;
   x: integer;
@@ -1648,7 +1636,7 @@ Begin
   End;
   result := True;
 End;
-{$ENDIF}
+{$ENDIF}{$ENDIF}
 
 { TAsyncCollectionProcessor<T> }
 

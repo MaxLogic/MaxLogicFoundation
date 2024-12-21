@@ -545,7 +545,7 @@ begin
       if NumberOfBytesRead > 0 then
       begin
         Buffer[NumberOfBytesRead] := #0;
-        s := Buffer;
+        s := String(Buffer);
         lock;
         Try
           fData.add(s);

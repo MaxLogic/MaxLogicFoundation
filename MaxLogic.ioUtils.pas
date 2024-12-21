@@ -102,6 +102,10 @@ function UnSlash(const aPath: String): String;
 procedure SetEnvironmentPath(const aPath: String);
 function FilePathToURL(const aFilePath: string): String;
 
+// for windows it will exchange "/" with "\"
+// it will also replace "//" with "/" with a single /
+Function NormalizePath(Const aPath: String): String; Inline;
+
 Implementation
 
 Uses
@@ -584,5 +588,16 @@ begin
 end;
 {$ENDIF}
 
+Function NormalizePath(Const aPath: String): String;
+var
+  badSlash, goodSlash: Char;
+Begin
+  goodSlash:= TPath.DirectorySeparatorChar;
+  if goodSlash='/' then
+    result := StringReplace(aPath, '\', goodSlash, [rfReplaceAll])
+  else
+    result := StringReplace(aPath, '/', goodSlash, [rfReplaceAll]);
+  Result:= StringReplace(Result, goodSlash+goodSlash, goodSlash, [rfReplaceAll]);
+End;
 
 End.
