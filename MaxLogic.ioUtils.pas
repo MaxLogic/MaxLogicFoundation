@@ -104,7 +104,7 @@ function FilePathToURL(const aFilePath: string): String;
 
 // for windows it will exchange "/" with "\"
 // it will also replace "//" with "/" with a single /
-Function NormalizePath(Const aPath: String): String; Inline;
+Function NormalizePath(Const aPath: String): String;
 
 Implementation
 
@@ -591,13 +591,18 @@ end;
 Function NormalizePath(Const aPath: String): String;
 var
   badSlash, goodSlash: Char;
+  s: String;
 Begin
+  s:= aPath;
   goodSlash:= TPath.DirectorySeparatorChar;
+
   if goodSlash='/' then
-    result := StringReplace(aPath, '\', goodSlash, [rfReplaceAll])
+    s := StringReplace(s, '\', goodSlash, [rfReplaceAll])
   else
-    result := StringReplace(aPath, '/', goodSlash, [rfReplaceAll]);
-  Result:= StringReplace(Result, goodSlash+goodSlash, goodSlash, [rfReplaceAll]);
+    s := StringReplace(s, '/', goodSlash, [rfReplaceAll]);
+  s:= StringReplace(s, goodSlash+goodSlash, goodSlash, [rfReplaceAll]);
+
+  Result:= s;
 End;
 
 End.

@@ -21,51 +21,51 @@ type
 
     // Sets the capacity of the memory buffer. If the specified value is less than the current position or size,
     // the position and size will be adjusted to fit within the new capacity.
-    procedure SetCapacity(const Value: nativeUInt);
+    procedure SetCapacity(const Value: int64);
 
     // Sets the current position within the buffer. Expands the buffer capacity if the new position exceeds the current capacity.
-    procedure SetPosition(const Value: nativeUInt);
+    procedure SetPosition(const Value: int64);
 
     // Sets the buffer increment size, which determines the amount by which the buffer expands when needed.
-    procedure SetBufferIncrementSize(const Value: nativeUInt);
+    procedure SetBufferIncrementSize(const Value: int64);
 
     // Ensures the buffer has sufficient capacity for a given required size.
     // If the current capacity is insufficient, it will be increased to accommodate the required size plus the buffer increment.
-    procedure EnsureBufferSize(aRequiredSize: nativeUInt);
+    procedure EnsureBufferSize(aRequiredSize: int64);
 
     // Sets the size of the buffer, which reflects the amount of data written. Expands the capacity if necessary.
-    procedure SetSize(const Value: nativeUInt);
+    procedure SetSize(const Value: int64);
 
     // Controls whether the memory buffer should be freed automatically when the instance is destroyed.
     procedure SetFreeMemoryOnDestroy(const Value: Boolean);
 
     // Property getter methods
-    function GetCapacity: nativeUInt;
+    function GetCapacity: int64;
     function GetMemory: pByte;
-    function GetPosition: nativeUInt;
-    function GetSize: nativeUInt;
+    function GetPosition: int64;
+    function GetSize: int64;
     function GetFreeMemoryOnDestroy: Boolean;
-    function GetBufferIncrementSize: nativeUInt;
+    function GetBufferIncrementSize: int64;
 
     // Public properties to access and control buffer settings
 
     // Specifies by how much the buffer should increment each time it expands. This helps to avoid frequent reallocations.
-    property BufferIncrementSize: nativeUInt read GetBufferIncrementSize write SetBufferIncrementSize;
+    property BufferIncrementSize: int64 read GetBufferIncrementSize write SetBufferIncrementSize;
 
     // Direct pointer to the underlying memory block. This allows raw access to the buffer's contents if needed.
     property Memory: pByte read GetMemory;
 
     // Total allocated capacity of the memory buffer. Setting this property can expand or shrink the buffer.
     // If reduced below the current position or size, both will be adjusted to fit within the new capacity.
-    property Capacity: nativeUInt read GetCapacity write SetCapacity;
+    property Capacity: int64 read GetCapacity write SetCapacity;
 
     // The current read/write position within the buffer. When set beyond the current size,
     // it automatically increases the size to match. Expands the buffer if needed.
-    property Position: nativeUInt read GetPosition write SetPosition;
+    property Position: int64 read GetPosition write SetPosition;
 
     // Represents the amount of data currently stored in the buffer. Expands capacity if set beyond the current capacity.
     // Reflects the maximum position that has been written to, but does not shrink automatically.
-    property Size: nativeUInt read GetSize write SetSize;
+    property Size: int64 read GetSize write SetSize;
 
     // Controls whether the allocated memory buffer should be freed when the class instance is destroyed.
     // Set this to `False` if the memory buffer should be retained after the instance is released.
@@ -144,69 +144,69 @@ type
   TMemoryBuffer = class(TInterfacedObject, iMemoryBuffer)
   private
     // Total allocated capacity of the memory buffer, in bytes.
-    fCapacity: nativeUInt;
+    fCapacity: int64;
 
     // Current read/write position within the buffer. Represents the next byte location for reading or writing.
-    fPosition: nativeUInt;
+    fPosition: int64;
 
     // Pointer to the beginning of the allocated memory block.
     fMemory: pByte;
 
     // Specifies the amount by which the buffer should increment each time it expands. This helps avoid frequent reallocations.
-    FBufferIncrementSize: nativeUInt;
+    FBufferIncrementSize: Integer;
 
     // Represents the amount of data currently stored in the buffer. Reflects the maximum position that has been written to.
-    fSize: nativeUInt;
+    fSize: int64;
 
     // Controls whether the allocated memory buffer should be freed when the class instance is destroyed.
     FFreeMemoryOnDestroy: Boolean;
 
     // Sets the total capacity of the memory buffer. Expands or reduces the buffer size as needed.
     // If reduced below the current position or size, both will be adjusted to fit within the new capacity.
-    procedure SetCapacity(const Value: nativeUInt);
+    procedure SetCapacity(const Value: int64);
 
     // Sets the current read/write position within the buffer.
     // Expands the buffer capacity if the new position exceeds the current capacity.
-    procedure SetPosition(const Value: nativeUInt);
+    procedure SetPosition(const Value: int64);
 
     // Ensures that the buffer has sufficient capacity for a given required size.
     // If the current capacity is insufficient, the buffer expands to accommodate the required size plus the buffer increment.
-    procedure EnsureBufferSize(aRequiredSize: nativeUInt);
+    procedure EnsureBufferSize(aRequiredSize: int64);
 
     // Sets the buffer increment size, which defines the amount by which the buffer should grow during expansions.
-    procedure SetBufferIncrementSize(const Value: nativeUInt);
+    procedure SetBufferIncrementSize(const Value: int64);
 
     // Sets the buffer size to reflect the amount of data stored. Expands capacity if necessary.
-    procedure SetSize(const Value: nativeUInt);
+    procedure SetSize(const Value: int64);
 
     // Controls whether the memory buffer should be freed automatically when the instance is destroyed.
     procedure SetFreeMemoryOnDestroy(const Value: Boolean);
 
     // Property getter methods for private fields
-    function GetCapacity: nativeUInt;
+    function GetCapacity: int64;
     function GetMemory: pByte;
-    function GetPosition: nativeUInt;
-    function GetSize: nativeUInt;
+    function GetPosition: int64;
+    function GetSize: int64;
     function GetFreeMemoryOnDestroy: Boolean;
-    function GetBufferIncrementSize: nativeUInt;
+    function GetBufferIncrementSize: int64;
 
   public
     // Specifies by how much the buffer should increment each time it expands, helping to reduce the frequency of reallocations.
-    property BufferIncrementSize: nativeUInt read GetBufferIncrementSize write SetBufferIncrementSize;
+    property BufferIncrementSize: int64 read GetBufferIncrementSize write SetBufferIncrementSize;
 
     // Direct pointer to the underlying memory block, providing raw access to the buffer contents.
     property Memory: pByte read GetMemory;
 
     // Total allocated capacity of the memory buffer, in bytes. Setting this property can expand or shrink the buffer.
     // If reduced below the current position or size, both are adjusted to fit within the new capacity.
-    property Capacity: nativeUInt read GetCapacity write SetCapacity;
+    property Capacity: int64 read GetCapacity write SetCapacity;
 
     // The current read/write position within the buffer. Expands the buffer if set beyond the current capacity.
-    property Position: nativeUInt read GetPosition write SetPosition;
+    property Position: int64 read GetPosition write SetPosition;
 
     // Represents the amount of data currently stored in the buffer. Expands capacity if set beyond the current capacity.
     // Reflects the maximum position that has been written to.
-    property Size: nativeUInt read GetSize write SetSize;
+    property Size: int64 read GetSize write SetSize;
 
     // Controls whether the memory buffer should be freed when the instance is destroyed.
     // Set to `False` if the buffer should be retained after the instance is destroyed.
@@ -215,7 +215,7 @@ type
     // Initializes the memory buffer with a specified initial size and buffer increment.
     // `aInitialSize` sets the initial capacity and size of the memory block.
     // `aBufferIncrements` defines the increment size for expansions.
-    constructor Create(aInitialSize: nativeUInt = 0; aBufferIncrements: nativeUInt = 16 * 1024);
+    constructor Create(aInitialSize: int64 = 0; aBufferIncrements: int64 = 16 * 1024);
 
     // Frees the allocated memory if `FreeMemoryOnDestroy` is `True` and cleans up the instance.
     destructor Destroy; override;
@@ -308,7 +308,7 @@ begin
 end;
 
 constructor TMemoryBuffer.Create(aInitialSize,
-  aBufferIncrements: nativeUInt);
+  aBufferIncrements: int64);
 begin
   inherited Create;
   FFreeMemoryOnDestroy := True;
@@ -325,18 +325,18 @@ begin
   inherited;
 end;
 
-procedure TMemoryBuffer.EnsureBufferSize(aRequiredSize: nativeUInt);
+procedure TMemoryBuffer.EnsureBufferSize(aRequiredSize: int64);
 begin
   if aRequiredSize >= fCapacity then
     Capacity := (aRequiredSize + Self.BufferIncrementSize); // set the new size to be the required size + the Buffer inc value, this way we will have room for more memory movements later on.
 end;
 
-function TMemoryBuffer.GetBufferIncrementSize: nativeUInt;
+function TMemoryBuffer.GetBufferIncrementSize: int64;
 begin
   Result := FBufferIncrementSize;
 end;
 
-function TMemoryBuffer.GetCapacity: nativeUInt;
+function TMemoryBuffer.GetCapacity: int64;
 begin
   Result := fCapacity;
 end;
@@ -351,12 +351,12 @@ begin
   Result := FFreeMemoryOnDestroy;
 end;
 
-function TMemoryBuffer.GetPosition: nativeUInt;
+function TMemoryBuffer.GetPosition: int64;
 begin
   Result := fPosition;
 end;
 
-function TMemoryBuffer.GetSize: nativeUInt;
+function TMemoryBuffer.GetSize: int64;
 begin
   Result := fSize;
 end;
@@ -420,12 +420,12 @@ begin
   Capacity := 0; // frees memory and sets size and position also to 0
 end;
 
-procedure TMemoryBuffer.SetBufferIncrementSize(const Value: nativeUInt);
+procedure TMemoryBuffer.SetBufferIncrementSize(const Value: int64);
 begin
   FBufferIncrementSize := Value;
 end;
 
-procedure TMemoryBuffer.SetCapacity(const Value: nativeUInt);
+procedure TMemoryBuffer.SetCapacity(const Value: int64);
 begin
   if fCapacity = Value then
     Exit;
@@ -445,14 +445,14 @@ begin
   FFreeMemoryOnDestroy := Value;
 end;
 
-procedure TMemoryBuffer.SetPosition(const Value: nativeUInt);
+procedure TMemoryBuffer.SetPosition(const Value: int64);
 begin
   fPosition := Value;
   fSize := max(fSize, fPosition);
   EnsureBufferSize(fPosition);
 end;
 
-procedure TMemoryBuffer.SetSize(const Value: nativeUInt);
+procedure TMemoryBuffer.SetSize(const Value: int64);
 begin
   fSize := Value;
   if fSize > fCapacity then
@@ -507,9 +507,6 @@ var
   lBytes: TBytes;
   lLen: int32;
 begin
-  if Length(aValue) > High(int32) then
-    raise EInvalidOperation.Create('String is too long to write.');
-
   lBytes := TEncoding.utf8.GetBytes(aValue);
   lLen := Length(lBytes);
   Write(lLen);
