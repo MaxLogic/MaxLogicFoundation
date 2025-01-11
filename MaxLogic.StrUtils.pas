@@ -123,6 +123,9 @@ Function fstr(Const d: double; vs: Integer = 2; ns: Integer = 2): String;
 function GuidToHex(const aGuid: TGuid): String;
 function Join(const aSeparator: String; const aValues: TArray<Integer>): String;
 
+// this methods ensures the num of bytes does not exceed aMaxByteLength
+// it supports unicode surrogate pairs
+function Utf8TruncateByCodePoint(const AInput: string; aMaxBytesLength: Integer): TBytes;
 
 implementation
 
@@ -152,7 +155,7 @@ var
   S: string;
   i1, i2, len, x: Integer;
   ExactStart, ExactEnd: boolean;
-  l: TStringList;
+  aMaxBytesLength: TStringList;
 begin
   if not casesensitive then
   begin
@@ -181,16 +184,16 @@ begin
   else
     ExactEnd := true;
 
-  l := TStringList.Create;
-  l.StrictDelimiter := true;
-  l.Delimiter := '*';
-  l.DelimitedText := Pattern;
+  aMaxBytesLength := TStringList.Create;
+  aMaxBytesLength.StrictDelimiter := true;
+  aMaxBytesLength.Delimiter := '*';
+  aMaxBytesLength.DelimitedText := Pattern;
 
   result := true;
   i1 := 1;
-  for x := 0 to l.Count - 1 do
+  for x := 0 to aMaxBytesLength.Count - 1 do
   begin
-    i2 := PosEx(l[x], Value, i1);
+    i2 := PosEx(aMaxBytesLength[x], Value, i1);
 
     if i2 <= 0 then
     begin
@@ -204,37 +207,37 @@ begin
       break;
     end;
 
-    if (ExactEnd) and (x = l.Count - 1) then
+    if (ExactEnd) and (x = aMaxBytesLength.Count - 1) then
     begin
-      len := Length(l[x]);
+      len := Length(aMaxBytesLength[x]);
       S := copy(Value, (Length(Value) - len) + 1, len);
-      if l[x] <> S then
+      if aMaxBytesLength[x] <> S then
       begin
         result := false;
         break;
       end;
     end;
 
-    i1 := i2 + Length(l[x]);
+    i1 := i2 + Length(aMaxBytesLength[x]);
   end;
 
-  l.Free;
+  aMaxBytesLength.Free;
 end;
 
 Function putBefore(Const AString: String; AChar: char; TotalLength: Integer): String;
 Var
-  x, l: Integer;
+  x, aMaxBytesLength: Integer;
 Begin
-  l := Length(AString);
-  If l > TotalLength Then
+  aMaxBytesLength := Length(AString);
+  If aMaxBytesLength > TotalLength Then
     result := AString
   Else
   Begin
     SetLength(result, TotalLength);
-    For x := 1 To TotalLength - l Do
+    For x := 1 To TotalLength - aMaxBytesLength Do
       result[x] := AChar;
-    For x := TotalLength - l + 1 To TotalLength Do
-      result[x] := AString[x - (TotalLength - l)];
+    For x := TotalLength - aMaxBytesLength + 1 To TotalLength Do
+      result[x] := AString[x - (TotalLength - aMaxBytesLength)];
   End;
 End;
 
@@ -425,14 +428,14 @@ procedure TFilterEx.Prepare(const aText: String);
 var
   ar: TArray<String>;
   fi: TFilterItem;
-  l: TStringList;
+  aMaxBytesLength: TStringList;
   p: String;
   k: TKind;
 begin
-  gc(l, TStringList.Create);
-  l.StrictDelimiter := true;
-  l.Delimiter := '|';
-  l.QuoteChar := '"';
+  gc(aMaxBytesLength, TStringList.Create);
+  aMaxBytesLength.StrictDelimiter := true;
+  aMaxBytesLength.Delimiter := '|';
+  aMaxBytesLength.QuoteChar := '"';
 
   fOrgFilterText := aText;
   ar := SplitBySpace(AnsiLowercase(trim(aText)));
@@ -452,13 +455,13 @@ begin
         continue;
     end;
 
-    l.DelimitedText := p;
+    aMaxBytesLength.DelimitedText := p;
 
-    SetLength(fi.OrElements, l.Count);
-    SetLength(fi.OrElementKinds, l.Count);
-    for var Y := 0 to l.Count - 1 do
+    SetLength(fi.OrElements, aMaxBytesLength.Count);
+    SetLength(fi.OrElementKinds, aMaxBytesLength.Count);
+    for var Y := 0 to aMaxBytesLength.Count - 1 do
     begin
-      p := l[Y];
+      p := aMaxBytesLength[Y];
       Preprocess(p, k);
       fi.OrElements[Y] := p;
       fi.OrElementKinds[Y] := k;
@@ -506,12 +509,12 @@ function TFilterEx.SplitBySpace(const aText: String): TArray<String>;
 var
   S, p: String;
   i1, i2: Integer;
-  l: TList<String>;
+  aMaxBytesLength: TList<String>;
   lIsInQuote: boolean;
   C: char;
 begin
   S := aText + ' ';
-  gc(l, TList<String>.Create);
+  gc(aMaxBytesLength, TList<String>.Create);
   lIsInQuote := false;
   i1 := 1;
   i2 := 1; // why not 2? because the first char may contain a '"' char....
@@ -531,14 +534,14 @@ begin
       if i1 <> i2 then
       begin
         p := copy(S, i1, (i2 - i1));
-        l.add(p);
+        aMaxBytesLength.add(p);
       end;
       i1 := i2 + 1;
     end;
     inc(i2);
   end;
 
-  result := l.ToArray;
+  result := aMaxBytesLength.ToArray;
 end;
 
 function TFilterEx.Matches(const aText: String): boolean;
@@ -589,26 +592,26 @@ end;
 
 Procedure Split(Const line: String; Delimiter: char; out strings: TArray<String>);
 Var
-  l: TStringList;
+  aMaxBytesLength: TStringList;
 Begin
-  l := TStringList.Create;
-  l.StrictDelimiter := true;
-  l.Delimiter := Delimiter;
-  l.DelimitedText := line;
-  strings := l.ToStringArray;
-  l.Free;
+  aMaxBytesLength := TStringList.Create;
+  aMaxBytesLength.StrictDelimiter := true;
+  aMaxBytesLength.Delimiter := Delimiter;
+  aMaxBytesLength.DelimitedText := line;
+  strings := aMaxBytesLength.ToStringArray;
+  aMaxBytesLength.Free;
 end;
 
 Procedure Split(Const line: String; Delimiter: char; strings: TStringList);
 Var
-  l: TStringList;
+  aMaxBytesLength: TStringList;
 Begin
-  l := TStringList.Create;
-  l.StrictDelimiter := true;
-  l.Delimiter := Delimiter;
-  l.DelimitedText := line;
-  strings.Assign(l);
-  l.Free;
+  aMaxBytesLength := TStringList.Create;
+  aMaxBytesLength.StrictDelimiter := true;
+  aMaxBytesLength.Delimiter := Delimiter;
+  aMaxBytesLength.DelimitedText := line;
+  strings.Assign(aMaxBytesLength);
+  aMaxBytesLength.Free;
 end;
 
 Function fstr(Const d: double; vs: Integer = 2; ns: Integer = 2): String;
@@ -635,5 +638,58 @@ begin
   Result:= String.Join(aSeparator, lValues);
 end;
 
+function Utf8TruncateByCodePoint(const AInput: string; aMaxBytesLength: Integer): TBytes;
+var
+  i, lCharLen: Integer;
+  lPartial: string;
+  lEncBytes: TBytes;
+  lOutBuf: TBytes;
+  lSize: Integer;
+begin
+  // If aMaxBytesLength <= 0, trivially return empty
+  if aMaxBytesLength <= 0 then
+    Exit(nil);
+
+  // get some more memory just in case
+  lSize:= 0;
+  SetLength(lOutBuf, aMaxBytesLength);
+
+  i := 1;
+  while i <= Length(AInput) do
+  begin
+    // For a single codepoint, we might need 1 or 2 UTF-16 chars:
+    // In most cases, TEncoding.UTF8 can handle surrogates if we pass them together.
+    // So check if AInput[i] is a high surrogate and there's a low surrogate next.
+    if (i < Length(AInput)) and
+       (AInput[i] >= #$D800) and (AInput[i] <= #$DBFF) and
+       (AInput[i+1] >= #$DC00) and (AInput[i+1] <= #$DFFF) then
+    begin
+      // This is a surrogate pair
+      lPartial := Copy(AInput, i, 2);
+      lCharLen := 2;
+    end else begin
+      // single UTF-16 code unit
+      lPartial := AInput[i];
+      lCharLen := 1;
+    end;
+
+    // Convert that code point (or pair) to UTF-8 bytes
+    lEncBytes := TEncoding.UTF8.GetBytes(lPartial);
+
+    // If adding these bytes would exceed aMaxBytesLength, stop.
+    if (lSize+ Length(lEncBytes)) > aMaxBytesLength then
+      Break;
+
+    // Otherwise, append them
+    Move(lEncBytes[0], lOutBuf[lSize], Length(lEncBytes));
+    inc(lSize, Length(lEncBytes));
+
+    // Advance i by the # of UTF-16 code units consumed
+    Inc(i, lCharLen);
+  end;
+
+  setLength(lOutBuf, lSize);
+  Result := lOutBuf;
+end;
 
 end.
