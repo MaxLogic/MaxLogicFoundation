@@ -12,7 +12,7 @@ uses
 const
   CR = sLineBreak;
 
-function StringMatches(Value, Pattern: string;
+function StringMatches(Value, Pattern: String;
   casesensitive: boolean = true): boolean;
 Function putBefore(Const AString: String; AChar: char; TotalLength: Integer): String; Overload;
 Function putBefore(Num: Integer; AChar: char; TotalLength: Integer): String; Overload;
@@ -34,7 +34,7 @@ Type
     // the text between startMarker and endMarker
     const aValue: String;
     aStartMarkerFoundAtIndex: Integer;
-    // the string to replace the placeholder (StartMarker+value+endmarker)
+    // the String to replace the placeholder (StartMarker+value+endmarker)
     // default is the whole placeholder that s the value with the start and end markers, so if you do not touch that, it will act as action=raSkip
     var aReplaceValue: String;
     // default raReplace
@@ -58,7 +58,7 @@ Function CombineUrl(const aParts: array of String; aSeparator: String = '/'): St
 // uses internally masks.MatchesMask
 // checks if the aText mathes any of the givem filter strings
 // returns always true if the filter array is empty
-function MatchesFilter(const aText: string; const AFilter: TStringDynArray): boolean;
+function MatchesFilter(const aText: String; const AFilter: TStringDynArray): boolean;
 
 // Windows Explorer uses StrCmpLogicalW to compare file names. The RTL/VCL does not declare this function so you need to do it yourself.
 // on non windows platform we are falling back on CompareStr
@@ -119,20 +119,24 @@ type
 Procedure Split(Const line: String; Delimiter: char; strings: TStringList); overload;
 Procedure Split(Const line: String; Delimiter: char; out strings: TArray<String>); overload;
 function Split(Delimiter: char; Const line: String): TArray<String>; overload;
+function SplitInHalfBy(const aText: String; aDelim: Char; out aParts: TArray<String>): Boolean;overload;
+function SplitInHalfBy(const aText: String; aDelim: Char; out alLeft, alRight: String): Boolean;overload;
+
+
 Function fstr(Const d: double; vs: Integer = 2; ns: Integer = 2): String;
 function GuidToHex(const aGuid: TGuid): String;
 function Join(const aSeparator: String; const aValues: TArray<Integer>): String;
 
 // this methods ensures the num of bytes does not exceed aMaxByteLength
 // it supports unicode surrogate pairs
-function Utf8TruncateByCodePoint(const AInput: string; aMaxBytesLength: Integer): TBytes;
+function Utf8TruncateByCodePoint(const AInput: String; aMaxBytesLength: Integer): TBytes;
 
 implementation
 
 uses
-  system.Masks, autoFree;
+  system.Masks, autoFree, system.Math;
 
-function OccurrencesOfChar(const S: string; const C: char): Integer;
+function OccurrencesOfChar(const S: String; const C: char): Integer;
 var
   pc: pChar;
 begin
@@ -149,10 +153,10 @@ begin
   end;
 end;
 
-function StringMatches(Value, Pattern: string;
+function StringMatches(Value, Pattern: String;
   casesensitive: boolean = true): boolean;
 var
-  S: string;
+  S: String;
   i1, i2, len, x: Integer;
   ExactStart, ExactEnd: boolean;
   aMaxBytesLength: TStringList;
@@ -363,10 +367,10 @@ begin
   end;
 end;
 
-function MatchesFilter(const aText: string;
+function MatchesFilter(const aText: String;
   const AFilter: TStringDynArray): boolean;
 var
-  LFilter: string;
+  LFilter: String;
 begin
   if Length(AFilter) = 0 then
     Exit(true);
@@ -390,7 +394,7 @@ begin
       // the text between startMarker and endMarker
       const aValue: String;
       aStartMarkerFoundAtIndex: Integer;
-      // the string to replace the placeholder (StartMarker+value+endmarker)
+      // the String to replace the placeholder (StartMarker+value+endmarker)
       // default is the whole placeholder that s the value with the start and end markers, so if you do not touch that, it will act as action=raSkip
       var aReplaceValue: String;
       // default raReplace
@@ -585,6 +589,37 @@ end;
 
 { other }
 
+function SplitInHalfBy(const aText: String; aDelim: Char; out aParts: TArray<String>): Boolean;
+var
+  i: Integer;
+begin
+  Result:= False;
+  i:= Pos(aDelim, aText);
+  if i<1 then
+    aParts:= [aText]
+  else begin
+    Result:= True;
+    aParts:= [
+      Copy(aText, 1, i-1),
+      Copy(aText, i+1, Length(aText))
+    ];
+  end;
+end;
+
+function SplitInHalfBy(const aText: String; aDelim: Char; out alLeft, alRight: String): Boolean;overload;
+var
+  i: Integer;
+begin
+  Result:= False;
+  i:= Pos(aDelim, aText);
+  if i>=1 then
+  begin
+    Result:= True;
+    alLeft:= Copy(aText, 1, i-1);
+    alRight:= Copy(aText, i+1, Length(aText));
+  end;
+end;
+
 function Split(Delimiter: char; Const line: String): TArray<String>;
 begin
   Split(line, Delimiter, result);
@@ -638,10 +673,10 @@ begin
   Result:= String.Join(aSeparator, lValues);
 end;
 
-function Utf8TruncateByCodePoint(const AInput: string; aMaxBytesLength: Integer): TBytes;
+function Utf8TruncateByCodePoint(const AInput: String; aMaxBytesLength: Integer): TBytes;
 var
   i, lCharLen: Integer;
-  lPartial: string;
+  lPartial: String;
   lEncBytes: TBytes;
   lOutBuf: TBytes;
   lSize: Integer;
