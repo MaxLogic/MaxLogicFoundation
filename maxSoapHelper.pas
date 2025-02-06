@@ -43,6 +43,7 @@ type
     fRequestCustomHttpHeaders: TList<THeaderItem>;
     // IsRequest = true, else false
     fLastSoapMesage: array [Boolean] of string;
+    fLastUrl: String;
 
     procedure AddRequestHttpheaderItem(const name, Value: string);
     Function GetLogFileName: string; virtual; abstract;
@@ -58,7 +59,7 @@ type
     procedure HttpOnSoapMessage(sender: tobject; Stream: TStream;
       IsRequest: Boolean; const RequestTimeStamp: TDateTime); virtual;
     procedure AfterRequestSaved(const FileName: string); virtual;
-    procedure LogBeforeExecute(const MethodName: string; Response: TStream);
+    procedure LogBeforeExecute(const MethodName: string; Response: TStream); virtual;
     procedure LogAfterExecute(const MethodName: string; Response: TStream);
   public
     constructor Create;
@@ -220,6 +221,16 @@ var
 begin
   h.name := name;
   h.Value := Value;
+
+  // eliminate duplicates
+  for var x := 0 to fRequestCustomHttpHeaders.count-1 do
+    if Name = fRequestCustomHttpHeaders[x].Name then
+    begin
+      fRequestCustomHttpHeaders[x]:= h;
+      Exit;
+    end;
+
+  // add as new
   fRequestCustomHttpHeaders.Add(h);
 end;
 
@@ -279,7 +290,12 @@ begin
 
   ms.position := 0;
   l := TStringList.Create;
-  l.LoadFromStream(ms, TEncoding.UTF8);
+  try
+    l.LoadFromStream(ms, TEncoding.UTF8);
+  except
+    ms.position := 0;
+    l.LoadFromStream(ms);
+  end;
   ms.position := 0;
 
   if IsRequest then
@@ -330,6 +346,7 @@ var
   x: integer;
   n, v: string;
 begin
+  fLastUrl:= AHTTPReqResp.URL;
   BeforePost2;
 
 {$IFNDEF DELPHIX_RIO_UP      }
