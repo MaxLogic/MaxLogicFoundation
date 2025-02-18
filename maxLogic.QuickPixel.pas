@@ -839,8 +839,8 @@ begin
     except
       // do nothing
     end;
-    lMask.Free;
     qpMask.Free;
+    lMask.Free;
   end;
 end;
 
