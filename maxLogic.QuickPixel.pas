@@ -561,7 +561,12 @@ begin
   FScanLines := nil;
   Palette := nil;
   Colors := nil;
-  FBitmap.Canvas.Unlock;
+  try
+    if assigned(FBitmap) then
+      FBitmap.Canvas.Unlock;
+  Except
+    // do nothing
+  end;
   inherited;
 end;
 
