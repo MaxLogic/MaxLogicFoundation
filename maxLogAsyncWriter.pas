@@ -1,5 +1,6 @@
 Unit maxLogAsyncWriter;
 
+{$REGION 'Version History'}
 { copyright Pawel Piotrowski
   Description: this is a class that helps using old style log writing f existing legacy applications
 
@@ -24,6 +25,13 @@ Unit maxLogAsyncWriter;
   2014-05-13: Limited the pagesize to 1 MB.
   2014-04-26 - extended the delay to 300 ms
   2014-03-20: first implementation }
+{$ENDREGION}
+
+{$IFDEF DEBUG}
+  // this will force the log entries to be written immediately
+  // this will make the app slower
+  {$DEFINE FORCE_FULL_FLUSH}
+{$ENDIF}
 
 Interface
 
@@ -77,6 +85,7 @@ Type
     fKeyInitialized: boolean;
     fChunk: TMemoryStream;
     fOlderLogFiles: TStringList;
+    fParent: TMaxLogAsyncWriter;
 
     Procedure writeBLogHeader;
 
@@ -88,7 +97,7 @@ Type
     // after the file gets too big, we will rename it, read it, compress it, and write it again
     Procedure MoveAndZipBLog;
   Public
-    Constructor Create;
+    Constructor Create(aParent: TMaxLogAsyncWriter);
     Destructor destroy; Override;
   End;
 
@@ -135,7 +144,7 @@ Type
       Function CheckLastAccessAndCloseIfNeeded: boolean;
     End;
   Private
-    Class Var fBLogDir: String;
+    fBLogDir: String;
   Private
     fAsync: iAsync;
     fSignalNewItemAvailable, fSignalAllItemsProcesed: iSignal;
@@ -149,50 +158,23 @@ Type
     Procedure compact(Var items: TItems);
     Function retriveItems(Out items: TItems): boolean;
     Procedure OpenFile(Filename: String; Var fh: TFileHolder);
-    Procedure DoAddToLogFile(Const aText, Filename: String; CreatePlainTextLogFile: boolean);
     Procedure AddLogItem(Const LogItem: TLogItem);
     Procedure CloseFiles(IgnoreDelay: boolean = false);
-    Procedure DoFetchAll;
     Procedure lock;
     Procedure unLock;
 
-  Private // class methods
-    Class Var
-      fLogAsyncWriter: TMaxLogAsyncWriter;
-    Class Constructor CreateClass;
-    Class Function GetSingeltonInstance: TMaxLogAsyncWriter; Static;
-    Class Function GetBLogDir: String; Static;
-    Class Procedure SetBlogDir(Const Value: String); Static;
+  private
+    fLogAsyncWriter: TMaxLogAsyncWriter;
   Public
-    Constructor Create;
+    Constructor Create(const aLogDir: String);
     Destructor destroy; Override;
 
-    Class Procedure AddToLogFile(Const aText: String; Const Filename: String; CreatePlainTextLogFile: boolean = true);
-    Class Procedure AddToLogFileAndWaitTilWritingComplete(Const aText: String; Const Filename: String; CreatePlainTextLogFile: boolean = true);
+    Procedure AddToLogFile(Const aText: String; Const Filename: String; CreatePlainTextLogFile: boolean = true);
+    Procedure AddToLogFileAndWaitTilWritingComplete(Const aText: String; Const Filename: String; CreatePlainTextLogFile: boolean = true);
     // forces all files to be written and closed; it will wait until all files are really closed
-    Class Procedure FetchAll;
-
+    Procedure FetchAll;
   Public
-    Class Property BLogDir: String Read GetBLogDir Write SetBlogDir;
-  End;
-
-  TEnterLeaveLog = Class(TInterfacedObject)
-  Private
-    fTimeStamp: Int64;
-    fDescription: String;
-    fLogFile: String;
-    fCreatePlainTextLogFile: boolean;
-    Function getElapsedSufix: String;
-  Public
-    Destructor destroy; Override;
-
-    { will add an log enty and after the interface get released a second one,
-      Note, a "enter" / "Leave" prefix will be added before the aDescription.
-      OnLeave a timestamp will be added as a sufix like "[%d ms]"
-      Note: if the logName doesn't ave a path or extension, then aCreatePlainTextLogFile will be set to false anyway }
-    Class Function enter(Const aDescription, aLogFileName: String;
-      Const aFirstEntryOnlyExtraText: String = '';
-      aCreatePlainTextLogFile: boolean = true): iInterface;
+    Property BLogDir: String Read fBLogDir;
   End;
 
 Implementation
@@ -204,12 +186,7 @@ Uses
 
 { TmaxLogAsyncWriter }
 
-Class Procedure TMaxLogAsyncWriter.AddToLogFile(Const aText, Filename: String; CreatePlainTextLogFile: boolean = true);
-Begin
-  GetSingeltonInstance.DoAddToLogFile(aText, Filename, CreatePlainTextLogFile);
-End;
-
-Procedure TMaxLogAsyncWriter.DoAddToLogFile(Const aText, Filename: String; CreatePlainTextLogFile: boolean);
+Procedure TMaxLogAsyncWriter.AddToLogFile(Const aText, Filename: String; CreatePlainTextLogFile: boolean);
 Var
   LogItem: TLogItem;
 Begin
@@ -221,7 +198,7 @@ Begin
   AddLogItem(LogItem);
 End;
 
-Class Procedure TMaxLogAsyncWriter.AddToLogFileAndWaitTilWritingComplete(Const aText, Filename: String; CreatePlainTextLogFile: boolean = true);
+Procedure TMaxLogAsyncWriter.AddToLogFileAndWaitTilWritingComplete(Const aText, Filename: String; CreatePlainTextLogFile: boolean = true);
 Begin
   AddToLogFile(aText, Filename, CreatePlainTextLogFile);
   FetchAll;
@@ -235,17 +212,14 @@ Var
 Begin
   While true Do
   Begin
-    fSignalAllItemsProcesed.setNonsignaled;
-
     retriveItems(items);
     If length(items) = 0 Then
     Begin
-      // CloseFiles;
       If fTerminated Then
         break;
 
       fSignalAllItemsProcesed.setSignaled;
-      fSignalNewItemAvailable.waitforSignaled(cLAZYDELAY);
+      fSignalNewItemAvailable.waitforSignaled;//(cLAZYDELAY);
       continue; // restart the loop and get the new items to process
     End;
 
@@ -258,10 +232,7 @@ Begin
     Begin
       OpenFile(LogItem.Filename, fh);
       fh.write(LogItem.Msg);
-    End;
-
-    fSignalAllItemsProcesed.setSignaled;
-
+    end;
   End; // while
 
   fSignalAllItemsProcesed.setSignaled;
@@ -295,9 +266,12 @@ End;
 
 Constructor TMaxLogAsyncWriter.Create;
 Begin
-  Inherited;
+  inherited Create;
+  fBLogDir := aLogDir;
+
   If Not TBinaryLogWriter.Disabled Then
-    fBLogWriter := TBinaryLogWriter.Create;
+    fBLogWriter := TBinaryLogWriter.Create(Self);
+
 
   fSignalNewItemAvailable := tSignal.Create;
   fSignalNewItemAvailable.setNonsignaled;
@@ -313,11 +287,6 @@ Begin
       asyncprocess;
     End
     , classname);
-End;
-
-Class Constructor TMaxLogAsyncWriter.CreateClass;
-Begin
-  // GetSingeltonInstance;
 End;
 
 Destructor TMaxLogAsyncWriter.destroy;
@@ -339,24 +308,11 @@ Begin
   Inherited;
 End;
 
-Class Procedure TMaxLogAsyncWriter.FetchAll;
-Begin
-  GetSingeltonInstance.DoFetchAll;
-End;
-
-Procedure TMaxLogAsyncWriter.DoFetchAll;
+Procedure TMaxLogAsyncWriter.FetchAll;
 Begin
   fSignalAllItemsProcesed.setNonsignaled;
   fSignalNewItemAvailable.setSignaled;
   fSignalAllItemsProcesed.waitforSignaled;
-End;
-
-Class Function TMaxLogAsyncWriter.GetSingeltonInstance: TMaxLogAsyncWriter;
-Begin
-  If Not assigned(fLogAsyncWriter) Then
-    fLogAsyncWriter := TMaxLogAsyncWriter.Create;
-
-  result := fLogAsyncWriter;
 End;
 
 Procedure TMaxLogAsyncWriter.OpenFile(Filename: String;
@@ -387,17 +343,9 @@ Begin
   Try
     fItems.add(LogItem);
     fItemsSize := fItemsSize + LogItem.estimateInMemorySize;
-    path := extractFilePath(LogItem.Filename);
-    fSignalAllItemsProcesed.setNonsignaled;
 
-    // do not write items if they are not yet full set up
-    If path <> '' Then
-    Begin
-      If fBLogDir = '' Then
-        fBLogDir := path;
-
-      fSignalNewItemAvailable.setSignaled;
-    End;
+    fSignalAllItemsProcesed.SetNonSignaled;
+    fSignalNewItemAvailable.setSignaled;
   Finally
     unLock;
   End;
@@ -405,6 +353,10 @@ Begin
   // prevent memory overflow
   While (fItemsSize > cMaxLogItemBufferSize) And (Not fTerminated) Do
     fSignalAllItemsProcesed.waitforSignaled(10);
+
+  {$IFDEF FORCE_FULL_FLUSH}
+  fSignalAllItemsProcesed.waitforSignaled;
+  {$ENDIF}
 End;
 
 Function TMaxLogAsyncWriter.retriveItems(
@@ -413,15 +365,11 @@ Begin
   result := false;
   lock;
   Try
-    // before retriving date, we need to property set the log dir...
-    If fBLogDir <> '' Then
-    Begin
-      items := fItems.toArray;
-      fItems.clear;
-      fItemsSize := 0;
-      result := length(items) <> 0;
-      fSignalNewItemAvailable.setNonsignaled;
-    End;
+    items := fItems.toArray;
+    fItems.clear;
+    fItemsSize := 0;
+    result := length(items) <> 0;
+    fSignalNewItemAvailable.setNonsignaled;
   Finally
     unLock;
   End;
@@ -476,39 +424,7 @@ Begin
     dic.free;
 End;
 
-Class Function TMaxLogAsyncWriter.GetBLogDir: String;
-Begin
-  result := fBLogDir;
-End;
 
-Class Procedure TMaxLogAsyncWriter.SetBlogDir(Const Value: String);
-Var
-  nDir: String;
-  f1, f2: String;
-Begin
-  GetSingeltonInstance.lock;
-  Try
-    If Not sameText(GetSingeltonInstance.fBLogDir, nDir) Then
-    Begin
-      If assigned(GetSingeltonInstance.fBLogWriter) Then
-      Begin
-        GetSingeltonInstance.fBLogWriter.free;
-        GetSingeltonInstance.fBLogWriter := Nil;
-
-        f1 := fBLogDir + '.all.bLog';
-        f2 := nDir + '.all.bLog';
-        If Not fileExists(f2) Then
-          TFile.move(f1, f2);
-      End;
-
-      fBLogDir := nDir;
-    End;
-
-  Finally
-    GetSingeltonInstance.unLock;
-  End;
-
-End;
 
 { TmaxLogAsyncWriter.TFileHolder }
 
@@ -604,6 +520,7 @@ End;
 Constructor TBinaryLogWriter.Create;
 Begin
   Inherited Create;
+  fParent:= aParent;
   fOlderLogFiles := TStringList.Create;
   fChunk := TMemoryStream.Create;
   fChunk.size := 1024;
@@ -634,7 +551,7 @@ Begin
 
   If Not assigned(fBLog) Then
   Begin
-    dir := TMaxLogAsyncWriter.fBLogDir;
+    dir := fParent.fBLogDir;
     OpenBLogFile(dir);
     // if the funktion above failed...
     If Not assigned(fBLog) Then
@@ -813,8 +730,8 @@ Var
   f1, f2: String;
   lKey: TSHA256Digest;
 Begin
-  f1 := TMaxLogAsyncWriter.fBLogDir + '.all.bLog';
-  f2 := TMaxLogAsyncWriter.fBLogDir + '.all(' + formatDateTime('yyyy"-"mm"-"dd"_"hh";"nn";"ss"."zzz', now) + ').bLog';
+  f1 := fParent.fBLogDir + '.all.bLog';
+  f2 := fParent.fBLogDir + '.all(' + formatDateTime('yyyy"-"mm"-"dd"_"hh";"nn";"ss"."zzz', now) + ').bLog';
   TFile.move(f1, f2);
 
   fOlderLogFiles.add(f2);
@@ -1025,66 +942,6 @@ Begin
   fNew.writeBuffer(size, 4);
   If size <> 0 Then
     fNew.writeBuffer(s1[1], size);
-End;
-
-{ TEnterLeaveLog }
-
-Destructor TEnterLeaveLog.destroy;
-Begin
-  TMaxLogAsyncWriter.AddToLogFile('Leave ' + fDescription + getElapsedSufix,
-    self.fLogFile,
-    fCreatePlainTextLogFile);
-
-  Inherited;
-End;
-
-Class Function TEnterLeaveLog.enter(Const aDescription,
-  aLogFileName: String;
-Const aFirstEntryOnlyExtraText: String = '';
-aCreatePlainTextLogFile: boolean = true): iInterface;
-Var
-  l: TEnterLeaveLog;
-  s: String;
-Begin
-  l := TEnterLeaveLog.Create;
-  l.fLogFile := aLogFileName;
-  l.fDescription := aDescription;
-  l.fCreatePlainTextLogFile := aCreatePlainTextLogFile;
-  l.fTimeStamp := AppWideStopWatch.AppStopWatch.elapsedMilliseconds;
-
-  If (aLogFileName = '') OR (extractFileExt(aLogFileName) = '') Then
-    l.fCreatePlainTextLogFile := false;
-
-  s := 'Enter ' + l.fDescription;
-  If aFirstEntryOnlyExtraText <> '' Then
-    s := s + ' ' + aFirstEntryOnlyExtraText;
-
-  TMaxLogAsyncWriter.AddToLogFile(s,
-    l.fLogFile,
-    l.fCreatePlainTextLogFile);
-
-  result := l;
-End;
-
-Function TEnterLeaveLog.getElapsedSufix: String;
-Begin
-  result := format(' [%d ms]', [AppStopWatch.elapsedMilliseconds - self.fTimeStamp]);
-End;
-
-Initialization
-
-{$IFDEF madExcept}
-HideLeak('TBinaryLogWriter.Create');
-// this is a singelton and is destroyed in the finalisation section
-{$ENDIF}
-
-
-Finalization
-
-If TMaxLogAsyncWriter.fLogAsyncWriter <> Nil Then
-Begin
-  TMaxLogAsyncWriter.fLogAsyncWriter.free;
-  TMaxLogAsyncWriter.fLogAsyncWriter := Nil;
 End;
 
 End.
