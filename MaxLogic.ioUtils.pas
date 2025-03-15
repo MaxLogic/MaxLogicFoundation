@@ -2,12 +2,7 @@ Unit MaxLogic.ioUtils;
 
 {
   work in progress: for now only some methods exported from old big the pawel1.pas
-  Version: 0.18
-
-  History:
-  2023-03-18: added SafeAppendToFile
-  2022-04-12: ported executeFile methods
-  2022-04-12: ported Exec method
+  Version: 0.19
 }
 
 {$IF DEFINED(FRAMEWORK_VCL) OR DEFINED(FRAMEWORK_FMXs)}
@@ -21,14 +16,14 @@ Interface
 Uses
   {$IFDEF MadExcept}MadExcept, {$ENDIF}
   {$IF DEFINED( MsWINDOWS)}
-  windows, ComObj, WinInet, ShLwApi,
+  winApi.windows, System.Win.ComObj, Winapi.WinInet, Winapi.ShLwApi,
   maxConsoleRunner,
   {$ELSEIF DEFINED(POSIX)}
   Posix.Stdlib,
   Posix.Unistd,
   Posix.Dlfcn,
   {$IFEND}
-  classes, sysUtils;
+  system.classes, system.sysUtils, generics.Collections, generics.Defaults;
 
 Function GetCurrentDLLName: String;
 {$IFDEF MSWINDOWS}
@@ -105,6 +100,12 @@ function FilePathToURL(const aFilePath: string): String;
 // for windows it will exchange "/" with "\"
 // it will also replace "//" with "/" with a single /
 Function NormalizePath(Const aPath: String): String;
+
+// This forces the path into a system-compatible ANSI encoding.
+// on non windows OS just returns the input
+function GetAnsiFileName(const aLongPath: string): String;
+// ATTENTION: shortens the path only on windows, on other systems it just returns the input
+function GetShortPath(const aLongPath: string): String;
 
 Implementation
 
@@ -519,7 +520,7 @@ var
 begin
   lPath := ExpandFileName(aPath);
 
-  lEnvVarValue := sysUtils.GetEnvironmentVariable(cName);
+  lEnvVarValue := system.sysUtils.GetEnvironmentVariable(cName);
 
   // Remove trailing semicolons
   while EndsText(';', lEnvVarValue) do
@@ -530,7 +531,7 @@ begin
 
   // Use the appropriate function to set the environment variable
   {$IFDEF MSWINDOWS}
-  if not windows.SetEnvironmentVariable(PChar(cName), PChar(lEnvVarValue)) then
+  if not winApi.windows.SetEnvironmentVariable(PChar(cName), PChar(lEnvVarValue)) then
     raise Exception.Create('Failed to set environment variable.');
   {$ELSEIF DEFINED(POSIX)}
   if setenv(PAnsiChar(AnsiString(cName)), PAnsiChar(AnsiString(lEnvVarValue)), 1) <> 0 then
@@ -604,5 +605,36 @@ Begin
 
   Result:= s;
 End;
+
+function GetAnsiFileName(const aLongPath: string): string;
+var
+  AnsiBuffer: array[0..MAX_PATH] of AnsiChar;
+begin
+  {$IFNDEF MsWIndows}
+  Result:= aLongPath;
+  {$ELSE}
+  WideCharToMultiByte(CP_ACP, 0, PWideChar(aLongPath), -1, AnsiBuffer, MAX_PATH, nil, nil);
+  Result := String(AnsiBuffer);
+  {$ENDIF}
+end;
+
+
+function GetShortPath(const aLongPath: String): string;
+{$IFDEF MsWindows}
+var
+  Buffer: array[0..MAX_PATH] of Char;
+{$ENDIF}
+begin
+  {$IFNDEF MsWindows}
+  Result := aLongPath;
+  {$ELSE}
+  // Attempt to get the short path name
+  if GetShortPathName(PChar(aLongPath), Buffer, MAX_PATH) > 0 then
+    Result := Buffer
+  else
+    Result := aLongPath; // Fallback if conversion fails
+  {$ENDIF}
+end;
+
 
 End.
