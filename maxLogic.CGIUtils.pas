@@ -141,7 +141,7 @@ Type
 implementation
 
 uses
-  maxLogic.DateUtils, ioUtils;
+  MaxLogic.DateUtils, system.ioUtils;
 
 { TCgIUtils }
 
