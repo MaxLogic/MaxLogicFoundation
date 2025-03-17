@@ -33,6 +33,12 @@ function LinuxCmd(Const aCommand: String; aBufferReady: TStrProc; aBufferSize: i
 Function LinuxCmd(Const aCommand: String): String; Overload;
 Function LinuxCmd(Const aCommand: String; out aExitCode: integer): String; Overload;
 
+/// <summary>
+/// if required will quote the value using single quotes (')
+/// will safely escape preset quites
+/// test\'1 >> 'test\'\''1'  -> which is the proper linux way to escape those single quotes
+/// </summary>
+function bashQuotedStr(const aValue: String): String;
 
 // following are internal methods. They could be in the implementation section but might be used somewhere else too. so I decided to put them here
 {$IF NOT(Defined(MsWindows) AND Defined(UseWSL))}
@@ -59,6 +65,7 @@ Function pclose(filehandle: TStreamHandle): int32; Cdecl; External libc Name _PU
 /// </summary>
 Function BufferToString(buffer: pointer; MaxSize: uint32): String;
 {$IFEND}
+
 
 Implementation
 
@@ -156,5 +163,50 @@ Begin
 
   Result := TrimRight(s);
 End;
+
+```
+function bashQuotedStr(const aValue: String): String;
+var
+  lNeedsQuoting: Boolean;
+  i: Integer;
+  c: Char;
+  lBuilder: TStringBuilder;
+begin
+  // Check if we need to quote the string at all
+  lNeedsQuoting := False;
+  for i := 1 to Length(aValue) do
+  begin
+    c := aValue[i];
+    if CharInSet(c, [' ', #9, #10, #13, ';', '&', '|', '<', '>', '(', ')', '$', '`', '\', '"', '''', #0]) then
+    begin
+      lNeedsQuoting := True;
+      Break;
+    end;
+  end;
+
+  if not lNeedsQuoting then
+    Exit(aValue);
+
+  // Create string builder with extra capacity for escaping
+  gc(lBuilder, TStringBuilder.Create(Length(aValue) * 2 + 2));
+
+  // Use single quotes for bash - simplest and safest escape method for most cases
+  lBuilder.Append('''');
+
+  // Special handling for single quotes - bash can't escape within single quotes
+  // The technique is to close the quote, insert the quote with different quoting,
+  // then reopen the single quote
+  for i := 1 to Length(aValue) do
+  begin
+    c := aValue[i];
+    if c = '''' then
+      lBuilder.Append('''\''''')  // Close quote, escaped quote, reopen quote
+    else
+      lBuilder.Append(c);
+  end;
+
+  lBuilder.Append('''');
+  Result := lBuilder.ToString;
+end;
 
 End.

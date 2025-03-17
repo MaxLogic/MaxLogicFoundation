@@ -2,7 +2,7 @@ Unit MaxLogic.ioUtils;
 
 {
   work in progress: for now only some methods exported from old big the pawel1.pas
-  Version: 0.19
+  Version: 0.20
 }
 
 {$IF DEFINED(FRAMEWORK_VCL) OR DEFINED(FRAMEWORK_FMXs)}
@@ -61,7 +61,7 @@ Procedure ExecuteFile(Const Cmd, ACurrentDir: String; AWait: Boolean;
 type
   TStrProc = maxConsoleRunner.TDataReadyProc;
 
-  // similar to the above, but now we also get the stdOut and errOut and the exit code
+// similar to the above, but now we also get the stdOut and errOut and the exit code
 Procedure ExecuteFile(Const Cmd, ACurrentDir: String;
   out aExitCode: Integer;
   aOnStdOut: TStrProc = nil;
@@ -106,6 +106,36 @@ Function NormalizePath(Const aPath: String): String;
 function GetAnsiFileName(const aLongPath: string): String;
 // ATTENTION: shortens the path only on windows, on other systems it just returns the input
 function GetShortPath(const aLongPath: string): String;
+
+
+
+/// <summary>
+/// Properly quotes a string for use as a command-line argument in the current platform's shell.
+/// Automatically selects the appropriate quoting method based on the platform (Windows or Unix/Linux).
+/// </summary>
+/// <param name="aValue">The string to be quoted for shell use</param>
+/// <returns>A properly quoted string safe to use as a shell command argument</returns>
+function QuoteShellArgument(const aValue: String): String;
+
+/// <summary>
+/// Properly quotes a string for use in Unix/Linux shell commands using single quotes.
+/// Handles special characters and escapes embedded single quotes according to bash conventions.
+/// Example: test\'1 becomes 'test'\''1' which is the proper Linux way to escape single quotes.
+/// </summary>
+/// <param name="aValue">The string to be quoted for Unix shell use</param>
+/// <returns>A properly quoted string safe to use in bash/sh command lines</returns>
+function QuoteUnixShellArgument(const aValue: String): String;
+
+/// <summary>
+/// Properly quotes a string for use in Windows command shell (cmd.exe).
+/// Handles Windows' complex escaping rules, with special treatment for:
+/// - Backslashes before quotes (doubled)
+/// - Double quotes (escaped with backslashes)
+/// - Spaces and other special characters
+/// </summary>
+/// <param name="aValue">The string to be quoted for Windows shell use</param>
+/// <returns>A properly quoted string safe to use in Windows command lines</returns>
+function QuoteWindowsShellArgument(const aValue: String): String;
 
 Implementation
 
@@ -635,6 +665,137 @@ begin
     Result := aLongPath; // Fallback if conversion fails
   {$ENDIF}
 end;
+
+
+
+function QuoteShellArgument(const aValue: String): String;
+begin
+  {$IFDEF MSWINDOWS}
+  Result := WindowsCommandLineEscape(aValue);
+  {$ELSE}
+  Result := bashQuotedStr(aValue);
+  {$ENDIF}
+end;
+
+
+
+
+
+function QuoteWindowsShellArgument(const aValue: String): String;
+var
+  lNeedsQuoting: Boolean;
+  i: Integer;
+  lBuilder: TStringBuilder;
+  lBackslashCount: Integer;
+begin
+  // Check if we need to quote the string at all
+  lNeedsQuoting := False;
+  for i := 1 to Length(aValue) do
+  begin
+    if CharInSet(aValue[i], [' ', #9, #10, #13, '&', '|', '(', ')', '<', '>', '^', '"']) then
+    begin
+      lNeedsQuoting := True;
+      Break;
+    end;
+  end;
+
+  if not lNeedsQuoting and (aValue <> '') then
+    Exit(aValue);
+
+  // Create string builder with extra capacity for escaping
+  gc(lBuilder, TStringBuilder.Create(Length(aValue) * 2 + 2));
+
+  // Start with a double quote
+  lBuilder.Append('"');
+
+  i := 1;
+  while i <= Length(aValue) do
+  begin
+    // Handle backslashes specially when they precede a double quote
+    if aValue[i] = '\' then
+    begin
+      // Count consecutive backslashes
+      lBackslashCount := 1;
+      while (i + lBackslashCount <= Length(aValue)) and (aValue[i + lBackslashCount] = '\') do
+        Inc(lBackslashCount);
+
+      // If backslashes are followed by a quote, each backslash needs to be escaped
+      if (i + lBackslashCount <= Length(aValue)) and (aValue[i + lBackslashCount] = '"') then
+      begin
+        // Double the backslashes because each one needs to be escaped
+        lBuilder.Append(StringOfChar('\', lBackslashCount * 2));
+      end else begin
+        // Otherwise, just output the backslashes as-is
+        lBuilder.Append(StringOfChar('\', lBackslashCount));
+      end;
+
+      // Move past all these backslashes
+      Inc(i, lBackslashCount);
+    end
+    // Handle double quotes by escaping them
+    else if aValue[i] = '"' then
+    begin
+      lBuilder.Append('\"');
+      Inc(i);
+    end
+    else
+    begin
+      lBuilder.Append(aValue[i]);
+      Inc(i);
+    end;
+  end;
+
+  // End with a double quote
+  lBuilder.Append('"');
+  Result := lBuilder.ToString;
+end;
+
+
+
+function QuoteUnixShellArgument(const aValue: String): String;
+var
+  lNeedsQuoting: Boolean;
+  i: Integer;
+  c: Char;
+  lBuilder: TStringBuilder;
+begin
+  // Check if we need to quote the string at all
+  lNeedsQuoting := False;
+  for i := 1 to Length(aValue) do
+  begin
+    c := aValue[i];
+    if CharInSet(c, [' ', #9, #10, #13, ';', '&', '|', '<', '>', '(', ')', '$', '`', '\', '"', '''', #0]) then
+    begin
+      lNeedsQuoting := True;
+      Break;
+    end;
+  end;
+
+  if not lNeedsQuoting then
+    Exit(aValue);
+
+  // Create string builder with extra capacity for escaping
+  gc(lBuilder, TStringBuilder.Create(Length(aValue) * 2 + 2));
+
+  // Use single quotes for bash - simplest and safest escape method for most cases
+  lBuilder.Append('''');
+
+  // Special handling for single quotes - bash can't escape within single quotes
+  // The technique is to close the quote, insert the quote with different quoting,
+  // then reopen the single quote
+  for i := 1 to Length(aValue) do
+  begin
+    c := aValue[i];
+    if c = '''' then
+      lBuilder.Append('''\''''')  // Close quote, escaped quote, reopen quote
+    else
+      lBuilder.Append(c);
+  end;
+
+  lBuilder.Append('''');
+  Result := lBuilder.ToString;
+end;
+
 
 
 End.
