@@ -146,7 +146,7 @@ Uses
   {$IFDEF CanUseApplicationInstance}
   forms,
   {$ENDIF}
-  system.ioUtils, system.strUtils;
+  system.ioUtils, system.strUtils, autoFree;
 
 {$IFDEF MSWINDOWS}
 
@@ -671,9 +671,9 @@ end;
 function QuoteShellArgument(const aValue: String): String;
 begin
   {$IFDEF MSWINDOWS}
-  Result := WindowsCommandLineEscape(aValue);
+  Result := QuoteWindowsShellArgument(aValue);
   {$ELSE}
-  Result := bashQuotedStr(aValue);
+  Result := QuoteUnixShellArgument(aValue);
   {$ENDIF}
 end;
 
