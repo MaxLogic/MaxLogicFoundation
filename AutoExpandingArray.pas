@@ -1,444 +1,226 @@
-unit AutoExpandingArray;
+﻿unit AutoExpandingArray;
 
 {
-  Version: 1.2
+  Version: 1.4
+  - Fixed syntax errors
+  - Improved capacity growth logic
+  - Added TrimExcess method
+  - Clarified documentation and method purposes
 }
+
 interface
 
 uses
-  windows, classes, sysUtils, generics.collections, generics.defaults;
+  System.Classes, System.SysUtils, Generics.Collections, Generics.Defaults, System.TypInfo;
 
 type
-TAutoExpandingArrayofRecord < T: Record >= class
-  private type pT = ^T;
-private
-  fItems: array of pT;
-  function Getitems(index: integer): pT;
+  /// <summary>
+  /// TAutoExpandingArray is a dynamic, auto-growing array structure that can automatically
+  /// expand during read/write access and supports customizable hooks for item creation and finalization.
+  /// </summary>
+  TAutoExpandingArray<T> = record
+  public type
+    TArrayProc = reference to procedure(var aArray: TAutoExpandingArray<T>);
+    TItemsProc = reference to procedure(var aItems: TArray<T>; aStartIndex, aCount: Integer);
+    TItemFunc = reference to function: T;
+  private
+    fCount: Integer;
+    fCapacity: Integer;
+    fItems: TArray<T>;
+    fOnFinalize: TArrayProc;
+    fExpandOnRead: Boolean;
+    fGrowthFactor: Single;
+    fOnFinalizeItems: TItemsProc;
+    fOnCreateEmptyItem: TItemFunc;
+    fExpandOnWrite: Boolean;
+    fOnCreateItems: TItemsProc;
 
-  procedure EnsureElement(index: integer);
-  function GetCount: integer;
-public
-  constructor Create;
-  Destructor Destroy;
-  override;
+    procedure SetCapacity(const Value: Integer); inline;
+    procedure SetCount(const Value: Integer); inline;
+    procedure SetItem(aIndex: Integer; const Value: T); inline;
+    function GetItem(aIndex: Integer): T; inline;
+  public
+    class operator Initialize(out Dest: TAutoExpandingArray<T>);
+    class operator Finalize(var Dest: TAutoExpandingArray<T>);
 
-  Procedure Clear;
+    /// <summary>
+    /// Makes a shallow copy of the array and its metadata (note: T must be a value type or reference-safe).
+    /// </summary>
+    function Clone: TAutoExpandingArray<T>;
 
-  procedure Setitem(index: integer; const Value: T);
-  property items[index: integer]: pT read Getitems;
-  default;
-  property Count: integer read GetCount;
-  end;
+    /// <summary>
+    /// Clears the array by setting Count to 0. Capacity is retained.
+    /// </summary>
+    procedure Clear;
 
-  // if you can not use the auto expanding array as a class - here is how you can use it as a record holding the class
-  TAutoExpandingArrayofRecordHolder<T: record > = record
-    private type
-    TAr = TAutoExpandingArrayofRecord<T>;
-  iHolder = interface
-  function GetAr: TAutoExpandingArrayofRecord<T>;
-  property ar: TAutoExpandingArrayofRecord<T> read GetAr;
-  end;
-  THolder = class(TInterfacedObject, iHolder)
-    private
-    fAr: TAr;
-  function GetAr: TAr;
-public
-  property ar: TAr read GetAr;
-  destructor Destroy;
-  override;
-  end;
+    /// <summary>
+    /// Reduces the capacity to match the current count to release unused memory.
+    /// </summary>
+    procedure TrimExcess;
 
-strict private
-  fItem: iHolder;
-  function GetItem: TAr;
-public
-  property Item: TAr read GetItem;
-  end;
+    property Count: Integer read fCount write SetCount;
+    property Capacity: Integer read fCapacity write SetCapacity;
+    property Items[aIndex: Integer]: T read GetItem write SetItem; default;
 
-  // takes ovnership of the items
-  TAutoExpandingArrayofClass < T: Class, Constructor >= class
-    private
-    fItems: array of T;
-  function Getitems(index: integer): T;
-  procedure Setitem(index: integer; const Value: T);
-  procedure EnsureElement(index: integer; CreateElement: boolean);
-  function GetCount: integer;
-public
-  constructor Create;
-  Destructor Destroy;
-  override;
+    /// <summary>
+    /// Invoked when growing the array; allows bulk initialization of new elements.
+    /// </summary>
+    property OnCreateItems: TItemsProc read fOnCreateItems write fOnCreateItems;
 
-  Procedure Clear;
+    /// <summary>
+    /// Invoked when accessing out-of-range index during read, if ExpandOnRead = False.
+    /// Returns a default or placeholder value.
+    /// </summary>
+    property OnCreateEmptyItem: TItemFunc read fOnCreateEmptyItem write fOnCreateEmptyItem;
 
-  property items[index: integer]: T read Getitems write Setitem;
-  default;
-  property Count: integer read GetCount;
-  end;
+    /// <summary>
+    /// Invoked when reducing Count or finalizing the array. Allows cleanup or releasing of resources.
+    /// </summary>
+    property OnFinalizeItems: TItemsProc read fOnFinalizeItems write fOnFinalizeItems;
 
-  TAutoExpandingmatrixofClass < T: Class, Constructor >= class
-    private
-    fItems: TAutoExpandingArrayofClass<TAutoExpandingArrayofClass<T>>;
-  function Getitems(i1, i2: integer): T;
-  procedure Setitem(i1, i2: integer; const Value: T);
-public
-  constructor Create;
-  Destructor Destroy;
-  override;
+    /// <summary>
+    /// Invoked when the record is finalized (e.g., goes out of scope).
+    /// </summary>
+    property OnFinalize: TArrayProc read fOnFinalize write fOnFinalize;
 
-  Function Count: integer;
-  overload;
-  Function Count(index1: integer): integer;
-  overload;
+    /// <summary>
+    /// Growth multiplier used when automatically expanding the capacity.
+    /// </summary>
+    property GrowthFactor: Single read fGrowthFactor write fGrowthFactor;
 
-  property items[i1, i2: integer]: T read Getitems write Setitem;
-  default;
-  end;
+    /// <summary>
+    /// If True, reading an out-of-range index will expand the array up to that index.
+    /// </summary>
+    property ExpandOnRead: Boolean read fExpandOnRead write fExpandOnRead;
 
-  TAutoExpandingmatrixofRecord < T: Record >= class
-    private type pT = ^T;
-private
-  fItems: TAutoExpandingArrayofClass<TAutoExpandingArrayofRecord<T>>;
-  function Getitems(i1, i2: integer): pT;
-
-public
-  constructor Create;
-  Destructor Destroy;
-  override;
-
-  Function Count: integer;
-  overload;
-  Function Count(index1: integer): integer;
-  overload;
-
-  procedure Setitem(i1, i2: integer; const Value: T);
-  property items[i1, i2: integer]: pT read Getitems;
-  default;
-  end;
-
-  // non class non record. good for ordinary types
-  TAutoExpandingArrayofOrdinary < T >= class
-    private
-    fItems: TList<T>;
-  function Getitems(index: integer): T;
-  procedure Setitem(index: integer; const Value: T);
-  procedure EnsureElement(index: integer);
-public
-  constructor Create;
-  Destructor Destroy;
-  override;
-
-  Procedure Clear;
-  Function Count: integer;
-
-  property items[index: integer]: T read Getitems write Setitem;
-  default;
+    /// <summary>
+    /// If True, writing to an out-of-range index will expand the array to fit it. Otherwise, write is ignored.
+    /// </summary>
+    property ExpandOnWrite: Boolean read fExpandOnWrite write fExpandOnWrite;
   end;
 
 implementation
 
 uses
-  Rtti;
+  Math;
 
-{ TAutoExpandingArrayofRecord<T:record> }
-
-function TAutoExpandingArrayofRecord<T>.Getitems(index: integer): pT;
+procedure TAutoExpandingArray<T>.Clear;
 begin
-  EnsureElement(index);
-  result := fItems[index];
+  Count := 0;
 end;
 
-procedure TAutoExpandingArrayofRecord<T>.Setitem(index: integer; const Value: T);
+function TAutoExpandingArray<T>.Clone: TAutoExpandingArray<T>;
 begin
-  EnsureElement(index);
-  fItems[index]^ := Value;
+  Result.fCount := Self.fCount;
+  Result.fCapacity := Self.fCapacity;
+  Result.fExpandOnRead := Self.fExpandOnRead;
+  Result.fExpandOnWrite := Self.fExpandOnWrite;
+  Result.fGrowthFactor := Self.fGrowthFactor;
+  Result.fOnCreateItems := Self.fOnCreateItems;
+  Result.fOnCreateEmptyItem := Self.fOnCreateEmptyItem;
+  Result.fOnFinalizeItems := Self.fOnFinalizeItems;
+  Result.fOnFinalize := Self.fOnFinalize;
+  Result.fItems := Copy(Self.fItems);
 end;
 
-constructor TAutoExpandingArrayofRecord<T>.Create;
+class operator TAutoExpandingArray<T>.Finalize(var Dest: TAutoExpandingArray<T>);
 begin
-  inherited Create;
-  fItems := NIL;
-
+  if Assigned(Dest.fOnFinalize) then
+    Dest.fOnFinalize(Dest);
+  Dest.Capacity := 0;
 end;
 
-destructor TAutoExpandingArrayofRecord<T>.Destroy;
+function TAutoExpandingArray<T>.GetItem(aIndex: Integer): T;
 begin
-  Clear;
-  fItems := NIL;
-  inherited;
+  if aIndex < 0 then
+    raise EArgumentOutOfRangeException.Create('Index cannot be negative');
+
+  if (aIndex >= fCount) and fExpandOnRead then
+    Count := aIndex + 1;
+
+  if InRange(aIndex, 0, fCount - 1) then
+    Result := fItems[aIndex]
+  else if Assigned(fOnCreateEmptyItem) then
+    Result := fOnCreateEmptyItem()
+  else
+    Result := Default(T);
 end;
 
-procedure TAutoExpandingArrayofRecord<T>.Clear;
-var
-  x: integer;
+class operator TAutoExpandingArray<T>.Initialize(out Dest: TAutoExpandingArray<T>);
 begin
-  for x := 0 to length(fItems) - 1 do
-    if fItems[x] <> nil then
-    begin
-      // ensure references are freed correctly
-      fItems[x]^ := default (T);
-      dispose(fItems[x]);
-    end;
-
-  fItems := NIL;
+  Dest.fCount := 0;
+  Dest.fCapacity := 0;
+  Dest.fItems := nil;
+  Dest.fOnFinalize := nil;
+  Dest.fGrowthFactor := 2;
+  Dest.fOnFinalizeItems := nil;
+  Dest.fOnCreateEmptyItem := nil;
+  Dest.fExpandOnWrite := True;
+  Dest.fExpandOnRead := False;
+  Dest.fOnCreateItems := nil;
 end;
 
-procedure TAutoExpandingArrayofRecord<T>.EnsureElement(index: integer);
-var
-  CurLen, reqLen: integer;
-  x: integer;
+procedure TAutoExpandingArray<T>.SetCapacity(const Value: Integer);
 begin
-  reqLen := index + 1;
-  CurLen := length(fItems);
+  if fCapacity = Value then
+    Exit;
 
-  if reqLen > CurLen then
+  if fCount > Value then
+    SetCount(Value);
+
+  SetLength(fItems, Value);
+  fCapacity := Value;
+end;
+
+procedure TAutoExpandingArray<T>.SetCount(const Value: Integer);
+begin
+  if fCount = Value then
+    Exit;
+
+  if Value < 0 then
+    raise EArgumentOutOfRangeException.Create('Count cannot be negative');
+
+  if fCapacity < Value then
   begin
-    // double the length to prevent small reallocation each time we require a new item
-    reqLen := reqLen * 2;
-    SetLength(fItems, reqLen);
-    for x := CurLen to reqLen - 1 do
-      fItems[x] := nil;
+    if fCapacity = 0 then
+      Capacity := Max(10, Value)
+    else
+      Capacity := Max(Value, Ceil(fCapacity * fGrowthFactor));
   end;
 
-  if fItems[index] = nil then
+  if fCount > Value then
   begin
-    new(fItems[index]);
-    fItems[index]^ := default (T);
+    if Assigned(fOnFinalizeItems) then
+      fOnFinalizeItems(fItems, Value, fCount - Value);
+
+    FinalizeArray(@fItems[Value], TypeInfo(T), fCount - Value);
+  end
+  else if (fCount < Value) and Assigned(fOnCreateItems) then
+  begin
+    fOnCreateItems(fItems, fCount, Value - fCount);
   end;
 
+  fCount := Value;
 end;
 
-{ TAutoExpandingArrayofClass<T> }
-
-constructor TAutoExpandingArrayofClass<T>.Create;
+procedure TAutoExpandingArray<T>.SetItem(aIndex: Integer; const Value: T);
 begin
-  inherited Create;
-  fItems := NIL;
+  if aIndex < 0 then
+    raise EArgumentOutOfRangeException.Create('Index cannot be negative');
+
+  if (aIndex >= fCount) and fExpandOnWrite then
+    Count := aIndex + 1
+  else if aIndex >= fCount then
+    Exit; // silently ignore if out-of-bounds and not set to expand
+
+  fItems[aIndex] := Value;
 end;
 
-function TAutoExpandingArrayofClass<T>.Getitems(index: integer): T;
+procedure TAutoExpandingArray<T>.TrimExcess;
 begin
-  EnsureElement(index, True);
-  result := fItems[index];
-end;
-
-procedure TAutoExpandingArrayofClass<T>.EnsureElement(index: integer; CreateElement: boolean);
-var
-  CurLen, reqLen: integer;
-  x: integer;
-begin
-  reqLen := index + 1;
-  CurLen := length(fItems);
-
-  if reqLen > CurLen then
-  begin
-    // double the length to prevent small reallocation each time we require a new item
-    reqLen := reqLen * 2;
-    SetLength(fItems, reqLen);
-    for x := CurLen to reqLen - 1 do
-      fItems[x] := nil;
-  end;
-
-  if CreateElement then
-    if not Assigned(fItems[index]) then
-      fItems[index] := T.Create;
-end;
-
-destructor TAutoExpandingArrayofClass<T>.Destroy;
-begin
-  Clear;
-  fItems := NIL;
-  inherited;
-end;
-
-procedure TAutoExpandingArrayofClass<T>.Clear;
-var
-  x: integer;
-begin
-  for x := 0 to length(fItems) - 1 do
-    if Assigned(fItems[x]) then
-      FreeAndNIL(fItems[x]);
-
-  fItems := nil;
-end;
-
-procedure TAutoExpandingArrayofClass<T>.Setitem(index: integer;
-  const Value: T);
-begin
-  EnsureElement(index, false);
-  if fItems[index] = Value then
-    exit;
-
-  if Assigned(fItems[index]) then
-    FreeAndNIL(fItems[index]);
-
-  fItems[index] := Value;
-end;
-
-function TAutoExpandingArrayofClass<T>.GetCount: integer;
-begin
-  result := length(fItems);
-end;
-
-{ TAutoExpandingArrayofOrdinary<T> }
-
-constructor TAutoExpandingArrayofOrdinary<T>.Create;
-begin
-  inherited Create;
-  fItems := TList<T>.Create;
-end;
-
-function TAutoExpandingArrayofOrdinary<T>.Getitems(index: integer): T;
-begin
-  EnsureElement(index);
-  result := fItems[index];
-end;
-
-procedure TAutoExpandingArrayofOrdinary<T>.EnsureElement(index: integer);
-var
-  CurLen, reqLen: integer;
-  x: integer;
-begin
-  reqLen := index + 1;
-  CurLen := fItems.Count;
-
-  if reqLen > CurLen then
-  begin
-    // double the length to prevent small reallocation each time we require a new item
-    reqLen := reqLen * 2;
-    fItems.Capacity := reqLen;
-    for x := CurLen to reqLen - 1 do
-      fItems.Add(Default (T));
-  end;
-
-end;
-
-destructor TAutoExpandingArrayofOrdinary<T>.Destroy;
-begin
-  fItems.Free;
-  inherited;
-end;
-
-procedure TAutoExpandingArrayofOrdinary<T>.Clear;
-begin
-  fItems.Clear;
-end;
-
-procedure TAutoExpandingArrayofOrdinary<T>.Setitem(index: integer;
-  const Value: T);
-begin
-  EnsureElement(index);
-  fItems[index] := Value;
-end;
-
-function TAutoExpandingArrayofOrdinary<T>.Count: integer;
-begin
-  result := fItems.Count;
-end;
-
-{ TAutoExpandingmatrixofClass<T> }
-
-constructor TAutoExpandingmatrixofClass<T>.Create;
-begin
-  inherited Create;
-  fItems := TAutoExpandingArrayofClass < TAutoExpandingArrayofClass < T >>.Create;
-end;
-
-function TAutoExpandingmatrixofClass<T>.Getitems(i1, i2: integer): T;
-begin
-  result := fItems[i1][i2];
-end;
-
-destructor TAutoExpandingmatrixofClass<T>.Destroy;
-begin
-  fItems.Free;
-  inherited;
-end;
-
-procedure TAutoExpandingmatrixofClass<T>.Setitem(i1, i2: integer;
-  const Value: T);
-begin
-  fItems[i1].Setitem(i2, Value);
-end;
-
-function TAutoExpandingmatrixofClass<T>.Count(index1: integer): integer;
-begin
-  result := fItems[index1].Count;
-end;
-
-function TAutoExpandingmatrixofClass<T>.Count: integer;
-begin
-  result := fItems.Count;;
-
-end;
-
-{ TAutoExpandingmatrixofRecord<T> }
-
-constructor TAutoExpandingmatrixofRecord<T>.Create;
-begin
-  inherited Create;
-  fItems := TAutoExpandingArrayofClass < TAutoExpandingArrayofRecord < T >>.Create;
-end;
-
-function TAutoExpandingmatrixofRecord<T>.Getitems(i1, i2: integer): pT;
-var
-  p: Pointer;
-begin
-  p := fItems[i1][i2];
-  result := p;
-end;
-
-destructor TAutoExpandingmatrixofRecord<T>.Destroy;
-begin
-  fItems.Free;
-  inherited;
-end;
-
-procedure TAutoExpandingmatrixofRecord<T>.Setitem(i1, i2: integer;
-  const Value: T);
-begin
-  fItems[i1].Setitem(i2, Value);
-end;
-
-function TAutoExpandingArrayofRecord<T>.GetCount: integer;
-begin
-  result := length(fItems);
-end;
-
-function TAutoExpandingmatrixofRecord<T>.Count(index1: integer): integer;
-begin
-  result := fItems[index1].Count;
-end;
-
-function TAutoExpandingmatrixofRecord<T>.Count: integer;
-begin
-  result := fItems.Count;
-end;
-
-{ TAutoExpandingArrayofRecordHolder<T> }
-
-function TAutoExpandingArrayofRecordHolder<T>.GetItem: TAr;
-begin
-  if not Assigned(fItem) then
-    fItem := THolder.Create;
-
-  result := fItem.ar;
-
-end;
-
-{ TAutoExpandingArrayofRecordHolder<T>.THolder }
-
-function TAutoExpandingArrayofRecordHolder<T>.THolder.GetAr: TAr;
-begin
-  if not Assigned(far) then
-    fAr := TAr.Create;
-  result := fAr;
-end;
-
-destructor TAutoExpandingArrayofRecordHolder<T>.THolder.Destroy;
-begin
-  if Assigned(fAr) then
-    FreeAndNIL(fAr);
-  inherited;
+  if fCapacity > fCount then
+    SetCapacity(fCount);
 end;
 
 end.
+
