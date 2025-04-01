@@ -194,6 +194,10 @@ Begin
   LogItem.Msg := aText;
   LogItem.Filename := Filename;
   LogItem.CreatePlainTextLogFile := CreatePlainTextLogFile;
+  if CreatePlainTextLogFile then
+    if extractFilePath(LogItem.Filename) = '' then
+      LogItem.Filename:= TPath.Combine(Self.BLogDir, LogItem.Filename);
+
 
   AddLogItem(LogItem);
 End;
