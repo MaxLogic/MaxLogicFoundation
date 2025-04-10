@@ -1,13 +1,21 @@
 Unit MaxLogic.Linux.CLI;
 
+{$IF NOT((Defined(MsWindows) AND Defined(UseWSL)) OR Defined(POSIX))}
+This is a Posix/Linux specific unit.
+But there is a way to uses it on windows:
+  - you need WSL
+  - define the compiler directive: `UseWSL`
+{$IFEND}
+
 Interface
 
 Uses
   System.SysUtils,
-  // set the `UseWSL` conditional on windows to enforce a emulation using the windows subsystem for linux on windows
+  // set the `UseWSL` conditional on windows to enforce a emulation using the windows subsystem for linux on windows,
   {$IF Defined(MsWindows) AND Defined(UseWSL)}
   MaxLogic.ioUtils,
-  {$ELSE}
+  {$IFEND}
+  {$IFDEF POSIX}
   Posix.Base, Posix.Fcntl,
   {$IFEND}
   System.Classes,
@@ -33,12 +41,12 @@ function LinuxCmd(Const aCommand: String; aBufferReady: TStrProc; aBufferSize: i
 Function LinuxCmd(Const aCommand: String): String; Overload;
 Function LinuxCmd(Const aCommand: String; out aExitCode: integer): String; Overload;
 
+{$IFDEF POSIX}
 
 // following are internal methods. They could be in the implementation section but might be used somewhere else too. so I decided to put them here
-{$IF NOT(Defined(MsWindows) AND Defined(UseWSL))}
 Type
   TStreamHandle = pointer;
-
+  
 /// <summary>
 /// Man Page: http://man7.org/linux/man-pages/man3/fgets.3p.html
 /// </summary>
@@ -58,7 +66,7 @@ Function pclose(filehandle: TStreamHandle): int32; Cdecl; External libc Name _PU
 /// Utility function to return a buffer of ASCII-Z data as a string.
 /// </summary>
 Function BufferToString(buffer: pointer; MaxSize: uint32): String;
-{$IFEND}
+{$ENDIF}
 
 
 Implementation
@@ -66,7 +74,23 @@ Implementation
 Uses
   StrUtils;
 
-{$IF NOT(Defined(MsWindows) AND Defined(UseWSL))}
+{$IF Defined(MsWindows) AND Defined(UseWSL)}
+function LinuxCmd(Const aCommand: String; aBufferReady: TStrProc; aBufferSize: integer = 512 * 1024): Integer;
+begin
+  MaxLogic.ioUtils.ExecuteFile(
+    'bash ' + AnsiQuotedStr(aCommand, '`'),
+    '', // working dir
+    Result,
+    // stdOut
+    aBufferReady,
+
+    // errOut
+     nil, // the linuxCmd does not capture the ErrOut at all... so let us be consequent and do not capture it as well
+    True);
+end;
+{$IFEND}
+
+{$IFDEF POSIX}
 
 Function BufferToString(buffer: pointer; MaxSize: uint32): String;
 Var
@@ -117,23 +141,8 @@ Begin
     if Result <> -1 then
       Result := Result div 256;
   End;
-End;
-
-{$ELSE}
-function LinuxCmd(Const aCommand: String; aBufferReady: TStrProc; aBufferSize: integer = 512 * 1024): integer; overload;
-begin
-  MaxLogic.ioUtils.ExecuteFile(
-    'bash ' + AnsiQuotedStr(aCommand, '`'),
-    '', // working dir
-    Result,
-    // stdOut
-    aBufferReady,
-
-    // errOut
-     nil, // the linuxCmd does not capture the ErrOut at all... so let us be consequent and do not capture it as well
-    True);
 end;
-{$IFEND}
+{$ENDIF}
 
 
 Function LinuxCmd(Const aCommand: String): String;
