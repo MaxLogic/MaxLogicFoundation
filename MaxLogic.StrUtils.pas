@@ -241,10 +241,18 @@ function Join(const aSeparator: String; const aValues: TArray<Integer>): String;
 // it supports unicode surrogate pairs
 function Utf8TruncateByCodePoint(const AInput: String; aMaxBytesLength: Integer): TBytes;
 
+
+// StrTo Float With Comma Correction
+Function StrToFloatWCC(Const Text: String): double;
+Function TryStrToFloatWCC(Const Text: String; Out Value: double): Boolean;
+Function StrToFloatWCCDef(Const Text: String; Const Default: double): double;
+Procedure PrepareTextForStrToFloatWcc(Var s: String);
+
+
 implementation
 
 uses
-  system.Masks, autoFree, system.Math;
+  System.character, system.Masks, autoFree, system.Math;
 
 function OccurrencesOfChar(const S: String; const C: char): Integer;
 var
@@ -980,5 +988,126 @@ begin
     end;
   end;
 end;
+
+
+Function StrToFloatWCC(
+
+Const Text: String): double;
+Var
+  s: String;
+Begin
+  s := Text;
+  PrepareTextForStrToFloatWcc(s);
+  Result := StrToFLoat(s);
+End;
+
+Function TryStrToFloatWCC(
+
+Const Text: String; Out Value: double): Boolean;
+Var
+  s: String;
+Begin
+  s := Text;
+  PrepareTextForStrToFloatWcc(s);
+
+  Result := system.sysUtils.TryStrToFloat(s, Value);
+End;
+
+Function StrToFloatWCCDef(Const Text: String; Const Default: double): double;
+Var
+  s: String;
+Begin
+  s := Text;
+  PrepareTextForStrToFloatWcc(s);
+
+  Result := Default;
+  Result := StrToFloatDef(s, Default);
+End;
+
+Procedure PrepareTextForStrToFloatWcc(Var s: String);
+Var
+  x: Integer;
+  decimalSeparatorIndex, FirstDotIndex, firstCommaIndex, DotCount,
+    CommaCount: Integer;
+  delComma, delDot: Boolean;
+Begin
+  For x := Length(s) Downto 1 Do
+    // some idiot introduced 0 indexed strings in system.character... so remember to account for that....
+    If char.IsWhiteSpace(s, x - 1) Then
+      Delete(s, x, 1);
+
+  If s = '' Then
+    Exit;
+
+  FirstDotIndex := 0;
+  firstCommaIndex := 0;
+  DotCount := 0;
+  CommaCount := 0;
+
+  For x := 1 To Length(s) Do
+  Begin
+    If system.sysUtils.CharInSet(s[x], ['a' .. 'z', 'A' .. 'Z']) Then
+      Exit;
+
+    If s[x] = '.' Then
+    Begin
+      If DotCount = 0 Then
+        FirstDotIndex := x;
+      Inc(DotCount);
+    End
+    Else If s[x] = ',' Then
+    Begin
+      If CommaCount = 0 Then
+        firstCommaIndex := x;
+      Inc(CommaCount);
+    End;
+  End;
+
+  delComma := true;
+  delDot := true;
+  decimalSeparatorIndex := -1;
+  If (DotCount = 1) And (CommaCount = 1) Then
+  Begin
+    // if both were found use the most right of them
+    If FirstDotIndex > firstCommaIndex Then
+    Begin
+      decimalSeparatorIndex := FirstDotIndex;
+      delDot := False;
+    End
+    Else
+    Begin
+      delComma := False;
+      decimalSeparatorIndex := firstCommaIndex;
+    End;
+  End
+  Else If DotCount = 1 Then
+  Begin
+    decimalSeparatorIndex := FirstDotIndex;
+    delDot := False;
+  End
+  Else If CommaCount = 1 Then
+  Begin
+    decimalSeparatorIndex := firstCommaIndex;
+    delComma := False;
+  End;
+
+  For x := Length(s) Downto 1 Do
+  Begin
+    If x = decimalSeparatorIndex Then
+      s[x] := FormatSettings.DecimalSeparator
+    Else
+      Case s[x] Of
+        '.':
+          If delDot Then
+            Delete(s, x, 1);
+        ',':
+          If delComma Then
+            Delete(s, x, 1);
+        ' ':
+          Delete(s, x, 1);
+      End;
+  End;
+End;
+
 
 end.
