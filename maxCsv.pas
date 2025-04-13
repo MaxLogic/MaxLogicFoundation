@@ -168,6 +168,7 @@ Type
     Destructor Destroy; override;
 
     Function IndexOf(const aColName: String): Integer; inline;
+    function TryGetByName(const aname: String; out aValue: String): Boolean;
     // empties the data array
     Procedure Reset;
 
@@ -757,7 +758,6 @@ function TRowReaderWriter.IndexOf(const aColName: String): Integer;
 begin
   if not fDic.TryGetValue(aColName, Result) then
     Result:= -1;
-
 end;
 
 procedure TRowReaderWriter.Reset;
@@ -828,6 +828,19 @@ begin
   else begin
     if not(FMissingColumnHandling in [mcOnWriteIgnore, mcNoErrorsOnReadWrite] ) then
       raise Exception.Create('ERROR: column "'+aColName+'" not found');
+  end;
+end;
+
+function TRowReaderWriter.TryGetByName(const aname: String;
+  out aValue: String): Boolean;
+var
+  i: Integer;
+begin
+  Result:= False;
+  if fDic.TryGetValue(aName, i) then
+  begin
+    Result:= True;
+    aValue:= fData[i];
   end;
 end;
 
