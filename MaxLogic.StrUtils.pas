@@ -1,21 +1,23 @@
-unit MaxLogic.StrUtils;
+unit maxLogic.StrUtils;
 
 {$IFDEF MSWINDOWS}
 {$WARN SYMBOL_PLATFORM OFF}
-{$endif}
+{$ENDIF}
 
 interface
 
 uses
-  system.classes, system.sysUtils, system.Types, generics.Collections, system.StrUtils;
+  System.Classes, System.SysUtils, System.Types, generics.collections, System.StrUtils;
 
 const
   CR = sLineBreak;
 
-function StringMatches(Value, Pattern: String;
-  casesensitive: boolean = true): boolean;
-Function putBefore(Const AString: String; AChar: char; TotalLength: Integer): String; Overload;
-Function putBefore(Num: Integer; AChar: char; TotalLength: Integer): String; Overload;
+// like system.masks.matchesMasks but platform independant and with the option to be case sensitive/insensitive
+function StringMatches(const aValue, aPattern: string;
+  aCaseSensitive: boolean = True): boolean;
+
+function putBefore(const AString: string; AChar: char; TotalLength: integer): string; overload;
+function putBefore(num: integer; AChar: char; TotalLength: integer): string; overload;
 /// <summary>
 /// Extracts a substring located between the first occurrence of aStartMarker
 /// and the subsequent first occurrence of aEndMarker, starting the search from aStartOffset.
@@ -36,19 +38,18 @@ Function putBefore(Num: Integer; AChar: char; TotalLength: Integer): String; Ove
 /// based on `aCasesensitive` and then calls the internal overload to perform the actual extraction logic.
 /// The search for invalid characters (`aInvalidChars`) is *always* performed case-sensitively on the original `aText`.
 /// </remarks>
-Function ExtractString(
-  Const aText, aStartMarker, aEndMarker: String;
-  aStartoffset: Integer;
-  Out aValue: String;
-  Out aStartMarkerFoundAtIndex: Integer;
+function ExtractString(
+  const aText, aStartMarker, aEndMarker: string;
+  aStartoffset: integer;
+  out aValue: string;
+  out aStartMarkerFoundAtIndex: integer;
   aCasesensitive: boolean = True;
   { aInvalidChars: used for the following scenario If we search for #*#, but only on the same line,
   we can pass aInvalidChars  = [#10], in that case if the #10 will come before the end marker, it will
   indicates that this is indeed not a end marker at all
   Note: the search for invalidChars is always case sensitive}
-  const aInvalidChars : TArray<Char> = [];
-  aInvalidCharsAreSorted: Boolean = False ): boolean; overload;
-
+  const aInvalidChars: TArray<char> = [];
+  aInvalidCharsAreSorted: boolean = False): boolean; overload;
 
 /// <summary>
 /// Internal implementation for ExtractString. Performs the core logic of finding markers and checking for invalid characters.
@@ -78,26 +79,26 @@ Function ExtractString(
 ///    - Sets Result to True and exits the function.
 /// The loop continues until a valid match is found and returned, or until no more potential start/end marker pairs can be found.
 /// </remarks>
-Function ExtractString(
-  Const aOrgCasedText, aTextForCaseSensitiveSearch,
-  aStartMarker, aEndMarker: String;
-  aStartoffset: Integer;
-  Out aValue: String;
-  Out aStartMarkerFoundAtIndex: Integer;
+function ExtractString(
+  const aOrgCasedText, aTextForCaseSensitiveSearch,
+  aStartMarker, aEndMarker: string;
+  aStartoffset: integer;
+  out aValue: string;
+  out aStartMarkerFoundAtIndex: integer;
   { aInvalidChars: used for the following scenario If we search for #*#, but only on the same line,
   we can pass aInvalidChars  = [#10], in that case if the #10 will come before the end marker, it will
   indicates that this is indeed not a end marker at all
   Note: the search for invalidChars is always case sensitive}
-  const aInvalidChars : TArray<Char> = [];
-  aInvalidCharsAreSorted: Boolean = False ): Boolean; overload;
+  const aInvalidChars: TArray<char> = [];
+  aInvalidCharsAreSorted: boolean = False): boolean; overload;
 function CharPosEx(
-  const aText: String;
-  const aChars: TArray<Char>;
-  aCharsArrayIsSorted: Boolean;
-  aStartOffset, aEndOffset: Integer;
-  out aFoundAtOffset, aIndexOfCharFound: Integer): Boolean;
+  const aText: string;
+  const aChars: TArray<char>;
+  aCharsArrayIsSorted: boolean;
+  aStartoffset, aEndOffset: integer;
+  out aFoundAtOffset, aIndexOfCharFound: integer): boolean;
 
-Type
+type
   TReplacePlaceholderAction = (
     raReplace,
     raReplaceAndResumeAtSamePosition, // good for nested occurences,, but a bit slower as it requires in place  editing of the source text
@@ -107,11 +108,11 @@ Type
     );
   TReplacePlaceholderOnFoundProc = reference to procedure(
     // the text between startMarker and endMarker
-    const aValue: String;
-    aStartMarkerFoundAtIndex: Integer;
+    const aValue: string;
+    aStartMarkerFoundAtIndex: integer;
     // the String to replace the placeholder (StartMarker+value+endmarker)
     // default is the whole placeholder that s the value with the start and end markers, so if you do not touch that, it will act as action=raSkip
-    var aReplaceValue: String;
+    var aReplaceValue: string;
     // default raReplace
     var aAction: TReplacePlaceholderAction);
 
@@ -142,41 +143,40 @@ Type
 /// The function uses `TStringBuilder` internally for efficient construction of the final result string.
 /// After the loop finishes (either by reaching the end of the text or via a `raStop`/`raReplaceAndStop` action), any remaining portion of the text after the last processed position (`aStartoffset`) is appended to the result.
 /// </remarks>
-Function ReplacePlaceholder(
-  Const aText, aStartMarker, aEndMarker: String;
+function ReplacePlaceholder(
+  const aText, aStartMarker, aEndMarker: string;
   // will be caled for each occurence
   const aOnFoundProc: TReplacePlaceholderOnFoundProc;
-  aStartoffset: Integer = 1;
+  aStartoffset: integer = 1;
   // will search for the startMarker and Marker case sensitive or not
   aCasesensitive: boolean = True;
   { aInvalidChars: used for the following scenario If we search for #*#, but only on the same line,
   we can pass aInvalidChars  = [#10], in that case if the #10 will come before the end marker, it will
   indicates that this is indeed not a end marker at all
   Note: the search for invalidChars is always case sensitive}
-  const aInvalidChars : TArray<Char> = [];
-  aInvalidCharsAreSorted: Boolean = False
-  ): String;
+  const aInvalidChars: TArray<char> = [];
+  aInvalidCharsAreSorted: boolean = False
+  ): string;
 
 // will replace occurences of a system enviroment variable name withint the text with its value
 // like '%appdata%\tmp\%username%'
-Function ExpandEnvVars(const aText: String; const aStartToken: String = '%'; const aEndToken: String = '%'): String;
+function ExpandEnvVars(const aText: string; const aStartToken: string = '%'; const aEndToken: string = '%'): string;
 
-Function CombineUrl(const aPart1, aPart2: String; aSeparator: String = '/'): String; overload;
-Function CombineUrl(const aParts: array of String; aSeparator: String = '/'): String; overload;
+function CombineUrl(const aPart1, aPart2: string; aSeparator: string = '/'): string; overload;
+function CombineUrl(const aParts: array of string; aSeparator: string = '/'): string; overload;
 
 // uses internally masks.MatchesMask
 // checks if the aText mathes any of the givem filter strings
 // returns always true if the filter array is empty
-function MatchesFilter(const aText: String; const AFilter: TStringDynArray): boolean;
+function MatchesFilter(const aText: string; const AFilter: TStringDynArray): boolean;
 
 // Windows Explorer uses StrCmpLogicalW to compare file names. The RTL/VCL does not declare this function so you need to do it yourself.
 // on non windows platform we are falling back on CompareStr
-Function StrCmpLogical(Const left, right: String): Integer; Inline;
+function StrCmpLogical(const Left, right: string): integer; inline;
 {$IFDEF MSWINDOWS}
 
-Function StrCmpLogicalW(psz1, psz2: PWideChar): Integer; Stdcall; External 'shlwapi.dll' delayed;
+function StrCmpLogicalW(psz1, psz2: PWideChar): integer; stdcall; External 'shlwapi.dll' delayed;
 {$ENDIF}
-
 
 type
   {
@@ -199,240 +199,203 @@ type
   }
   TFilterEx = record
   private type
-    TKind = (kMask, kContains, kStarts, kEnds);
+      TKind = (kMask, kContains, kStarts, kEnds);
 
-    TFilterItem = record
-      IsNegated: boolean;
-      OrElements: TArray<String>;
-      OrElementKinds: TArray<TKind>;
-      OrgText: String;
-    end;
+      TFilterItem = record
+        IsNegated: boolean;
+        OrElements: TArray<string>;
+        OrElementKinds: TArray<TKind>;
+        OrgText: string;
+      end;
 
   private
     fFilter: TArray<TFilterItem>;
-    fOrgFilterText: String;
+    fOrgFilterText: string;
     // Prepares the internal filter structure based on the provided filter text.
-    procedure Prepare(const aText: String);
+    procedure Prepare(const aText: string);
     // we need to take care because of the special ~and quotes
-    function SplitBySpace(const aText: String): TArray<String>;
-    procedure Preprocess(var p: String; out k: TKind); inline;
+    function SplitBySpace(const aText: string): TArray<string>;
+    procedure Preprocess(var p: string; out k: TKind); inline;
   public
     // Creates a TFilterEx instance from the given filter text.
-    class function Create(const aFilterText: String): TFilterEx; static;
+    class function Create(const aFilterText: string): TFilterEx; static;
     /// <summary>
     /// Returns true if the given text matches the filter or if the filter is empty
     /// </summary>
-    function Matches(const aText: String): boolean;
+    function Matches(const aText: string): boolean;
   end;
 
-Procedure Split(Const line: String; Delimiter: char; strings: TStringList); overload;
-Procedure Split(Const line: String; Delimiter: char; out strings: TArray<String>); overload;
-function Split(Delimiter: char; Const line: String): TArray<String>; overload;
+procedure Split(const line: string; Delimiter: char; strings: TStringList); overload;
+procedure Split(const line: string; Delimiter: char; out strings: TArray<string>); overload;
+function Split(Delimiter: char; const line: string): TArray<string>; overload;
 
-function SplitInHalfBy(const aText: String; aDelim: Char; out aParts: TArray<String>): Boolean;overload;
-function SplitInHalfBy(const aText: String; aDelim: Char; out alLeft, alRight: String): Boolean;overload;
+function SplitInHalfBy(const aText: string; aDelim: char; out aParts: TArray<string>): boolean; overload;
+function SplitInHalfBy(const aText: string; aDelim: char; out alLeft, alRight: string): boolean; overload;
 
-
-Function fstr(Const d: double; vs: Integer = 2; ns: Integer = 2): String;
-function GuidToHex(const aGuid: TGuid): String;
-function Join(const aSeparator: String; const aValues: TArray<Integer>): String;
+function fStr(const d: double; vs: integer = 2; ns: integer = 2): string;
+function GuidToHex(const aGuid: TGuid): string;
+function Join(const aSeparator: string; const aValues: TArray<integer>): string;
 
 // this method ensures the num of bytes does not exceed aMaxByteLength
 // it supports unicode surrogate pairs
-function Utf8TruncateByCodePoint(const AInput: String; aMaxBytesLength: Integer): TBytes;
-
+function Utf8TruncateByCodePoint(const AInput: string; aMaxBytesLength: integer): TBytes;
 
 // StrTo Float With Comma Correction
-Function StrToFloatWCC(Const Text: String): double;
-Function TryStrToFloatWCC(Const Text: String; Out Value: double): Boolean;
-Function StrToFloatWCCDef(Const Text: String; Const Default: double): double;
-Procedure PrepareTextForStrToFloatWcc(Var s: String);
-
+function StrToFloatWCC(const Text: string): double;
+function TryStrToFloatWCC(const Text: string; out Value: double): boolean;
+function StrToFLoatWccDef(const Text: string; const default: double): double;
+procedure PrepareTextForStrToFloatWcc(var s: string);
 
 implementation
 
 uses
-  System.character, system.Masks, autoFree, system.Math;
+  System.character, System.Masks, AutoFree, System.Math, System.RegularExpressions;
 
-function OccurrencesOfChar(const S: String; const C: char): Integer;
+function OccurrencesOfChar(const s: string; const c: char): integer;
 var
-  pc: pChar;
+  PC: PChar;
 begin
   Result := 0;
-  if S <> '' then
+  if s <> '' then
   begin
-    pc := @S[1];
-    for var i := 1 to Length(S) do
+    PC := @s[1];
+    for var i := 1 to length(s) do
     begin
-      if pc^ = C then
-        inc(Result);
-      inc(pc);
+      if PC^ = c then
+        Inc(Result);
+      Inc(PC);
     end;
   end;
 end;
 
-function StringMatches(Value, Pattern: String;
-      casesensitive: boolean = true): boolean;
-    var
-      S: String;
-      i1, i2, len, x: Integer;
-      ExactStart, ExactEnd: boolean;
-      lPatternParts: TStringList; // Renamed variable 'l' to 'lPatternParts' for clarity
-    begin
-      // Use System.Masks for case-insensitive matching as it's likely more optimized/robust
-      if not casesensitive then
-      begin
-        Result:= System.Masks.MatchesMask(Value, Pattern);
-        Exit;
-      end;
+// --- Helper function for guaranteed case-sensitive matching using RegEx ---
+// This is needed as a fallback on Windows where MatchesMask is insensitive.
+function MatchesMaskCaseSensitive_RegEx(const aText, aPattern: string): Boolean;
+var
+  lRegexPattern: string;
+begin
+  // 1. Escape special RegEx characters in the original pattern
+  // Ensures characters like '.', '+', '\' are treated literally.
+  lRegexPattern := TRegEx.Escape(aPattern);
 
-      // Case-Sensitive Logic
-      // Note: This custom implementation handles only '*' as a wildcard, not '?' like MatchesMask.
-      // Ensure Value and Pattern are treated case-sensitively (no ToLower here)
+  // 2. Replace wildcard characters with their RegEx equivalents
+  // IMPORTANT: Replace '*' first to avoid accidentally replacing the '.' within '.*'
+  // if '?' is replaced first.
+  lRegexPattern := lRegexPattern.Replace('*', '.*'); // '*' -> '.*' (zero or more any char)
+  lRegexPattern := lRegexPattern.Replace('?', '.');  // '?' -> '.' (any single char)
 
-      Pattern := StringReplace(Pattern, '**', '*', [rfReplaceAll]); // Keep this
+  // 3. Anchor the pattern to match the whole string from start (^) to end ($)
+  lRegexPattern := '^' + lRegexPattern + '$';
 
-      if (Value = '') or (Pattern = '') then
-        Exit(false);
+  // 4. Perform the case-sensitive match (TRegEx default behavior)
+  Result := TRegEx.IsMatch(aText, lRegexPattern);
+end;
+// --------------------------------------------------------------------------
 
-      if Pattern[1] = '*' then
-      begin
-        ExactStart := false;
-        Delete(Pattern, 1, 1);
-      end else
-        ExactStart := true;
+// Performs wildcard matching ('*' for zero or more chars, '?' for one char).
+// Handles case sensitivity correctly across platforms.
+function StringMatches(const aValue, aPattern: string;
+  aCaseSensitive: boolean = True): boolean;
+begin
+  if not aCaseSensitive then
+  begin
+    // --- Case-Insensitive Matching ---
+    // Goal: Make the comparison ignore case on ALL platforms.
+    {$IFDEF MsWindows}
+      // On Windows, MatchesMask is already case-insensitive. Use it directly.
+      Result := System.Masks.MatchesMask(aValue, aPattern);
+    {$ELSE}
+      // On other platforms (Linux, macOS, etc.), MatchesMask is case-sensitive.
+      // Force case-insensitivity by comparing lower-case (or upper-case) versions.
+      Result := System.Masks.MatchesMask(aValue.ToLower, aPattern.ToLower);
+    {$ENDIF}
+  end else begin
+    // --- Case-Sensitive Matching ---
+    // Goal: Make the comparison respect case on ALL platforms.
+    {$IFDEF MsWindows}
+      // On Windows, MatchesMask is case-insensitive, so we *must* use a fallback.
+      // Use our RegEx helper function for guaranteed case-sensitivity.
+      Result := MatchesMaskCaseSensitive_RegEx(aValue, aPattern);
+    {$ELSE}
+      // On other platforms, MatchesMask is already case-sensitive. Use it directly.
+      Result := System.Masks.MatchesMask(aValue, aPattern);
+    {$ENDIF}
+  end;
+end;
 
-      if (Length(Pattern) > 0) and (Pattern[Length(Pattern)] = '*') then // Check Length > 0
-      begin
-        ExactEnd := false;
-        Pattern := copy(Pattern, 1, Length(Pattern) - 1);
-      end else
-        ExactEnd := true;
-
-      // Handle empty pattern after removing stars
-      if Pattern = '' then
-      begin
-        // If pattern is empty after removing stars, it matches only if Value is also empty
-        // or if wildcards were at both ends (ExactStart=False, ExactEnd=False)
-        Result := (Value = '') or (not ExactStart and not ExactEnd);
-        Exit;
-      end;
-
-      gc(lPatternParts, TStringList.Create); // <-- Use gc()
-      lPatternParts.StrictDelimiter := true;
-      lPatternParts.Delimiter := '*';
-      lPatternParts.DelimitedText := Pattern; // Use the potentially modified Pattern
-
-      Result := true;
-      i1 := 1; // Start search at index 1
-      for x := 0 to lPatternParts.Count - 1 do
-      begin
-        // Use PosEx case-sensitively on the original Value
-        i2 := PosEx(lPatternParts[x], Value, i1);
-
-        if i2 <= 0 then
-        begin
-          Result := false;
-          break; // Part not found
-        end;
-
-        // If ExactStart, the first part must start at index 1
-        if (x = 0) and ExactStart and (i2 <> 1) then
-        begin
-          Result := false;
-          break;
-        end;
-
-        // If ExactEnd, the last part must match the *end* of the Value string
-        if ExactEnd and (x = lPatternParts.Count - 1) then
-        begin
-          len := Length(lPatternParts[x]);
-          // Check if the found position + length equals the end of the Value string
-          if (i2 + len - 1) <> Length(Value) then
-          begin
-            Result := false;
-            break;
-          end;
-        end;
-
-        // Advance the search position for the next part
-        i1 := i2 + Length(lPatternParts[x]);
-      end;
-    end;
-
-Function putBefore(Const AString: String; AChar: char; TotalLength: Integer): String;
-Var
-  x, aMaxBytesLength: Integer;
-Begin
-  aMaxBytesLength := Length(AString);
-  If aMaxBytesLength > TotalLength Then
+function putBefore(const AString: string; AChar: char; TotalLength: integer): string;
+var
+  X, aMaxBytesLength: integer;
+begin
+  aMaxBytesLength := length(AString);
+  if aMaxBytesLength > TotalLength then
     Result := AString
-  Else
-  Begin
+  else
+  begin
     SetLength(Result, TotalLength);
-    For x := 1 To TotalLength - aMaxBytesLength Do
-      Result[x] := AChar;
-    For x := TotalLength - aMaxBytesLength + 1 To TotalLength Do
-      Result[x] := AString[x - (TotalLength - aMaxBytesLength)];
-  End;
-End;
+    for X := 1 to TotalLength - aMaxBytesLength do
+      Result[X] := AChar;
+    for X := TotalLength - aMaxBytesLength + 1 to TotalLength do
+      Result[X] := AString[X - (TotalLength - aMaxBytesLength)];
+  end;
+end;
 
-Function putBefore(Num: Integer; AChar: char; TotalLength: Integer): String; Overload;
-Begin
-  Result := putBefore(IntToStr(Num), AChar, TotalLength);
-End;
+function putBefore(num: integer; AChar: char; TotalLength: integer): string; overload;
+begin
+  Result := putBefore(IntToStr(num), AChar, TotalLength);
+end;
 
-Function ExtractString(
-  Const aText, aStartMarker, aEndMarker: String;
-  aStartoffset: Integer;
-  Out aValue: String; Out aStartMarkerFoundAtIndex: Integer;
+function ExtractString(
+  const aText, aStartMarker, aEndMarker: string;
+  aStartoffset: integer;
+  out aValue: string; out aStartMarkerFoundAtIndex: integer;
   aCasesensitive: boolean = True;
   { aInvalidChars: used for the following scenario If we search for #*#, but only on the same line,
   we can pass aInvalidChars  = [#10], in that case if the #10 will come before the end marker, it will
   indicates that this is indeed not a end marker at all
   Note: the search for invalidChars is always case sensitive}
-  const aInvalidChars: TArray<Char> = [];
-  aInvalidCharsAreSorted: Boolean = False ): boolean;
+  const aInvalidChars: TArray<char> = [];
+  aInvalidCharsAreSorted: boolean = False): boolean;
 begin
   if aCasesensitive then
-    Result:= ExtractString(
+    Result := ExtractString(
       aText, aText, aStartMarker, aEndMarker,
       aStartoffset, aValue, aStartMarkerFoundAtIndex, aInvalidChars, aInvalidCharsAreSorted)
   else
-    Result:= ExtractString(
+    Result := ExtractString(
       aText, aText.ToLower, aStartMarker.ToLower, aEndMarker.ToLower,
       aStartoffset, aValue, aStartMarkerFoundAtIndex, aInvalidChars, aInvalidCharsAreSorted);
 end;
 
-Function ExtractString(
-  Const aOrgCasedText, aTextForCaseSensitiveSearch,
-  aStartMarker, aEndMarker: String;
-  aStartoffset: Integer;
-  Out aValue: String;
-  Out aStartMarkerFoundAtIndex: Integer;
+function ExtractString(
+  const aOrgCasedText, aTextForCaseSensitiveSearch,
+  aStartMarker, aEndMarker: string;
+  aStartoffset: integer;
+  out aValue: string;
+  out aStartMarkerFoundAtIndex: integer;
   { aInvalidChars: used for the following scenario If we search for #*#, but only on the same line,
   we can pass aInvalidChars  = [#10], in that case if the #10 will come before the end marker, it will
   indicates that this is indeed not a end marker at all
   Note: the search for invalidChars is always case sensitive}
-  const aInvalidChars : TArray<Char> = [];
-  aInvalidCharsAreSorted: Boolean = False ): boolean;
-Var
-  i1, i2: Integer;
-  lInvalidCharOffset, lIndexOfInvalidChar: Integer;
-Begin
+  const aInvalidChars: TArray<char> = [];
+  aInvalidCharsAreSorted: boolean = False): boolean;
+var
+  i1, i2: integer;
+  lInvalidCharOffset, lIndexOfInvalidChar: integer;
+begin
   Result := False;
 
-  while true do
+  while True do
   begin
     aStartMarkerFoundAtIndex := PosEx(aStartMarker, aTextForCaseSensitiveSearch, aStartoffset);
-    If aStartMarkerFoundAtIndex = 0 Then
-      Exit(False);
+    if aStartMarkerFoundAtIndex = 0 then
+      exit(False);
 
-    i1 := aStartMarkerFoundAtIndex + Length(aStartMarker);
+    i1 := aStartMarkerFoundAtIndex + length(aStartMarker);
 
     i2 := PosEx(aEndMarker, aTextForCaseSensitiveSearch, i1);
-    If i2 = 0 Then
-      Exit(False);
+    if i2 = 0 then
+      exit(False);
 
     if CharPosEx(aOrgCasedText,
       aInvalidChars,
@@ -440,61 +403,63 @@ Begin
       i1, i2,
       lInvalidCharOffset, lIndexOfInvalidChar) then
     begin
-      aStartoffset:= i1;
+      aStartoffset := i1;
       Continue;
     end;
 
-    aValue := Copy(aOrgCasedText, i1, i2 - i1);
-    Exit(True);
+    aValue := copy(aOrgCasedText, i1, i2 - i1);
+    exit(True);
   end;
-End;
+end;
 
-Function ReplacePlaceholder(
-  Const aText, aStartMarker, aEndMarker: String;
+function ReplacePlaceholder(
+  const aText, aStartMarker, aEndMarker: string;
   const aOnFoundProc: TReplacePlaceholderOnFoundProc;
-  aStartoffset: Integer = 1;
+  aStartoffset: integer = 1;
   aCasesensitive: boolean = True;
   { aInvalidChars: used for the following scenario If we search for #*#, but only on the same line,
   we can pass aInvalidChars  = [#10], in that case if the #10 will come before the end marker, it will
   indicates that this is indeed not a end marker at all
   Note: the search for invalidChars is always case sensitive}
-  const aInvalidChars : TArray<Char> = [];
-  aInvalidCharsAreSorted: Boolean = False
-  ): String;
+  const aInvalidChars: TArray<char> = [];
+  aInvalidCharsAreSorted: boolean = False
+  ): string;
 var
-  lValue, lReplacementValue: String;
-  lStartMarkerFoundAtIndex: Integer;
+  lValue, lReplacementValue: string;
+  lStartMarkerFoundAtIndex: integer;
   lAction: TReplacePlaceholderAction;
   lFound: boolean;
-  lOrgCasedText, lTextForCaseSensitiveSearch, lStartMarker, lEndMarker: String;
-  lMarkersLen, lPlaceHolderLen: Integer;
+  lOrgCasedText, lTextForCaseSensitiveSearch, lStartMarker, lEndMarker: string;
+  lMarkersLen, lPlaceHolderLen: integer;
   sb: TStringBuilder; // well, I know, there was much hate for the TStringBuilder in delphi. But at least since delphi 12 this is faster then ordinary delphi string + string,expecially for large strings
-Begin
+begin
   Result := '';
   gc(sb, TStringBuilder.Create);
-  sb.Capacity:= Length(aText) * 2;
+  sb.Capacity := length(aText) * 2;
 
   if aStartoffset < 1 then
-    aStartoffset:= 1;
+    aStartoffset := 1;
 
   // init our output with the text before the start offset, so we do not loose it
   if aStartoffset > 1 then
-    sb.Append( Copy(aText, 1, aStartoffset - 1) );
+    sb.Append(copy(aText, 1, aStartoffset - 1));
 
-  lOrgCasedText:= aText;
-  lMarkersLen:= Length(aStartMarker) + Length(aEndMarker);
+  lOrgCasedText := aText;
+  lMarkersLen := length(aStartMarker) + length(aEndMarker);
   if aCasesensitive then
   begin
-    lTextForCaseSensitiveSearch:= aText;
-    lStartMarker:= aStartMarker;
-    lEndMarker:= aEndMarker;
-  end else begin
-    lTextForCaseSensitiveSearch:= aText.ToLower;
-    lStartMarker:= aStartMarker.ToLower;
-    lEndMarker:= aEndMarker.ToLower;
+    lTextForCaseSensitiveSearch := aText;
+    lStartMarker := aStartMarker;
+    lEndMarker := aEndMarker;
+  end
+  else
+  begin
+    lTextForCaseSensitiveSearch := aText.ToLower;
+    lStartMarker := aStartMarker.ToLower;
+    lEndMarker := aEndMarker.ToLower;
   end;
 
-  Repeat
+  repeat
 
     lFound := ExtractString(
       lOrgCasedText, lTextForCaseSensitiveSearch, lStartMarker, lEndMarker,
@@ -507,16 +472,16 @@ Begin
       break;
 
     lAction := raReplace;
-    lPlaceHolderLen:= Length(lValue) + lMarkersLen;
+    lPlaceHolderLen := length(lValue) + lMarkersLen;
     lReplacementValue := copy(lOrgCasedText, lStartMarkerFoundAtIndex, lPlaceHolderLen);
     aOnFoundProc(lValue, lStartMarkerFoundAtIndex, lReplacementValue, lAction);
 
-    Case lAction of
+    case lAction of
       raStop:
         break;
       raSkip:
         begin
-          lReplacementValue := Copy(lOrgCasedText, lStartMarkerFoundAtIndex, lPlaceHolderLen);
+          lReplacementValue := copy(lOrgCasedText, lStartMarkerFoundAtIndex, lPlaceHolderLen);
           lAction := raReplace;
         end;
       raReplaceAndResumeAtSamePosition:
@@ -524,155 +489,156 @@ Begin
           // that one is a bit tricky
           // 1. flush the part before the marker start pos to our output
           sb.Append(
-            Copy(lOrgCasedText,
-              aStartoffset, (lStartMarkerFoundAtIndex - aStartoffset)));
+            copy(lOrgCasedText,
+            aStartoffset, (lStartMarkerFoundAtIndex - aStartoffset)));
           // 2. trim both text buffers and prepend with the pepalacement value
-          lOrgCasedText:= lReplacementValue +
-            Copy(lOrgCasedText, lStartMarkerFoundAtIndex + lPlaceHolderLen, Length(lOrgCasedText));
+          lOrgCasedText := lReplacementValue +
+            copy(lOrgCasedText, lStartMarkerFoundAtIndex + lPlaceHolderLen, length(lOrgCasedText));
           if not aCasesensitive then
-            lReplacementValue  := lReplacementValue .ToLower;
-          lTextForCaseSensitiveSearch:= lReplacementValue +
-            Copy(lTextForCaseSensitiveSearch, lStartMarkerFoundAtIndex + lPlaceHolderLen, Length(lTextForCaseSensitiveSearch));
+            lReplacementValue := lReplacementValue.ToLower;
+          lTextForCaseSensitiveSearch := lReplacementValue +
+            copy(lTextForCaseSensitiveSearch, lStartMarkerFoundAtIndex + lPlaceHolderLen, length(lTextForCaseSensitiveSearch));
           // 3. Reset the start offset to 1 as we want to search from the start again
-          aStartoffset:= 1;
+          aStartoffset := 1;
           Continue; // we want to skip the code that follows
         end;
     end;
 
     // copy the part from the start position until the position of the marker, then add the replacement text to the output
     sb.Append(
-      Copy(lOrgCasedText,
-        aStartoffset, (lStartMarkerFoundAtIndex - aStartoffset)) );
+      copy(lOrgCasedText,
+      aStartoffset, (lStartMarkerFoundAtIndex - aStartoffset)));
     sb.Append(lReplacementValue);
 
     aStartoffset := lStartMarkerFoundAtIndex + lPlaceHolderLen;
   until (not lFound) or (lAction in [raStop, raReplaceAndStop]);
 
   // append the rest of the Text
-  if aStartoffset < Length(lOrgCasedText) then
-    sb.Append( Copy(lOrgCasedText, aStartoffset, Length(lOrgCasedText)) );
-  Result:= sb.ToString;
-End;
+  if aStartoffset < length(lOrgCasedText) then
+    sb.Append(copy(lOrgCasedText, aStartoffset, length(lOrgCasedText)));
+  Result := sb.ToString;
+end;
 
-Function CombineUrl(const aPart1, aPart2: String; aSeparator: String = '/'): String;
+function CombineUrl(const aPart1, aPart2: string; aSeparator: string = '/'): string;
 begin
   Result := CombineUrl([aPart1, aPart2], aSeparator);
 end;
 
-Function CombineUrl(const aParts: array of String; aSeparator: String = '/'): String;
+function CombineUrl(const aParts: array of string; aSeparator: string = '/'): string;
 var
-  x: Integer;
+  X: integer;
 begin
-  case Length(aParts) of
+  case length(aParts) of
     0:
       Result := '';
     1:
       Result := aParts[0];
-  else begin
+  else
+    begin
       Result := aParts[0];
-      for x := 1 to Length(aParts) - 1 do
+      for X := 1 to length(aParts) - 1 do
       begin
         if not endsText(aSeparator, Result) then
           Result := Result + aSeparator;
-        if startsText(aSeparator, aParts[x]) then
-          Result := Result + copy(aParts[x], Length(aSeparator) + 1, Length(aParts[x]))
+        if startsText(aSeparator, aParts[X]) then
+          Result := Result + copy(aParts[X], length(aSeparator) + 1, length(aParts[X]))
         else
-          Result := Result + aParts[x];
+          Result := Result + aParts[X];
       end;
     end;
   end;
 end;
 
-function MatchesFilter(const aText: String;
+function MatchesFilter(const aText: string;
   const AFilter: TStringDynArray): boolean;
 var
-  lFilter: String;
+  lFilter: string;
 begin
-  if Length(AFilter) = 0 then
-    Exit(true);
+  if length(AFilter) = 0 then
+    exit(True);
 
-  Result := false;
+  Result := False;
   for lFilter in AFilter do
   begin
-    Result := system.Masks.MatchesMask(aText, lFilter);
+    Result := System.Masks.MatchesMask(aText, lFilter);
     if Result then
       break;
   end;
 
 end;
 
-Function ExpandEnvVars(const aText: String; const aStartToken: String = '%'; const aEndToken: String = '%'): String;
+function ExpandEnvVars(const aText: string; const aStartToken: string = '%'; const aEndToken: string = '%'): string;
 begin
   Result := ReplacePlaceholder(
     aText, aStartToken, aEndToken,
 
-      procedure(
+    procedure(
       // the text between startMarker and endMarker
-      const aValue: String;
-      aStartMarkerFoundAtIndex: Integer;
+      const aValue: string;
+      aStartMarkerFoundAtIndex: integer;
       // the String to replace the placeholder (StartMarker+value+endmarker)
       // default is the whole placeholder that s the value with the start and end markers, so if you do not touch that, it will act as action=raSkip
-      var aReplaceValue: String;
+      var aReplaceValue: string;
       // default raReplace
       var aAction: TReplacePlaceholderAction)
     var
-      v: String;
+      v: string;
     begin
-      v := system.sysUtils.GetEnvironmentVariable(aValue);
+      v := System.SysUtils.GetEnvironmentVariable(aValue);
       if v = '' then
         aAction := raSkip
       else
         aReplaceValue := v;
     end,
-    1, false);
+    1, False);
 end;
 
-Function StrCmpLogical(Const left, right: String): Integer;
-Begin
+function StrCmpLogical(const Left, right: string): integer;
+begin
   {$IFDEF MSWINDOWS}
-  Result := StrCmpLogicalW(PWideChar(left), PWideChar(right));
+  Result := StrCmpLogicalW(PWideChar(Left), PWideChar(right));
   {$ELSE}
-  Result := CompareStr(left, right);
+  Result := CompareStr(Left, right);
   {$ENDIF}
-End;
+end;
 
 { TFilterEx }
 
-class function TFilterEx.Create(const aFilterText: String): TFilterEx;
+class function TFilterEx.Create(const aFilterText: string): TFilterEx;
 begin
-  Result := Default (TFilterEx);
+  Result := default(TFilterEx);
   Result.Prepare(aFilterText);
 end;
 
-procedure TFilterEx.Prepare(const aText: String);
+procedure TFilterEx.Prepare(const aText: string);
 var
-  ar: TArray<String>;
+  ar: TArray<string>;
   fi: TFilterItem;
   l: TStringList;
-  p: String;
+  p: string;
   k: TKind;
 begin
   gc(l, TStringList.Create);
-  l.StrictDelimiter := true;
+  l.StrictDelimiter := True;
   l.Delimiter := '|';
   l.QuoteChar := '"';
 
   fOrgFilterText := aText;
   ar := SplitBySpace(aText.Trim.ToLower);
-  SetLength(fFilter, Length(ar));
-  for var x := 0 to High(ar) do
+  SetLength(fFilter, length(ar));
+  for var X := 0 to High(ar) do
   begin
-    fi := default (TFilterItem);
-    p := trim(ar[x]);
+    fi := default(TFilterItem);
+    p := Trim(ar[X]);
     if p = '' then
-      continue;
+      Continue;
     fi.OrgText := p;
     if startsText('!', p) then
     begin
       Delete(p, 1, 1);
-      fi.IsNegated := true;
+      fi.IsNegated := True;
       if p = '' then
-        continue;
+        Continue;
     end;
 
     l.DelimitedText := p;
@@ -686,25 +652,27 @@ begin
       fi.OrElements[Y] := p;
       fi.OrElementKinds[Y] := k;
     end;
-    fFilter[x] := fi;
+    fFilter[X] := fi;
   end;
 end;
 
-procedure TFilterEx.Preprocess(var p: String; out k: TKind);
+procedure TFilterEx.Preprocess(var p: string; out k: TKind);
 var
-  i1, i2: Integer;
+  i1, i2: integer;
 begin
   if pos('?', p) > 0 then
     k := kMask
-  else begin
+  else
+  begin
     i1 := pos('*', p);
     if i1 < 1 then
       k := kContains
-    else if i1 = Length(p) then
+    else if i1 = length(p) then
     begin
-      Delete(p, Length(p), 1);
+      Delete(p, length(p), 1);
       k := kStarts;
-    end else if i1 = 1 then
+    end
+    else if i1 = 1 then
     begin
       i2 := 2;
       i2 := PosEx('*', p, i2);
@@ -712,9 +680,10 @@ begin
       begin
         Delete(p, 1, 1);
         k := kEnds;
-      end else if i2 = Length(p) then
+      end
+      else if i2 = length(p) then
       begin
-        p := copy(p, 2, Length(p) - 2);
+        p := copy(p, 2, length(p) - 2);
         k := kContains;
       end
       else
@@ -725,70 +694,71 @@ begin
   end;
 end;
 
-function TFilterEx.SplitBySpace(const aText: String): TArray<String>;
+function TFilterEx.SplitBySpace(const aText: string): TArray<string>;
 var
-  S, p: String;
-  i1, i2: Integer;
-  l: TList<String>;
+  s, p: string;
+  i1, i2: integer;
+  l: TList<string>;
   lIsInQuote: boolean;
-  C: char;
+  c: char;
 begin
-  S := aText + ' ';
-  gc(l, TList<String>.Create);
-  lIsInQuote := false;
+  s := aText + ' ';
+  gc(l, TList<string>.Create);
+  lIsInQuote := False;
   i1 := 1;
   i2 := 1; // why not 2? because the first char may contain a '"' char....
 
-  while i2 <= Length(S) do
+  while i2 <= length(s) do
   begin
-    C := S[i2];
+    c := s[i2];
     if lIsInQuote then
     begin
-      if C = '"' then
-        lIsInQuote := false;
+      if c = '"' then
+        lIsInQuote := False;
 
-    end else if C = '"' then
-      lIsInQuote := true
-    else if C = ' ' then
+    end
+    else if c = '"' then
+      lIsInQuote := True
+    else if c = ' ' then
     begin
       if i1 <> i2 then
       begin
-        p := copy(S, i1, (i2 - i1));
+        p := copy(s, i1, (i2 - i1));
         l.add(p);
       end;
       i1 := i2 + 1;
     end;
-    inc(i2);
+    Inc(i2);
   end;
 
   Result := l.ToArray;
 end;
 
-function TFilterEx.Matches(const aText: String): boolean;
+function TFilterEx.Matches(const aText: string): boolean;
 var
   lMatchesANy: boolean;
   fi: TFilterItem;
-  S: String;
-  lText: String;
+  s: string;
+  lText: string;
 begin
-  Result := true;
+  Result := True;
 
   lText := aText.ToLower;
   for fi in fFilter do
   begin
-    lMatchesANy := false;
-    for var x := 0 to Length(fi.OrElements) - 1 do
+    lMatchesANy := False;
+    for var X := 0 to length(fi.OrElements) - 1 do
     begin
-      S := fi.OrElements[x];
-      case fi.OrElementKinds[x] of
+      s := fi.OrElements[X];
+      case fi.OrElementKinds[X] of
         kMask:
-          lMatchesANy := system.Masks.MatchesMask(lText, S);
+          lMatchesANy := System.Masks.MatchesMask(lText, s);
         kContains:
-          lMatchesANy := lText.Contains(S);
+          lMatchesANy := lText.Contains(s);
         kStarts:
-          lMatchesANy := StartsStr(S, lText);
+          lMatchesANy := StartsStr(s, lText);
         kEnds:
-          lMatchesANy := EndsStr(S, lText);
+          lMatchesANy := EndsStr(s, lText);
       end;
       if lMatchesANy then
         break;
@@ -797,128 +767,131 @@ begin
     if fi.IsNegated then
     begin
       if lMatchesANy then
-        Exit(false);
-    end else if not lMatchesANy then
-      Exit(false);
+        exit(False);
+    end
+    else if not lMatchesANy then
+      exit(False);
   end;
 end;
 
 { other }
 
-function SplitInHalfBy(const aText: String; aDelim: Char; out aParts: TArray<String>): Boolean;
+function SplitInHalfBy(const aText: string; aDelim: char; out aParts: TArray<string>): boolean;
 var
-  i: Integer;
+  i: integer;
 begin
-  Result:= False;
-  i:= Pos(aDelim, aText);
-  if i<1 then
-    aParts:= [aText]
-  else begin
-    Result:= True;
-    aParts:= [
-      Copy(aText, 1, i-1),
-      Copy(aText, i+1, Length(aText))
-    ];
-  end;
-end;
-
-function SplitInHalfBy(const aText: String; aDelim: Char; out alLeft, alRight: String): Boolean;overload;
-var
-  i: Integer;
-begin
-  Result:= False;
-  i:= Pos(aDelim, aText);
-  if i>=1 then
+  Result := False;
+  i := pos(aDelim, aText);
+  if i < 1 then
+    aParts := [aText]
+  else
   begin
-    Result:= True;
-    alLeft:= Copy(aText, 1, i-1);
-    alRight:= Copy(aText, i+1, Length(aText));
+    Result := True;
+    aParts := [
+      copy(aText, 1, i - 1),
+      copy(aText, i + 1, length(aText))
+      ];
   end;
 end;
 
-function Split(Delimiter: char; Const line: String): TArray<String>;
+function SplitInHalfBy(const aText: string; aDelim: char; out alLeft, alRight: string): boolean; overload;
+var
+  i: integer;
+begin
+  Result := False;
+  i := pos(aDelim, aText);
+  if i >= 1 then
+  begin
+    Result := True;
+    alLeft := copy(aText, 1, i - 1);
+    alRight := copy(aText, i + 1, length(aText));
+  end;
+end;
+
+function Split(Delimiter: char; const line: string): TArray<string>;
 begin
   Split(line, Delimiter, Result);
 end;
 
-Procedure Split(Const line: String; Delimiter: char; out strings: TArray<String>);
-Var
+procedure Split(const line: string; Delimiter: char; out strings: TArray<string>);
+var
   l: TStringList;
-Begin
+begin
   gc(l, TStringList.Create);
-  l.StrictDelimiter := true;
+  l.StrictDelimiter := True;
   l.Delimiter := Delimiter;
   l.DelimitedText := line;
   strings := l.ToStringArray;
 end;
 
-Procedure Split(Const line: String; Delimiter: char; strings: TStringList);
-Var
+procedure Split(const line: string; Delimiter: char; strings: TStringList);
+var
   l: TStringList;
-Begin
+begin
   gc(l, TStringList.Create);
-  l.StrictDelimiter := true;
+  l.StrictDelimiter := True;
   l.Delimiter := Delimiter;
   l.DelimitedText := line;
-  Strings.Clear;
-  Strings.AddStrings(l);
+  strings.Clear;
+  strings.AddStrings(l);
 end;
 
-
-Function fstr(Const d: double; vs: Integer = 2; ns: Integer = 2): String;
-Var
-  S: String;
-Begin
-  S := '0.' + putBefore('0', '0', ns);
-  Result := FormatFloat(S, d);
-end;
-
-function GuidToHex(const aGuid: TGuid): String;
+function fStr(const d: double; vs: integer = 2; ns: integer = 2): string;
+var
+  s: string;
 begin
-  SetLength(Result, SizeOf(TGuid)*2);
+  s := '0.' + putBefore('0', '0', ns);
+  Result := FormatFloat(s, d);
+end;
+
+function GuidToHex(const aGuid: TGuid): string;
+begin
+  SetLength(Result, SizeOf(TGuid) * 2);
   BinToHex(@aGuid, PChar(Result), SizeOf(TGuid));
 end;
 
-function Join(const aSeparator: String; const aValues: TArray<Integer>): String;
+function Join(const aSeparator: string; const aValues: TArray<integer>): string;
 var
-  lValues: TArray<String>;
+  lValues: TArray<string>;
 begin
-  SetLength(lValues, Length(aValues));
-  for var x := 0 to length(aValues)-1 do
-    lValues[x]:= aValues[x].ToString;
-  Result:= String.Join(aSeparator, lValues);
+  SetLength(lValues, length(aValues));
+  for var X := 0 to length(aValues) - 1 do
+    lValues[X] := aValues[X].ToString;
+  Result := string.Join(aSeparator, lValues);
 end;
 
-function Utf8TruncateByCodePoint(const AInput: String; aMaxBytesLength: Integer): TBytes;
+function Utf8TruncateByCodePoint(const AInput: string; aMaxBytesLength: integer): TBytes;
 var
-  i, lCharLen: Integer;
-  lPartial: String;
+  i, lCharLen: integer;
+  lPartial: string;
   lEncBytes: TBytes;
   lOutBuf: TBytes;
-  lSize: Integer;
+  lSize: integer;
 begin
   // If aMaxBytesLength <= 0, trivially return empty
   if aMaxBytesLength <= 0 then
-    Exit(nil);
+    exit(nil);
 
   // get some more memory just in case
-  lSize:= 0;
+  lSize := 0;
   SetLength(lOutBuf, aMaxBytesLength);
 
   i := 1;
-  while i <= Length(AInput) do
+  while i <= length(AInput) do
   begin
     // For a single codepoint, we might need 1 or 2 UTF-16 chars:
     // In most cases, TEncoding.UTF8 can handle surrogates if we pass them together.
     // So check if AInput[i] is a high surrogate and there's a low surrogate next.
-    if (i < Length(AInput)) and
-       (AInput[i] >= #$D800) and (AInput[i] <= #$DBFF) and
-       (AInput[i+1] >= #$DC00) and (AInput[i+1] <= #$DFFF) then
+    if (i < length(AInput)) and
+      (AInput[i] >= #$D800) and (AInput[i] <= #$DBFF) and
+      (AInput[i + 1] >= #$DC00) and (AInput[i + 1] <= #$DFFF) then
     begin
       // This is a surrogate pair
-      lPartial := Copy(AInput, i, 2);
+      lPartial := copy(AInput, i, 2);
       lCharLen := 2;
-    end else begin
+    end
+    else
+    begin
       // single UTF-16 code unit
       lPartial := AInput[i];
       lCharLen := 1;
@@ -928,186 +901,186 @@ begin
     lEncBytes := TEncoding.UTF8.GetBytes(lPartial);
 
     // If adding these bytes would exceed aMaxBytesLength, stop.
-    if (lSize+ Length(lEncBytes)) > aMaxBytesLength then
-      Break;
+    if (lSize + length(lEncBytes)) > aMaxBytesLength then
+      break;
 
     // Otherwise, append them
-    Move(lEncBytes[0], lOutBuf[lSize], Length(lEncBytes));
-    inc(lSize, Length(lEncBytes));
+    Move(lEncBytes[0], lOutBuf[lSize], length(lEncBytes));
+    Inc(lSize, length(lEncBytes));
 
     // Advance i by the # of UTF-16 code units consumed
     Inc(i, lCharLen);
   end;
 
-  setLength(lOutBuf, lSize);
+  SetLength(lOutBuf, lSize);
   Result := lOutBuf;
 end;
 
-
 function CharPosEx(
-  const aText: String;
-  const aChars: TArray<Char>;
-  aCharsArrayIsSorted: Boolean;
-  aStartOffset, aEndOffset: Integer;
-  out aFoundAtOffset, aIndexOfCharFound: Integer): Boolean;
+  const aText: string;
+  const aChars: TArray<char>;
+  aCharsArrayIsSorted: boolean;
+  aStartoffset, aEndOffset: integer;
+  out aFoundAtOffset, aIndexOfCharFound: integer): boolean;
 var
-  c: Char;
+  c: char;
   i: NativeInt;
 begin
-  Result:= False;
-  if Length(aChars) = 0 then
-    Exit(False);
-  if aStartOffset < 1 Then
-    Exit(False);
-  if aEndOffset > Length(aText) then
-    aEndOffset:= Length(aText);
-  if aEndOffset < aStartOffset then
-    Exit(False);
+  Result := False;
+  if length(aChars) = 0 then
+    exit(False);
+  if aStartoffset < 1 then
+    exit(False);
+  if aEndOffset > length(aText) then
+    aEndOffset := length(aText);
+  if aEndOffset < aStartoffset then
+    exit(False);
   if aCharsArrayIsSorted then
   begin
-    for var x:= aStartOffset to aEndOffset do
+    for var X := aStartoffset to aEndOffset do
     begin
-      if TArray.BinarySearch<Char>(aChars, aText[x], i) then
+      if TArray.BinarySearch<char>(aChars, aText[X], i) then
       begin
-        aFoundAtOffset:= x;
-        aIndexOfCharFound:= i;
-        Exit(True);
+        aFoundAtOffset := X;
+        aIndexOfCharFound := i;
+        exit(True);
       end;
     end;
-  end else begin
-    for var x:= aStartOffset to aEndOffset do
+  end
+  else
+  begin
+    for var X := aStartoffset to aEndOffset do
     begin
-      c:= aText[x];
-      for var y := Low(aChars) to High(aChars) do
-      if c = aChars[y] then
-      begin
-        aIndexOfCharFound:= y;
-        aFoundAtOffset:= x;
-        Exit(True);
-      end;
+      c := aText[X];
+      for var Y := Low(aChars) to High(aChars) do
+        if c = aChars[Y] then
+        begin
+          aIndexOfCharFound := Y;
+          aFoundAtOffset := X;
+          exit(True);
+        end;
     end;
   end;
 end;
 
+function StrToFloatWCC(
 
-Function StrToFloatWCC(
-
-Const Text: String): double;
-Var
-  s: String;
-Begin
+  const Text: string): double;
+var
+  s: string;
+begin
   s := Text;
   PrepareTextForStrToFloatWcc(s);
   Result := StrToFLoat(s);
-End;
+end;
 
-Function TryStrToFloatWCC(
+function TryStrToFloatWCC(
 
-Const Text: String; Out Value: double): Boolean;
-Var
-  s: String;
-Begin
+  const Text: string; out Value: double): boolean;
+var
+  s: string;
+begin
   s := Text;
   PrepareTextForStrToFloatWcc(s);
 
-  Result := system.sysUtils.TryStrToFloat(s, Value);
-End;
+  Result := System.SysUtils.TryStrToFloat(s, Value);
+end;
 
-Function StrToFloatWCCDef(Const Text: String; Const Default: double): double;
-Var
-  s: String;
-Begin
+function StrToFLoatWccDef(const Text: string; const default: double): double;
+var
+  s: string;
+begin
   s := Text;
   PrepareTextForStrToFloatWcc(s);
 
-  Result := Default;
-  Result := StrToFloatDef(s, Default);
-End;
+  Result := default;
+  Result := StrToFloatDef(s, default);
+end;
 
-Procedure PrepareTextForStrToFloatWcc(Var s: String);
-Var
-  x: Integer;
+procedure PrepareTextForStrToFloatWcc(var s: string);
+var
+  X: integer;
   decimalSeparatorIndex, FirstDotIndex, firstCommaIndex, DotCount,
-    CommaCount: Integer;
-  delComma, delDot: Boolean;
-Begin
-  For x := Length(s) Downto 1 Do
+    CommaCount: integer;
+  delComma, delDot: boolean;
+begin
+  for X := length(s) downto 1 do
     // some idiot introduced 0 indexed strings in system.character... so remember to account for that....
-    If char.IsWhiteSpace(s, x - 1) Then
-      Delete(s, x, 1);
+    if char.IsWhiteSpace(s, X - 1) then
+      Delete(s, X, 1);
 
-  If s = '' Then
-    Exit;
+  if s = '' then
+    exit;
 
   FirstDotIndex := 0;
   firstCommaIndex := 0;
   DotCount := 0;
   CommaCount := 0;
 
-  For x := 1 To Length(s) Do
-  Begin
-    If system.sysUtils.CharInSet(s[x], ['a' .. 'z', 'A' .. 'Z']) Then
-      Exit;
+  for X := 1 to length(s) do
+  begin
+    if System.SysUtils.CharInSet(s[X], ['a'..'z', 'A'..'Z']) then
+      exit;
 
-    If s[x] = '.' Then
-    Begin
-      If DotCount = 0 Then
-        FirstDotIndex := x;
+    if s[X] = '.' then
+    begin
+      if DotCount = 0 then
+        FirstDotIndex := X;
       Inc(DotCount);
-    End
-    Else If s[x] = ',' Then
-    Begin
-      If CommaCount = 0 Then
-        firstCommaIndex := x;
+    end
+    else if s[X] = ',' then
+    begin
+      if CommaCount = 0 then
+        firstCommaIndex := X;
       Inc(CommaCount);
-    End;
-  End;
+    end;
+  end;
 
-  delComma := true;
-  delDot := true;
+  delComma := True;
+  delDot := True;
   decimalSeparatorIndex := -1;
-  If (DotCount = 1) And (CommaCount = 1) Then
-  Begin
+  if (DotCount = 1) and (CommaCount = 1) then
+  begin
     // if both were found use the most right of them
-    If FirstDotIndex > firstCommaIndex Then
-    Begin
+    if FirstDotIndex > firstCommaIndex then
+    begin
       decimalSeparatorIndex := FirstDotIndex;
       delDot := False;
-    End
-    Else
-    Begin
+    end
+    else
+    begin
       delComma := False;
       decimalSeparatorIndex := firstCommaIndex;
-    End;
-  End
-  Else If DotCount = 1 Then
-  Begin
+    end;
+  end
+  else if DotCount = 1 then
+  begin
     decimalSeparatorIndex := FirstDotIndex;
     delDot := False;
-  End
-  Else If CommaCount = 1 Then
-  Begin
+  end
+  else if CommaCount = 1 then
+  begin
     decimalSeparatorIndex := firstCommaIndex;
     delComma := False;
-  End;
+  end;
 
-  For x := Length(s) Downto 1 Do
-  Begin
-    If x = decimalSeparatorIndex Then
-      s[x] := FormatSettings.DecimalSeparator
-    Else
-      Case s[x] Of
+  for X := length(s) downto 1 do
+  begin
+    if X = decimalSeparatorIndex then
+      s[X] := FormatSettings.DecimalSeparator
+    else
+      case s[X] of
         '.':
-          If delDot Then
-            Delete(s, x, 1);
+          if delDot then
+            Delete(s, X, 1);
         ',':
-          If delComma Then
-            Delete(s, x, 1);
+          if delComma then
+            Delete(s, X, 1);
         ' ':
-          Delete(s, x, 1);
-      End;
-  End;
-End;
-
+          Delete(s, X, 1);
+      end;
+  end;
+end;
 
 end.
+
