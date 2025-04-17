@@ -388,7 +388,7 @@ var
   lImages: TGlyphCollection;
   b: TBitmap;
   qp, qpItem: TQuickPixel;
-  ImagesPerRow, ImagesperColumn: Integer;
+  IMagesPerRow, ImagesperColumn: Integer;
   srcRect: TRect;
   p: TPoint;
 begin
@@ -425,25 +425,30 @@ begin
     b.SetSize(aImageList.Width, aImageList.Height);
 
     srcRect := rect(0, 0, aImageList.Width, aImageList.Height);
-    qpItem := TQuickPixel.Create(b);
-    for var lglyphIndex := 0 to aImageList.Count - 1 do
+
+    for var lGlyphIndex := 0 to aImageList.Count - 1 do
     begin
-      if lglyphIndex <> 0 then
-      begin
-        // Calculate the offset of the glyph
-        p.x := (lglyphIndex mod ImagesPerRow) * b.Width;
-        p.y := (lglyphIndex div ImagesPerRow) * b.Height;
-        srcRect.Location := p;
+      qpItem := TQuickPixel.Create(b);
+      try
+        if lGlyphIndex <> 0 then
+        begin
+          // Calculate the offset of the glyph
+          p.x := (lglyphIndex mod ImagesPerRow) * b.Width;
+          p.y := (lglyphIndex div ImagesPerRow) * b.Height;
+          srcRect.Location := p;
+        end;
+        qpItem.copyRect(point(0, 0), qp, srcRect);
+      finally
+        FreeAndNil(qpItem); // release the lock on b
       end;
-      qpItem.copyRect(point(0, 0), qp, srcRect);
+
       lImageName := 'IL_' + IntToHex(nativeInt(Pointer(aImageList)), 1) + '_' + lglyphIndex.ToString;
       AddToImageCol(lImageName, b);
       vl.Add(lImageName, lImageName, False);
     end;
   finally
-    qp.Free;
-    qpItem.Free;
-    b.Free;
+    FreeAndNil(qp);
+    FreeAndNil(b);
   end;
 end;
 
@@ -741,7 +746,14 @@ begin
   end else begin
     lImageElement := fImageCollection.Images.Add;
     lImageElement.Name := aImageName;
-    lImageElement.SourceImages.Add.Image.assign(aGraphic);
+    var ImageCollectionSourceItem:= lImageElement.SourceImages.Add;
+    try
+      ImageCollectionSourceItem.Image.assign(aGraphic);
+    Except
+      // well... just retry... maybe there was something wrong  with the gdi
+      ImageCollectionSourceItem.Image.assign(aGraphic);
+    end;
+
     // lImageElement.Change;
   end;
 end;
