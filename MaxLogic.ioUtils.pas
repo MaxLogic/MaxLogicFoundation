@@ -692,7 +692,7 @@ begin
   lNeedsQuoting := False;
   for i := 1 to Length(aValue) do
   begin
-    if CharInSet(aValue[i], [' ', #9, #10, #13, '&', '|', '(', ')', '<', '>', '^', '"']) then
+    if CharInSet(aValue[i], [' ', #9, #10, #13, '&', '|', '(', ')', '<', '>', '^', '"', '''']) then
     begin
       lNeedsQuoting := True;
       Break;
@@ -702,52 +702,7 @@ begin
   if not lNeedsQuoting and (aValue <> '') then
     Exit(aValue);
 
-  // Create string builder with extra capacity for escaping
-  gc(lBuilder, TStringBuilder.Create(Length(aValue) * 2 + 2));
-
-  // Start with a double quote
-  lBuilder.Append('"');
-
-  i := 1;
-  while i <= Length(aValue) do
-  begin
-    // Handle backslashes specially when they precede a double quote
-    if aValue[i] = '\' then
-    begin
-      // Count consecutive backslashes
-      lBackslashCount := 1;
-      while (i + lBackslashCount <= Length(aValue)) and (aValue[i + lBackslashCount] = '\') do
-        Inc(lBackslashCount);
-
-      // If backslashes are followed by a quote, each backslash needs to be escaped
-      if (i + lBackslashCount <= Length(aValue)) and (aValue[i + lBackslashCount] = '"') then
-      begin
-        // Double the backslashes because each one needs to be escaped
-        lBuilder.Append(StringOfChar('\', lBackslashCount * 2));
-      end else begin
-        // Otherwise, just output the backslashes as-is
-        lBuilder.Append(StringOfChar('\', lBackslashCount));
-      end;
-
-      // Move past all these backslashes
-      Inc(i, lBackslashCount);
-    end
-    // Handle double quotes by escaping them
-    else if aValue[i] = '"' then
-    begin
-      lBuilder.Append('\"');
-      Inc(i);
-    end
-    else
-    begin
-      lBuilder.Append(aValue[i]);
-      Inc(i);
-    end;
-  end;
-
-  // End with a double quote
-  lBuilder.Append('"');
-  Result := lBuilder.ToString;
+  Result:= QuotedStr(aValue);
 end;
 
 
