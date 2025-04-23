@@ -81,7 +81,7 @@ type
     fOrgOnActiveFormChangeAssigned: Boolean;
     fMaxComponentCount: Integer;
 
-    procedure AddToImageCol(const aImageName: String; aGraphic: TGraphic);
+    function AddToImageCol(const aImageName: String; aGraphic: TGraphic): boolean;
 
     function CreateVirtualImgList(aOwner: TComponent; aMarker: THighDpiMarker; aWidth, aHeight: Integer): TVirtualImageList;
     function GetOrCreateVirtualImgList(aOwner: TComponent; aMarker: THighDpiMarker; aWidth, aHeight: Integer): TVirtualImageList;
@@ -443,8 +443,8 @@ begin
       end;
 
       lImageName := 'IL_' + IntToHex(nativeInt(Pointer(aImageList)), 1) + '_' + lglyphIndex.ToString;
-      AddToImageCol(lImageName, b);
-      vl.Add(lImageName, lImageName, False);
+      if AddToImageCol(lImageName, b) then
+        vl.Add(lImageName, lImageName, False);
     end;
   finally
     FreeAndNil(qp);
@@ -466,8 +466,10 @@ var
   lBmp: TBitmap;
   lGarbo: iGarbo;
   lOrgEnabled: Boolean;
+  lSuccess: Boolean;
 begin
   Result := False;
+  lSuccess:= False;
 
   // those are required
   if not(TRttiHelper.has(c, 'ImageName')
@@ -531,9 +533,15 @@ begin
     begin
       lImageName := 'GLYPH_' + CalcHash(lItem.Image);
       lItem.ImageName := lImageName;
-      AddToImageCol(lImageName, lItem.Image);
-      vl.Add(lImageName, lImageName, False);
+      if AddToImageCol(lImageName, lItem.Image) then
+      begin
+        vl.Add(lImageName, lImageName, False);
+        lSuccess:= True;
+      end;
     end;
+
+    if not lSuccess then
+      Exit;
 
     // set the properties
     TRttiHelper.WriteProperty(c, 'Glyph', nil);
@@ -545,7 +553,6 @@ begin
   finally
     vl.EndUpdate;
   end;
-
 end;
 
 procedure THighDpiAdjuster.AdjustComponent(aComponent: TComponent; aAlreadyProcessedDic: TDictionary<TComponent, Boolean>);
@@ -719,14 +726,16 @@ begin
   aImage.Invalidate; // force repaint
 end;
 
-procedure THighDpiAdjuster.AddToImageCol(const aImageName: String;
-  aGraphic: TGraphic);
+function THighDpiAdjuster.AddToImageCol(const aImageName: String;
+  aGraphic: TGraphic): Boolean;
 var
   lIndex: Integer;
   lImageElement: TImageCollectionItem;
   lBmp: TBitmap;
   lGarbo: iGarbo;
 begin
+  Result:= True;
+
   // fix up the transparency
   { if aGraphic is TBitmap then
     begin
@@ -741,7 +750,11 @@ begin
   if lIndex <> -1 then
   begin
     lImageElement := fImageCollection.Images[lIndex];
-    lImageElement.SourceImages[0].Image.assign(aGraphic);
+    try
+      lImageElement.SourceImages[0].Image.assign(aGraphic);
+    Except
+      Result:= False;
+    end;
     // lImageElement.Change;
   end else begin
     lImageElement := fImageCollection.Images.Add;
@@ -750,11 +763,8 @@ begin
     try
       ImageCollectionSourceItem.Image.assign(aGraphic);
     Except
-      // well... just retry... maybe there was something wrong  with the gdi
-      ImageCollectionSourceItem.Image.assign(aGraphic);
+      Result:= False;
     end;
-
-    // lImageElement.Change;
   end;
 end;
 
