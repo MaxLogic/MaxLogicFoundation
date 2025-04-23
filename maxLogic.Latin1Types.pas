@@ -13,8 +13,22 @@ var
 
 implementation
 
+{$IFDEF madExcept}
+uses
+  madExcept;
+{$ENDIF}
+
 initialization
   Latin1Encoding := TEncoding.GetEncoding('ISO-8859-1');
   Win1252Encoding := TEncoding.GetEncoding('Windows-1252');
+
+  {$IFDEF madExcept}
+  // in case madExcept exits before the finalization of this unit
+  HideLeak(Latin1Encoding);
+  HideLeak(Win1252Encoding);
+  {$ENDIF}
+Finalization
+  FreeAndNil(Latin1Encoding);
+  FreeAndNil(Win1252Encoding);
 
 end.

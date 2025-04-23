@@ -532,12 +532,9 @@ End;
 
 Destructor TBinaryLogWriter.destroy;
 Begin
-  fOlderLogFiles.free;
-  If assigned(fBLog) Then
-  Begin
-    fBLog.free;
-    fBLog := Nil;
-  End;
+  FreeAndNil(fOlderLogFiles);
+  FreeAndNil(fBLog);
+  FreeAndNil(fChunk);
   Inherited;
 End;
 
