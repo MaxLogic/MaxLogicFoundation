@@ -126,6 +126,10 @@ Type
     Procedure add(aMsg: iLogEntry; aLogType: TLogType); Overload;
     /// <summary>Adds a raw, pre-formatted log string.</summary>
     Procedure addRaw(Const aJsonLogEntryText: String; aLogType: TLogType);
+    // lock/Unlock to protect the LoggerPro writer access
+    procedure Lock;
+    procedure UnLock;
+
     /// <summary>Logs an informational message (string).</summary>
     Procedure Info(Const aMsg: String); Overload;
     /// <summary>Logs an informational message (log entry).</summary>
@@ -158,6 +162,8 @@ Type
     procedure SetMaxLogFileAgeInDays(const Value: Integer);
     /// <summary>Creates a new logger instance that shares the same configuration and underlying writer but uses a different default tag.</summary>
     Function CloneWithTag(Const aNewTag: String): iMaxLog;
+    // releases internal loggerPro Writer
+    procedure ShutDown;
 
     /// <summary>Gets or sets the default tag associated with log messages from this instance.</summary>
     Property DefaultTag: String Read GetDefaultTag Write SetDefaultTag;
@@ -259,6 +265,9 @@ Type
     Procedure add(aMsg: iLogEntry); Overload;
     Procedure add(aMsg: iLogEntry; aLogType: TLogType); Overload;
     Procedure addRaw(Const aJsonLogEntryText: String; aLogType: TLogType);
+    // lock/Unlock to protect the LoggerPro writer access
+    procedure Lock;
+    procedure UnLock;
     Procedure Info(Const aMsg: String); Overload;
     Procedure Info(aMsg: iLogEntry); Overload;
     Procedure Warn(Const aMsg: String); Overload;
@@ -268,6 +277,8 @@ Type
     Procedure Debug(Const aMsg: String); Overload;
     Procedure Debug(aMsg: iLogEntry); Overload;
     Function CloneWithTag(Const aNewTag: String): iMaxLog;
+    // releases internal loggerPro Writer
+    procedure ShutDown;
 
     // Properties defined in iMaxLog are implemented via the private getters/setters
   End;
@@ -399,6 +410,8 @@ Procedure ShutDownMaxLog;
 begin
   if Assigned(glDefaultMaxLog) then
   begin
+    if assigned(glDefaultMaxLog) then
+      glDefaultMaxLog.ShutDown;
     glDefaultMaxLog := nil; // Release our reference
     {$IFNDEF DISABLE_PRLOGGER}
     // Signal LoggerPro to shut down its threads and release resources
@@ -778,24 +791,11 @@ begin
 
   fMaxLogFileAgeInDays := 0; // disable deleting of old log files, only the main instace should do that
   fParentInstance:= aSource;
-
-
-  {$IFNDEF DISABLE_PRLOGGER }
-  // --- Crucial Part ---
-  // Share the *same* ILogWriter instance with the source
-  fLogWriter := aSource.fLogWriter;
-  {$ENDIF}
 end;
 
 destructor TMaxLog.Destroy;
 begin
-  {$IFNDEF DISABLE_PRLOGGER }
-  // Release the reference to the log writer.
-  // LoggerPro manages the actual writer lifetime via reference counting
-  // if it was created via BuildLogWriter.
-  fLogWriter := nil;
-  {$ENDIF}
-  // Note: No TCriticalSection to free anymore
+  ShutDown;
   inherited;
 end;
 
@@ -835,6 +835,29 @@ begin
   fOutputFormatKind := Value;
 end;
 
+procedure TMaxLog.ShutDown;
+begin
+  {$IFNDEF DISABLE_PRLOGGER }
+  if fLogWriter = nil then
+    Exit;
+  try
+    Lock;
+    try
+      fLogWriter:= nil;
+    finally
+      UnLock;
+    end;
+  Except
+    // do nothing
+  end;
+  {$ENDIF}
+end;
+
+procedure TMaxLog.UnLock;
+begin
+  system.TMonitor.Exit(Self);
+end;
+
 function TMaxLog.GetOutputFormatKind: TOutputFormatKind;
 begin
   Result := fOutputFormatKind;
@@ -843,13 +866,6 @@ end;
 Procedure TMaxLog.SetDefaultTag(Const Value: String);
 begin
   fDefaultTag := Value;
-  {$IFNDEF DISABLE_PRLOGGER }
-  // See comment in CreateClone - changing the LogWriter's tag directly
-  // might affect all clones sharing it. It's safer to rely on the tag
-  // passed to the Log method.
-  // If LogWriter <> nil then
-  //   fLogWriter.Tag := Value; // Potentially problematic if Tag is global state
-  {$ENDIF}
 end;
 
 Function TMaxLog.GetDefaultTag: String;
@@ -860,7 +876,12 @@ end;
 {$IFNDEF DISABLE_PRLOGGER }
 Procedure TMaxLog.SetLogWriter(Const Value: ILogWriter);
 begin
-  fLogWriter := Value; // Allow replacing the writer
+  Lock;
+  try
+    fLogWriter := Value; // Allow replacing the writer
+  finally
+    UnLock;
+  end;
 end;
 
 Function TMaxLog.GetLogWriter: ILogWriter;
@@ -882,6 +903,11 @@ begin
   // Optionally add the initial message
   if aMsg <> '' then
     Result.msg(aMsg);
+end;
+
+procedure TMaxLog.Lock;
+begin
+  system.TMonitor.Enter(Self);
 end;
 
 Function TMaxLog.LogEnterExitProc(Const aProcName: String;
@@ -909,9 +935,23 @@ begin
 
   {$IFNDEF DISABLE_PRLOGGER }
   // Use LoggerPro if enabled
-  if Assigned(fLogWriter) then
-    // Pass the instance's DefaultTag to the Log method
-    fLogWriter.Log(aLogType, aJsonLogEntryText, fDefaultTag);
+  Lock;
+  try
+    if Assigned(fLogWriter) then
+      fLogWriter.Log(aLogType, aJsonLogEntryText, fDefaultTag)
+    else if assigned(fParentInstance) then
+    begin
+      fParentInstance.Lock;
+      try
+        if Assigned(fParentInstance.LogWriter) then
+          fParentInstance.LogWriter.Log(aLogType, aJsonLogEntryText, fDefaultTag);
+      finally
+        fParentInstance.UnLock;
+      end;
+    end;
+  finally
+    UnLock;
+  end;
   {$ELSE}
   // Simple file logging if LoggerPro is disabled
   var f: TextFile;
