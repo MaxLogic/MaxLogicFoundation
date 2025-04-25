@@ -1,4 +1,4 @@
-unit MaxLogic.vcl.highDpi;
+unit maxLogic.vcl.highDpi;
 
 { Requires:
   https://github.com/MahdiSafsafi/DDetours
@@ -32,75 +32,82 @@ unit MaxLogic.vcl.highDpi;
 interface
 
 uses
-  windows, classes, sysUtils, controls, StdCtrls, ExtCtrls, graphics, forms,
-  buttons, ComCtrls, vcl.ImgList,
-  SyncObjs, generics.collections, messages,
+  winApi.Windows, system.Classes, system.SysUtils, vcl.Controls, vcl.StdCtrls, vcl.ExtCtrls, Graphics, vcl.Forms,
+  Buttons, ComCtrls, vcl.ImgList,
+  system.syncObjs, generics.collections, Messages,
   vcl.BaseImageCollection, vcl.ImageCollection, vcl.VirtualImageList,
-  MaxLogic.GraphicUtils,
-  DDetours;
+  maxLogic.GraphicUtils,
+  DDetours,
+  System.Generics.Defaults, System.Types;
 
 type
   // forward declarations
   THighDpiMarker = class; // will be attached to any form that is adjusted
   THighDpiAdjuster = class; // the main class that performs the adjustments
 
-  THighDpiAdjuster = class
-  private type
-    // a Glyph in TBitBtn or TSpeedbutton and similar can have multiple elements, up to 4 on a single bitmap... we need to split this up
-    TGlyphCollectionItem = class
-    public
-      PropPrefix: String;
-      Image: TBitmap;
-      ImageName: String;
-      Index: Integer;
-      constructor Create(aIndex: Integer);
-      destructor Destroy; override;
-    end;
+  TStrProc = reference to procedure(const s: string);
 
-    TGlyphCollection = class
-    private
-      fTransparentColor: TColor;
-      fHasTransparentColor: Boolean;
-      fMainGlyph: TBitmap;
-      procedure applyTransparency(aBmp: TBitmap);
-    public
-      Items: TObjectList<TGlyphCollectionItem>;
-      constructor Create(aParent: THighDpiAdjuster; aGlyph: TGraphic; aNumGlyphs: Integer);
-      destructor Destroy; override;
-      procedure EnsureDisabledImagePresent(aVirtualImageList: TVirtualImageList);
-    end;
+  THighDpiAdjuster = class
+  public
+    class var OnLog: TStrProc;
+    class procedure log(const s: string); overload;
+    class procedure log(const s: String; C: TComponent); overload;
+  private type
+      // a Glyph in TBitBtn or TSpeedbutton and similar can have multiple elements, up to 4 on a single bitmap... we need to split this up
+      TGlyphCollectionItem = class
+      public
+        PropPrefix: string;
+        Image: TBitmap;
+        ImageName: string;
+          Index: integer;
+        constructor Create(aIndex: integer);
+        destructor Destroy; override;
+      end;
+
+      TGlyphCollection = class
+      private
+        fTransparentColor: TColor;
+        fHasTransparentColor: boolean;
+        fMainGlyph: TBitmap;
+        procedure applyTransparency(aBmp: TBitmap);
+      public
+        Items: TObjectList<TGlyphCollectionItem>;
+        constructor Create(aParent: THighDpiAdjuster; aGlyph: TGraphic; aNumGlyphs: integer);
+        destructor Destroy; override;
+        procedure EnsureDisabledImagePresent(aVirtualImageList: TVirtualImageList);
+      end;
   private
     class var fSingelton: THighDpiAdjuster;
     class constructor CreateClass;
     class destructor DestroyClass;
-
   private
     fDataModule: TDataModule;
     fImageCollection: TImageCollection;
     fOrgOnActiveFormChange: TNotifyEvent;
-    fOrgOnActiveFormChangeAssigned: Boolean;
-    fMaxComponentCount: Integer;
+    fOrgOnActiveFormChangeAssigned: boolean;
+    fMaxComponentCount: integer;
 
-    procedure AddToImageCol(const aImageName: String; aGraphic: TGraphic);
+    function AddToImageCol(aGraphic: TGraphic; out aImageName: String): boolean;
 
-    function CreateVirtualImgList(aOwner: TComponent; aMarker: THighDpiMarker; aWidth, aHeight: Integer): TVirtualImageList;
-    function GetOrCreateVirtualImgList(aOwner: TComponent; aMarker: THighDpiMarker; aWidth, aHeight: Integer): TVirtualImageList;
+    function CreateVirtualImgList(aOwner: TComponent; aMarker: THighDpiMarker; aWidth, aHeight: integer): TVirtualImageList;
+    function GetOrCreateVirtualImgList(aOwner: TComponent; aMarker: THighDpiMarker; aWidth, aHeight: integer): TVirtualImageList;
 
     function AdjustTImageList(aImageList: TImageList): TVirtualImageList;
     procedure AdjustTImage(aImage: TImage);
 
-    function RedirectImageListReferenceToVirtualImage(c: TComponent): Boolean;
-    function AdjustUsingRttiLookingForGlyphAndImageName(c: TComponent): Boolean;
+    function RedirectImageListReferenceToVirtualImage(c: TComponent): boolean;
+    function AdjustUsingRttiLookingForGlyphAndImageName(c: TComponent): boolean;
     // returns a sha256 hash as hex string
     function CalcHash(aGraphic: TGraphic): RawByteString;
 
-    procedure screenOnActiveFormChange(sender: TObject);
+
+    procedure screenOnActiveFormChange(Sender: TObject);
 
   public
     constructor Create;
     destructor Destroy; override;
 
-    procedure AdjustComponent(aComponent: TComponent; aAlreadyProcessedDic: TDictionary<TComponent, Boolean>);
+    procedure AdjustComponent(aComponent: TComponent; aAlreadyProcessedDic: TDictionary<TComponent, boolean>);
 
     // thread safe
     class function Singelton: THighDpiAdjuster;
@@ -117,74 +124,74 @@ type
     // marker related, mostly for internal use
     class function GetMarker(c: TComponent): THighDpiMarker;
     class function GetOrAddMarker(c: TComponent): THighDpiMarker; overload;
-    class function GetOrAddMarker(c: TComponent; out aIsNew: Boolean): THighDpiMarker; overload;
+    class function GetOrAddMarker(c: TComponent; out aIsNew: boolean): THighDpiMarker; overload;
   public
     property ImageCollection: TImageCollection read fImageCollection;
   end;
 
   THighDpiMarker = class(TComponent)
   private
-    FdoNotScale: Boolean;
-    procedure SetdoNotScale(const Value: Boolean);
+    FdoNotScale: boolean;
+    procedure SetdoNotScale(const Value: boolean);
   public
     VirtualImageList: TVirtualImageList; // used for TImageList
 
     // this will check the DoNotScale flag and it will compare the screen dpi with the last adjustment
-    function CanScale: Boolean;
+    function CanScale: boolean;
 
-    property doNotScale: Boolean read FdoNotScale write SetdoNotScale;
+    property doNotScale: boolean read FdoNotScale write SetdoNotScale;
   end;
 
-  TTrampolineTImageDestRect = function(sender: TObject): TRect;
+  TTrampolineTImageDestRect = function(Sender: TObject): TRect;
 
   TTImageMarker = class(THighDpiMarker)
   private
     class var TrampolineDestRect: TTrampolineTImageDestRect;
-    class var Intercepted: Boolean;
+    class var Intercepted: boolean;
     class destructor ClassDestroy;
   public
     ImageHash: AnsiString; // as hex enoded sha256
     ImageSize: TPoint; // used for TImage
-    WasAutoSized: Boolean;
+    WasAutoSized: boolean;
 
     // returns nil if none was found
     class function GetMarker(aComponent: TComponent): TTImageMarker; static;
-    class function GetOrCreateMarker(aComponent: TComponent; out aIsNew: Boolean): TTImageMarker; static;
+    class function GetOrCreateMarker(aComponent: TComponent; out aIsNew: boolean): TTImageMarker; static;
   end;
 
   TFormChangeScaleTrigger = class(TComponent)
   private
-    fLastPixelsperInch: Integer;
+    fLastPixelsperInch: integer;
   protected
     fOrgMonitorDpiChangedEvent: TMonitorDpiChangedEvent;
-    procedure FormOnAfterMonitorDpiChanged(sender: TObject; OldDPI: Integer; NewDPI: Integer);
+    procedure FormOnAfterMonitorDpiChanged(Sender: TObject; OldDPI: integer; NewDPI: integer);
   public
     // checks if that form already has a TFormChangeScaleTrigger instance
-    class function has(AfORM: TCustomForm): Boolean;
-    class function get(AfORM: TCustomForm; out aMarker: TFormChangeScaleTrigger): Boolean;
+    class function has(AfORM: TCustomForm): boolean;
+    class function get(AfORM: TCustomForm; out aMarker: TFormChangeScaleTrigger): boolean;
 
     constructor Create(aOwner: TCustomForm); reintroduce;
     destructor Destroy; override;
 
-    property LastPixelsperInch: Integer read fLastPixelsperInch;
+    property LastPixelsperInch: integer read fLastPixelsperInch;
   end;
 
-  // those methods helps to recalculate a value that was stored (in a config or somewhere else) with a different scaleFactor then the one currently used by the control
-function ReScaleValue(const aValue: Double; aControl: TControl; const aOldScaleFactor: Single): Double; overload;
-function ReScaleValue(const aValue: Integer; aControl: TControl; const aOldScaleFactor: Single): Integer; overload;
+// those methods helps to recalculate a value that was stored (in a config or somewhere else) with a different scaleFactor then the one currently used by the control
+function ReScaleValue(const aValue: double; aControl: TControl; const aOldScaleFactor: Single): double; overload;
+function ReScaleValue(const aValue: integer; aControl: TControl; const aOldScaleFactor: Single): integer; overload;
 
 // when we save scaleFactors as strings, we might loose some detail, so we assume all scale factor not different by more then 0.001 are the same
-function sameScaleFactor(const v1, v2: Single): Boolean;
+function sameScaleFactor(const v1, v2: Single): boolean;
 
 function TryScale(aOwner: TComponent; const p: TPoint): TPoint;
 
 implementation
 
 uses
-  MaxLogic.QuickPixel,
-  system.math, system.StrUtils,
-  autoFree, MaxLogic.RTTIHelper, system.Hash,
-  pngImage, system.RTTI;
+  maxLogic.QuickPixel,
+  System.Math, System.StrUtils,
+  AutoFree, maxLogic.RTTIHelper, System.Hash,
+  pngImage, System.Rtti, Maxlogic.GdiUtils;
 
 type
   OpenControl = class(TControl)
@@ -206,15 +213,15 @@ type
 
   end;
 
-  TImageHelper = class Helper for TImage
+  TImageHelper = class helper for TImage
   public
     function CloneOfdDestRect: TRect;
   end;
 
 function TImageHelper.CloneOfdDestRect: TRect;
 var
-  w, h, cw, ch: Integer;
-  xyaspect: Double;
+  w, h, cw, ch: integer;
+  xyaspect: double;
 begin
   w := Picture.Width;
   h := Picture.Height;
@@ -228,21 +235,21 @@ begin
       if w > h then
       begin
         w := cw;
-        h := Trunc(cw / xyaspect);
+        h := trunc(cw / xyaspect);
         if h > ch then // woops, too big
         begin
           h := ch;
-          w := Trunc(ch * xyaspect);
+          w := trunc(ch * xyaspect);
         end;
       end
       else
       begin
         h := ch;
-        w := Trunc(ch * xyaspect);
+        w := trunc(ch * xyaspect);
         if w > cw then // woops, too big
         begin
           w := cw;
-          h := Trunc(cw / xyaspect);
+          h := trunc(cw / xyaspect);
         end;
       end;
     end
@@ -267,7 +274,7 @@ end;
 
 function TryScale(aOwner: TComponent; const p: TPoint): TPoint;
 var
-  lDone: Boolean;
+  lDone: boolean;
 begin
   Result := p;
   lDone := False;
@@ -280,7 +287,8 @@ begin
       Result := (aOwner as TForm).ScaleValue(p)
     else if aOwner is TFrame then
       Result := (aOwner as TFrame).ScaleValue(p)
-    else begin
+    else
+    begin
       lDone := False;
       aOwner := aOwner.Owner;
     end;
@@ -291,10 +299,10 @@ end;
 
 class procedure THighDpiAdjuster.AdjustForm(AfORM: TCustomForm);
 begin
-  if assigned(Application)
-    and (not Application.Terminated)
+  if assigned(application)
+    and (not application.Terminated)
     and assigned(AfORM)
-    and (not(csDestroying in AfORM.ComponentState)) then
+    and (not (csDestroying in AfORM.ComponentState)) then
   begin
     Singelton.AdjustComponent(AfORM, nil);
     AfORM.Invalidate;
@@ -304,13 +312,13 @@ end;
 
 class function THighDpiAdjuster.GetMarker(c: TComponent): THighDpiMarker;
 var
-  x: Integer;
+  X: integer;
 begin
   Result := nil;
 
-  for x := c.ComponentCount - 1 downto 0 do
-    if c.Components[x] is THighDpiMarker then
-      Exit(THighDpiMarker(c.Components[x]));
+  for X := c.ComponentCount - 1 downto 0 do
+    if c.Components[X] is THighDpiMarker then
+      exit(THighDpiMarker(c.Components[X]));
 end;
 
 class constructor THighDpiAdjuster.CreateClass;
@@ -319,9 +327,9 @@ begin
 end;
 
 function THighDpiAdjuster.GetOrCreateVirtualImgList(aOwner: TComponent;
-  aMarker: THighDpiMarker; aWidth, aHeight: Integer): TVirtualImageList;
+  aMarker: THighDpiMarker; aWidth, aHeight: integer): TVirtualImageList;
 var
-  lComponentName: String;
+  lComponentName: string;
   lComponent: TComponent;
 begin
   Result := nil;
@@ -332,15 +340,40 @@ begin
   begin
     Result := CreateVirtualImgList(aOwner, aMarker, aWidth, aHeight);
     Result.Name := lComponentName;
-  end else begin
+  end
+  else
+  begin
     Result := lComponent as TVirtualImageList;
     if aMarker <> nil then
       aMarker.VirtualImageList := Result;
   end;
 end;
 
+class procedure THighDpiAdjuster.log(const s: String; C: TComponent);
+var
+  n: String;
+begin
+  if c = nil then
+    n:= 'NIL'
+  else begin
+    n:= c.Name+':'+c.ClassName;
+    while c.Owner <> nil do
+    begin
+      c:= c.Owner;
+      n:= c.Name+':'+c.ClassName + '->' +n;
+    end;
+  end;
+  Log(Format(s, [n]));
+end;
+
+class procedure THighDpiAdjuster.log(const s: string);
+begin
+  if assigned(OnLog) then
+    OnLog(s);
+end;
+
 function THighDpiAdjuster.CreateVirtualImgList(aOwner: TComponent;
-  aMarker: THighDpiMarker; aWidth, aHeight: Integer): TVirtualImageList;
+  aMarker: THighDpiMarker; aWidth, aHeight: integer): TVirtualImageList;
 var
   p: TPoint;
 begin
@@ -352,7 +385,7 @@ begin
   Result.PreserveItems := True;
   Result.ImageCollection := fImageCollection;
   p := TryScale(aOwner, point(aWidth, aHeight));
-  Result.Width := p.x;
+  Result.Width := p.X;
   Result.Height := p.y;
 
   Result.ColorDepth := TColorDepth.cd32Bit;
@@ -364,12 +397,12 @@ end;
 
 class function THighDpiAdjuster.GetOrAddMarker(c: TComponent): THighDpiMarker;
 var
-  lIsNew: Boolean;
+  lIsNew: boolean;
 begin
   Result := GetOrAddMarker(c, lIsNew);
 end;
 
-class function THighDpiAdjuster.GetOrAddMarker(c: TComponent; out aIsNew: Boolean): THighDpiMarker;
+class function THighDpiAdjuster.GetOrAddMarker(c: TComponent; out aIsNew: boolean): THighDpiMarker;
 begin
   Result := GetMarker(c);
   aIsNew := not assigned(Result);
@@ -380,30 +413,31 @@ end;
 function THighDpiAdjuster.AdjustTImageList(aImageList: TImageList): TVirtualImageList;
 var
   lMarker: THighDpiMarker;
-  i: Integer;
+  i: integer;
   lBitmap: TBitmap;
-  lIsNew: Boolean;
+  lIsNew: boolean;
   vl: TVirtualImageList;
-  lImageName: String;
+  lImageName: string;
   lImages: TGlyphCollection;
   b: TBitmap;
   qp, qpItem: TQuickPixel;
-  IMagesPerRow, ImagesperColumn: Integer;
+  IMagesPerRow, ImagesperColumn: integer;
   srcRect: TRect;
   p: TPoint;
 begin
   Result := nil;
   if aImageList.Count = 0 then
-    Exit;
+    exit;
 
   lMarker := GetOrAddMarker(aImageList, lIsNew);
   if (not lIsNew) and assigned(lMarker.VirtualImageList) then
-    Exit(lMarker.VirtualImageList); // we already processed this
+    exit(lMarker.VirtualImageList); // we already processed this
 
   gc(lBitmap, TBitmap.Create);
-  if not MaxLogic.QuickPixel.CopyBmp(aImageList.GetImageBitmap, lBitmap) then
-    Exit;
+  if not maxLogic.QuickPixel.CopyBmp(aImageList.GetImageBitmap, lBitmap) then
+    exit;
 
+  Log('THighDpiAdjuster.AdjustTImageList: %s', aImageList);
   vl := CreateVirtualImgList(aImageList.Owner, lMarker, aImageList.Width, aImageList.Height);
   Result := lMarker.VirtualImageList;
 
@@ -413,77 +447,73 @@ begin
   try
     aImageList.BkColor := clFuchsia;
     if aImageList.BkColor <> clNone then
-    begin
       qp.TransparencyToAlphaChannel(aImageList.BkColor);
-    end;
 
-    ImagesPerRow := lBitmap.Width div aImageList.Width;
+    IMagesPerRow := lBitmap.Width div aImageList.Width;
     ImagesperColumn := lBitmap.Height div aImageList.Height;
 
-    b.assign(lBitmap);
+    b.Assign(lBitmap);
     b.FreeImage; // creates an independant copy
     b.SetSize(aImageList.Width, aImageList.Height);
+    qpItem := TQuickPixel.Create(b);
 
-    srcRect := rect(0, 0, aImageList.Width, aImageList.Height);
+    srcRect := Rect(0, 0, aImageList.Width, aImageList.Height);
 
     for var lGlyphIndex := 0 to aImageList.Count - 1 do
     begin
-      qpItem := TQuickPixel.Create(b);
-      try
-        if lGlyphIndex <> 0 then
-        begin
-          // Calculate the offset of the glyph
-          p.x := (lglyphIndex mod ImagesPerRow) * b.Width;
-          p.y := (lglyphIndex div ImagesPerRow) * b.Height;
-          srcRect.Location := p;
-        end;
-        qpItem.copyRect(point(0, 0), qp, srcRect);
-      finally
-        FreeAndNil(qpItem); // release the lock on b
+      if lGlyphIndex <> 0 then
+      begin
+        // Calculate the offset of the glyph
+        p.X := (lGlyphIndex mod IMagesPerRow) * b.Width;
+        p.y := (lGlyphIndex div IMagesPerRow) * b.Height;
+        srcRect.Location := p;
       end;
+      qpItem.copyRect(point(0, 0), qp, srcRect);
 
-      lImageName := 'IL_' + IntToHex(nativeInt(Pointer(aImageList)), 1) + '_' + lglyphIndex.ToString;
-      AddToImageCol(lImageName, b);
-      vl.Add(lImageName, lImageName, False);
+      if AddToImageCol(b, lImageName) then
+        vl.add(lImageName, lImageName, False);
     end;
   finally
     FreeAndNil(qp);
+    FreeAndNil(qpItem);
     FreeAndNil(b);
   end;
 end;
 
 function THighDpiAdjuster.AdjustUsingRttiLookingForGlyphAndImageName(
-  c: TComponent): Boolean;
+  c: TComponent): boolean;
 var
   lImagesObj, lGlyphObj: TObject;
   lGlyph: TGraphic;
-  lNumGlyphs: Integer;
-  lBitmaps: array [0 .. 3] of TBitmap;
-  lNames: array [0 .. 3] of String;
+  lNumGlyphs: integer;
+  lBitmaps: array[0..3] of TBitmap;
+  lNames: array[0..3] of string;
   vl: TVirtualImageList;
-  lImageName: String;
+  lImageName: string;
   lImages: TGlyphCollection;
   lBmp: TBitmap;
   lGarbo: iGarbo;
-  lOrgEnabled: Boolean;
+  lOrgEnabled: boolean;
+  lSuccess: boolean;
 begin
   Result := False;
+  lSuccess := False;
 
   // those are required
-  if not(TRttiHelper.has(c, 'ImageName')
-      and TRttiHelper.has(c, 'Images')
-      and TRttiHelper.has(c, 'ImageIndex')
-      and TRttiHelper.has(c, 'Glyph')
+  if not (TRttiHelper.has(c, 'ImageName')
+    and TRttiHelper.has(c, 'Images')
+    and TRttiHelper.has(c, 'ImageIndex')
+    and TRttiHelper.has(c, 'Glyph')
     ) then
-    Exit;
+    exit;
 
   lImagesObj := TRttiHelper.ReadObjectProperty(c, 'Images');
   if (lImagesObj <> nil) and (lImagesObj is TVirtualImageList) then
-    Exit; // already using virtual image list
+    exit; // already using virtual image list
 
   lGlyphObj := TRttiHelper.ReadObjectProperty(c, 'Glyph');
   if (lGlyphObj = nil) then
-    Exit;
+    exit;
   lGlyph := lGlyphObj as TGraphic;
 
   {
@@ -515,10 +545,11 @@ begin
   if TRttiHelper.has(c, 'NumGlyphs') then
     lNumGlyphs := StrToIntDef(TRttiHelper.ReadProperty(c, 'NumGlyphs'), 0);
 
-  gc(lImages, TGlyphCollection.Create(Self, lGlyph, lNumGlyphs));
+  gc(lImages, TGlyphCollection.Create(self, lGlyph, lNumGlyphs));
   if (not assigned(lImages.Items)) or (lImages.Items.Count = 0) then
-    Exit;
+    exit;
 
+  Log('THighDpiAdjuster.AdjustUsingRttiLookingForGlyphAndImageName: %s', c);
   vl := GetOrCreateVirtualImgList(c.Owner, nil,
     lImages.Items[0].Image.Width,
     lGlyph.Height);
@@ -529,11 +560,18 @@ begin
   try
     for var lItem in lImages.Items do
     begin
-      lImageName := 'GLYPH_' + CalcHash(lItem.Image);
-      lItem.ImageName := lImageName;
-      AddToImageCol(lImageName, lItem.Image);
-      vl.Add(lImageName, lImageName, False);
+      // lImageName := 'GLYPH_' + CalcHash(lItem.Image);
+
+      if AddToImageCol(lItem.Image, lImageName) then
+      begin
+        lItem.ImageName := lImageName;
+        vl.add(lImageName, lImageName, False);
+        lSuccess := True;
+      end;
     end;
+
+    if not lSuccess then
+      exit;
 
     // set the properties
     TRttiHelper.WriteProperty(c, 'Glyph', nil);
@@ -545,10 +583,9 @@ begin
   finally
     vl.EndUpdate;
   end;
-
 end;
 
-procedure THighDpiAdjuster.AdjustComponent(aComponent: TComponent; aAlreadyProcessedDic: TDictionary<TComponent, Boolean>);
+procedure THighDpiAdjuster.AdjustComponent(aComponent: TComponent; aAlreadyProcessedDic: TDictionary<TComponent, boolean>);
 var
   lMarker: THighDpiMarker;
   c: TComponent;
@@ -560,22 +597,23 @@ begin
   c := aComponent;
 
   if (c is TFormChangeScaleTrigger) or (c is THighDpiMarker) then
-    Exit;
+    exit;
 
   lGarbo := nil;
   if aAlreadyProcessedDic = nil then
   begin
-    fMaxComponentCount := max(1000, fMaxComponentCount);
-    aAlreadyProcessedDic := TDictionary<TComponent, Boolean>.Create(fMaxComponentCount);
+    fMaxComponentCount := Max(1000, fMaxComponentCount);
+    aAlreadyProcessedDic := TDictionary<TComponent, boolean>.Create(fMaxComponentCount);
     lGarbo := gc(aAlreadyProcessedDic);
-  end else if aAlreadyProcessedDic.containskey(c) then
-    Exit;
+  end
+  else if aAlreadyProcessedDic.containskey(c) then
+    exit;
 
-  aAlreadyProcessedDic.Add(c, True);
+  aAlreadyProcessedDic.add(c, True);
 
   lMarker := GetMarker(c);
   if assigned(lMarker) and (not lMarker.CanScale) then
-    Exit;
+    exit;
 
   if c is TCustomForm then
   begin
@@ -586,42 +624,44 @@ begin
 
   if c is TImage then
     AdjustTImage(TImage(c))
-  else if (c is TImageList) and (not(c is TVirtualImageList)) then
+  else if (c is TImageList) and (not (c is TVirtualImageList)) then
     AdjustTImageList(c as TImageList)
-  else begin
+  else
+  begin
     if not AdjustUsingRttiLookingForGlyphAndImageName(c) then
       RedirectImageListReferenceToVirtualImage(c);
   end;
 
-  for var x := 0 to c.ComponentCount - 1 do
-    AdjustComponent(c.Components[x], aAlreadyProcessedDic);
+  for var X := 0 to c.ComponentCount - 1 do
+    AdjustComponent(c.Components[X], aAlreadyProcessedDic);
 
   if c is TWinControl then
   begin
     lControl := c as TWinControl;
-    for var x := 0 to lControl.controlCount - 1 do
-      AdjustComponent(lControl.controls[x], aAlreadyProcessedDic);
+    for var X := 0 to lControl.ControlCount - 1 do
+      AdjustComponent(lControl.Controls[X], aAlreadyProcessedDic);
   end;
 
   // update the max count, so we have a better preset next time
   if lGarbo <> nil then
-    fMaxComponentCount := max(fMaxComponentCount, aAlreadyProcessedDic.Count);
+    fMaxComponentCount := Max(fMaxComponentCount, aAlreadyProcessedDic.Count);
 end;
 
-function interceptTTImageDestRect(sender: TObject): TRect;
+function interceptTTImageDestRect(Sender: TObject): TRect;
 var
   lImage: TOpenImage;
   lMarker: TTImageMarker;
   lSize: TPoint;
-  w, h, cw, ch: Integer;
+  w, h, cw, ch: integer;
 begin
   lImage := nil;
-  if (sender <> nil) and (sender is TImage) then
-    lImage := TOpenImage(sender);
+  if (Sender <> nil) and (Sender is TImage) then
+    lImage := TOpenImage(Sender);
 
   if assigned(TTImageMarker.TrampolineDestRect) then
-    Result := TTImageMarker.TrampolineDestRect(sender)
-  else begin
+    Result := TTImageMarker.TrampolineDestRect(Sender)
+  else
+  begin
     if assigned(lImage) then
       Result := lImage.CloneOfdDestRect
     else
@@ -639,7 +679,7 @@ begin
         lSize := lImage.ScaleValue(lSize);
         if lSize <> point(Result.Width, Result.Height) then
         begin
-          Result.Width := lSize.x;
+          Result.Width := lSize.X;
           Result.Height := lSize.y;
 
           if lImage.Center then
@@ -664,7 +704,7 @@ type
 var
   lMarker: TTImageMarker;
   lHash: RawByteString;
-  lIsNew: Boolean;
+  lIsNew: boolean;
   lSize: TPoint;
   lImage: TOpenImage;
   lTargetproc: Pointer;
@@ -672,11 +712,11 @@ var
 begin
   // if there is no image or if it is already stretched... then just do nothing
   if (aImage.Picture.Graphic = nil) or aImage.Stretch then
-    Exit;
+    exit;
 
   lMarker := TTImageMarker.GetOrCreateMarker(aImage, lIsNew);
   if (not lMarker.CanScale) then
-    Exit;
+    exit;
 
   lHash := CalcHash(aImage.Picture.Graphic);
   if (not lIsNew) and (lMarker.ImageHash <> lHash) then
@@ -684,17 +724,17 @@ begin
   lMarker.ImageHash := lHash;
 
   // let images that auto scaled manage themself
-  if aImage.AutoSize or (lMarker.WasAutoSized) then
+  if aImage.autosize or (lMarker.WasAutoSized) then
   begin
-    aImage.AutoSize := False;
+    aImage.autosize := False;
     lMarker.ImageSize := point(aImage.Picture.Graphic.Width, aImage.Picture.Graphic.Height);
     lSize := aImage.ScaleValue(lMarker.ImageSize);
-    aImage.Width := lSize.x;
+    aImage.Width := lSize.X;
     aImage.Height := lSize.y;
     aImage.Stretch := True;
     aImage.Proportional := True;
     lMarker.WasAutoSized := True;
-    Exit;
+    exit;
   end;
 
   if not lMarker.Intercepted then
@@ -719,55 +759,69 @@ begin
   aImage.Invalidate; // force repaint
 end;
 
-procedure THighDpiAdjuster.AddToImageCol(const aImageName: String;
-  aGraphic: TGraphic);
+function THighDpiAdjuster.AddToImageCol(aGraphic: TGraphic; out aImageName: String): Boolean;
 var
-  lIndex: Integer;
+  lIndex: integer;
   lImageElement: TImageCollectionItem;
   lBmp: TBitmap;
   lGarbo: iGarbo;
 begin
-  // fix up the transparency
-  { if aGraphic is TBitmap then
-    begin
-    lGarbo := gc(lBmp, TBitmap.Create);
-    lBmp.assign(aGraphic);
-    lBmp.FreeImage; // creates an independant copy
-    TQuickPixel.MaskToAlphaChannel(lBmp);
-    aGraphic := lBmp;
-    end; }
+  Result := True;
+  aImageName:= Self.CalcHash(aGraphic);
+
+  Log('THighDpiAdjuster.AddToImageCol("'+aImageName+'")');
 
   lIndex := fImageCollection.GetIndexByName(aImageName);
+  Log('  lIndex: '+lIndex.ToString);
   if lIndex <> -1 then
   begin
-    lImageElement := fImageCollection.Images[lIndex];
-    lImageElement.SourceImages[0].Image.assign(aGraphic);
-    // lImageElement.Change;
-  end else begin
-    lImageElement := fImageCollection.Images.Add;
-    lImageElement.Name := aImageName;
-    var ImageCollectionSourceItem:= lImageElement.SourceImages.Add;
+    // do not add it if it is already there
+    {lImageElement := fImageCollection.Images[lIndex];
     try
-      ImageCollectionSourceItem.Image.assign(aGraphic);
-    Except
-      // well... just retry... maybe there was something wrong  with the gdi
-      ImageCollectionSourceItem.Image.assign(aGraphic);
+      lImageElement.SourceImages[0].Image.Assign(aGraphic);
+    except
+      Result := False;
+    end;}
+
+  end else begin
+    lImageElement := fImageCollection.Images.add;
+    Log('  ImagesCount: '+fImageCollection.Images.Count.ToString);
+    lImageElement.Name := aImageName;
+    var ImageCollectionSourceItem := lImageElement.SourceImages.add;
+    try
+      ImageCollectionSourceItem.Image.Assign(aGraphic);
+    except
+      on e: Exception do
+      begin
+        Log('  Exception '+e.classname+': '+e.Message);
+        Result := False;
+      end;
     end;
 
-    // lImageElement.Change;
+    // remove the invalid item...
+    if not Result then
+      if Assigned(lImageElement) then
+      begin
+        lIndex := fImageCollection.GetIndexByName(aImageName);
+        if lIndex <> -1 then
+          fImageCollection.Images.Delete(lIndex);
+      end;
   end;
+
+  Log('  GetUserObjectCount: '+IntToStr(GetUserObjectCount));
+  Log('  GetGDIObjectCount : '+IntToStr(GetGDIObjectCount));
 end;
 
 function THighDpiAdjuster.CalcHash(aGraphic: TGraphic): RawByteString;
 var
   lStream: TMemoryStream;
-  lHash: THashSHA2;
+  lHashValue: Integer;
 begin
   gc(lStream, TMemoryStream.Create);
   aGraphic.SaveToStream(lStream);
   lStream.Position := 0;
   // as hex
-  Result := RawByteString(THashSHA2.GetHashString(lStream));
+  Result:= BobJenkinsHash(lStream.Memory^, lStream.Size, 0).ToHexString;
 end;
 
 constructor THighDpiAdjuster.Create;
@@ -783,12 +837,12 @@ begin
   fDataModule.Free;
 
   try
-    if assigned(Application)
+    if assigned(application)
       and assigned(Screen)
-      and (not Application.Terminated) then
+      and (not application.Terminated) then
     begin
-      Screen.OnActiveFormChange := Self.fOrgOnActiveFormChange;
-      Self.fOrgOnActiveFormChange := nil;
+      Screen.OnActiveFormChange := self.fOrgOnActiveFormChange;
+      self.fOrgOnActiveFormChange := nil;
     end;
   except
     // do nothing
@@ -825,23 +879,23 @@ begin
   Result := fSingelton;
 end;
 
-procedure THighDpiAdjuster.screenOnActiveFormChange(sender: TObject);
+procedure THighDpiAdjuster.screenOnActiveFormChange(Sender: TObject);
 var
   lForm: TForm;
 begin
-  if assigned(Application)
+  if assigned(application)
     and assigned(Screen)
-    and (not Application.Terminated)
+    and (not application.Terminated)
     and (Screen.activeform <> nil) then
   begin
     lForm := Screen.activeform;
-    if (not(csDestroying in lForm.ComponentState)) then
+    if (not (csDestroying in lForm.ComponentState)) then
     begin
       if not TFormChangeScaleTrigger.has(lForm) then
         AdjustForm(lForm);
 
       if assigned(fOrgOnActiveFormChange) then
-        fOrgOnActiveFormChange(sender);
+        fOrgOnActiveFormChange(Sender);
     end;
   end;
 end;
@@ -855,12 +909,12 @@ begin
 end;
 
 function THighDpiAdjuster.RedirectImageListReferenceToVirtualImage(
-  c: TComponent): Boolean;
+  c: TComponent): boolean;
 var
   lObj: TObject;
   lImageList: TImageList;
   lVirtualImageList: TVirtualImageList;
-  lTypeName: String;
+  lTypeName: string;
 begin
   Result := False;
 
@@ -868,12 +922,12 @@ begin
   // some controls like TBalloonHint use directly TImageList
   lTypeName := TRttiHelper.GetPropertyTypeName(c, 'Images');
   if (lTypeName = '')
-    or (not system.StrUtils.MatchText(lTypeName, ['TCustomImageList', 'TVirtualImageList'])) then
-    Exit;
+    or (not System.StrUtils.MatchText(lTypeName, ['TCustomImageList', 'TVirtualImageList'])) then
+    exit;
 
   lObj := TRttiHelper.ReadObjectProperty(c, 'Images');
-  if (lObj = nil) or (not(lObj is TImageList)) then
-    Exit;
+  if (lObj = nil) or (not (lObj is TImageList)) then
+    exit;
 
   lImageList := lObj as TImageList;
   lVirtualImageList := AdjustTImageList(lImageList);
@@ -884,21 +938,21 @@ end;
 
 { THighDpiMarker }
 
-procedure THighDpiMarker.SetdoNotScale(const Value: Boolean);
+procedure THighDpiMarker.SetdoNotScale(const Value: boolean);
 begin
   FdoNotScale := Value;
 end;
 
-function THighDpiMarker.CanScale: Boolean;
+function THighDpiMarker.CanScale: boolean;
 begin
   Result := (doNotScale = False)
 end;
 
 { Others }
 
-function ReScaleValue(const aValue: Double; aControl: TControl; const aOldScaleFactor: Single): Double;
+function ReScaleValue(const aValue: double; aControl: TControl; const aOldScaleFactor: Single): double;
 var
-  v: Double;
+  v: double;
 begin
   if sameScaleFactor(aControl.ScaleFactor, aOldScaleFactor) then
     Result := aValue
@@ -909,9 +963,9 @@ begin
   end;
 end;
 
-function ReScaleValue(const aValue: Integer; aControl: TControl; const aOldScaleFactor: Single): Integer;
+function ReScaleValue(const aValue: integer; aControl: TControl; const aOldScaleFactor: Single): integer;
 var
-  f1, f2: Double;
+  f1, f2: double;
 begin
   if sameScaleFactor(aControl.ScaleFactor, aOldScaleFactor) then
     Result := aValue
@@ -919,11 +973,11 @@ begin
   begin
     f1 := aValue;
     f2 := ReScaleValue(f1, aControl, aOldScaleFactor);
-    Result := round(f2);
+    Result := Round(f2);
   end;
 end;
 
-function sameScaleFactor(const v1, v2: Single): Boolean;
+function sameScaleFactor(const v1, v2: Single): boolean;
 var
   f: Single;
 begin
@@ -959,39 +1013,38 @@ begin
 end;
 
 procedure TFormChangeScaleTrigger.FormOnAfterMonitorDpiChanged(
-  sender: TObject; OldDPI, NewDPI: Integer);
+  Sender: TObject; OldDPI, NewDPI: integer);
 begin
   try
     if assigned(fOrgMonitorDpiChangedEvent) then
-      fOrgMonitorDpiChangedEvent(sender, OldDPI, NewDPI);
+      fOrgMonitorDpiChangedEvent(Sender, OldDPI, NewDPI);
   finally
     if assigned(THighDpiAdjuster.fSingelton)
-      and assigned(Application)
-      and (not Application.Terminated)
-      and assigned(Self.Owner)
-      and (not(csDestroying in Self.Owner.ComponentState))
-    then
+      and assigned(application)
+      and (not application.Terminated)
+      and assigned(self.Owner)
+      and (not (csDestroying in self.Owner.ComponentState)) then
       THighDpiAdjuster.AdjustForm(Owner as TCustomForm);
   end;
 end;
 
-class function TFormChangeScaleTrigger.has(AfORM: TCustomForm): Boolean;
+class function TFormChangeScaleTrigger.has(AfORM: TCustomForm): boolean;
 var
   lMarker: TFormChangeScaleTrigger;
 begin
   Result := get(AfORM, lMarker);
 end;
 
-class function TFormChangeScaleTrigger.get(AfORM: TCustomForm; out aMarker: TFormChangeScaleTrigger): Boolean;
+class function TFormChangeScaleTrigger.get(AfORM: TCustomForm; out aMarker: TFormChangeScaleTrigger): boolean;
 var
-  x: Integer;
+  X: integer;
 begin
   Result := False;
-  for x := AfORM.ComponentCount - 1 downto 0 do
-    if AfORM.Components[x] is TFormChangeScaleTrigger then
+  for X := AfORM.ComponentCount - 1 downto 0 do
+    if AfORM.Components[X] is TFormChangeScaleTrigger then
     begin
-      aMarker := AfORM.Components[x] as TFormChangeScaleTrigger;
-      Exit(True);
+      aMarker := AfORM.Components[X] as TFormChangeScaleTrigger;
+      exit(True);
     end;
 end;
 
@@ -1024,31 +1077,32 @@ end;
 constructor THighDpiAdjuster.TGlyphCollection.Create(
   aParent: THighDpiAdjuster;
   aGlyph: TGraphic;
-  aNumGlyphs: Integer);
+  aNumGlyphs: integer);
 var
-  lIndex: Integer;
+  lIndex: integer;
   lMaskColor: TColor;
-  w: Integer;
+  w: integer;
   lItem: TGlyphCollectionItem;
-  lPrefix, lName: String;
+  lPrefix, lName: string;
   lBitmap: TBitmap;
   qp: TQuickPixel;
 begin
   inherited Create;
 
   if (not assigned(aGlyph)) or (aGlyph.Width = 0) or (aGlyph.Height = 0) then
-    Exit;
+    exit;
 
-  if not(aGlyph is TBitmap) then
+  if not (aGlyph is TBitmap) then
     fHasTransparentColor := False
-  else begin
+  else
+  begin
     fTransparentColor := (aGlyph as TBitmap).Canvas.Pixels[0, aGlyph.Height - 1];
     fHasTransparentColor := True;
   end;
   gc(lBitmap, TBitmap.Create);
-  lBitmap.assign(aGlyph);
+  lBitmap.Assign(aGlyph);
   if (lBitmap.Width = 0) or (lBitmap.Height = 0) then
-    Exit;
+    exit;
   lBitmap.FreeImage; // creates an independant copy
 
   // TQuickPixel.MaskToAlphaChannel(lBitmap);
@@ -1059,28 +1113,28 @@ begin
 
   w := aGlyph.Width div aNumGlyphs;
 
-  for var x := 0 to aNumGlyphs - 1 do
+  for var X := 0 to aNumGlyphs - 1 do
   begin
-    lItem := TGlyphCollectionItem.Create(x);
-    Items.Add(lItem);
-    lItem.Image.assign(lBitmap);
+    lItem := TGlyphCollectionItem.Create(X);
+    Items.add(lItem);
+    lItem.Image.Assign(lBitmap);
     lItem.Image.FreeImage; // creates an independant copy
 
-    if x <> 0 then
+    if X <> 0 then
     begin
       lItem.Image.Canvas.copyRect(
-        rect(0, 0, w, lBitmap.Height),
+        Rect(0, 0, w, lBitmap.Height),
         lBitmap.Canvas,
-        rect(w * x, 0, w * (x + 1), lBitmap.Height)
+        Rect(w * X, 0, w * (X + 1), lBitmap.Height)
         );
     end;
     lItem.Image.SetSize(w, aGlyph.Height); // truncate size
 
     // we need a copy before alpha is applied
-    if (x = 0) and (aNumGlyphs = 1) then
+    if (X = 0) and (aNumGlyphs = 1) then
     begin
       fMainGlyph := TBitmap.Create;
-      fMainGlyph.assign(lItem.Image);
+      fMainGlyph.Assign(lItem.Image);
       fMainGlyph.FreeImage; // create independant copy
     end;
 
@@ -1088,9 +1142,9 @@ begin
   end;
 
   // naming
-  for var x := 0 to Items.Count - 1 do
+  for var X := 0 to Items.Count - 1 do
   begin
-    case x of
+    case X of
       // Second | Disabled | This image usually appears dimmed to indicate that the button can't be selected.
       1: lPrefix := 'Disabled';
       // Third  | Clicked  | This image appears when the button is clicked. If GroupIndex is 0, the Up image reappears when the user releases the mouse button.
@@ -1101,14 +1155,14 @@ begin
       // First  | Up       | This image appears when the button is unselected. If no other images exist in the bitmap, this image is used for all states.
       lPrefix := '';
     end;
-    Items[x].PropPrefix := lPrefix;
+    Items[X].PropPrefix := lPrefix;
   end;
 end;
 
 procedure THighDpiAdjuster.TGlyphCollection.EnsureDisabledImagePresent;
 var
-  i: Integer;
-  Src: Pointer;
+  i: integer;
+  src: Pointer;
   Gray: Byte;
   lItem: TGlyphCollectionItem;
   qp0, qp1: TQuickPixel;
@@ -1116,11 +1170,11 @@ var
   lRgb: TRGB;
 begin
   if (Items.Count <> 1) or (not assigned(fMainGlyph)) then
-    Exit;
+    exit;
 
   lItem := TGlyphCollectionItem.Create(1);
-  Items.Add(lItem);
-  lItem.Image.assign(fMainGlyph);
+  Items.add(lItem);
+  lItem.Image.Assign(fMainGlyph);
   lItem.Image.FreeImage; // creates an independant copy
 
   lItem.Image.pixelformat := pf24bit;
@@ -1139,10 +1193,10 @@ begin
   lTransparentRGB.a := 0;
 
   for var y := 0 to qp0.Height - 1 do
-    for var x := 0 to qp0.Width - 1 do
+    for var X := 0 to qp0.Width - 1 do
     begin
-      if qp0.Pixel[x, y] = fTransparentColor then
-        qp1.RGBAPixel[x, y] := lTransparentRGB;
+      if qp0.Pixel[X, y] = fTransparentColor then
+        qp1.RGBAPixel[X, y] := lTransparentRGB;
     end;
 end;
 
@@ -1171,14 +1225,14 @@ class function TTImageMarker.GetMarker(
   aComponent: TComponent): TTImageMarker;
 begin
   Result := nil;
-  for var x := aComponent.ComponentCount - 1 downto 0 do
-    if aComponent.Components[x] is TTImageMarker then
-      Exit(aComponent.Components[x] as TTImageMarker);
+  for var X := aComponent.ComponentCount - 1 downto 0 do
+    if aComponent.Components[X] is TTImageMarker then
+      exit(aComponent.Components[X] as TTImageMarker);
 
 end;
 
 class function TTImageMarker.GetOrCreateMarker(
-  aComponent: TComponent; out aIsNew: Boolean): TTImageMarker;
+  aComponent: TComponent; out aIsNew: boolean): TTImageMarker;
 begin
   Result := GetMarker(aComponent);
   aIsNew := Result = nil;
@@ -1187,3 +1241,4 @@ begin
 end;
 
 end.
+
