@@ -1,4 +1,4 @@
-unit MaxLogic.FastList;
+unit maxLogic.FastList;
 
 { *******************************************************
 
@@ -23,12 +23,12 @@ unit MaxLogic.FastList;
 interface
 
 uses
-  classes, types, sysUtils, SyncObjs, Contnrs, generics.collections, generics.defaults;
+  Classes, types, SysUtils, SyncObjs, Contnrs, generics.collections, generics.defaults;
 
 type
   {$IFDEF CLASSIMPORTER}
-  Pointer = Integer;
-  pInteger = Integer;
+  Pointer = integer;
+  pInteger = integer;
   {$ENDIF}
 
   { **
@@ -40,466 +40,466 @@ type
       Count: byte;
   end;
 
-TListAsRecord < T >= record
+  TListAsRecord<t >= record
   private
-  fCount: Integer;
-function getCapacity: Integer;
-procedure SetCapacity(const Value: Integer);
-function getItem(index: Integer): T;
-procedure setItem(index: Integer; const Value: T);
-procedure setCount(const Value: Integer);
-public
-  // direct access
-  Items: TArray<T>;
+    fCount: integer;
+    function getCapacity: integer;
+    procedure SetCapacity(const Value: integer);
+    function GetItem(Index: integer): t;
+    procedure Setitem(Index: integer; const Value: t);
+    procedure setCount(const Value: integer);
+  public
+    // direct access
+    Items: TArray<t>;
 
-  property Capacity: Integer read getCapacity write SetCapacity;
-  property Count: Integer read fCount write setCount;
-  property item[index: Integer]: T read getItem write setItem;
-  default;
+    property Capacity: integer read getCapacity write SetCapacity;
+    property Count: integer read fCount write setCount;
+    property Item[Index: integer]: t read GetItem write Setitem;
+    default;
 
-  procedure add(const Value: T);
-  procedure Clear;
-  class
-  function Create: TListAsRecord<T>;
-  static;
-  end;
+    procedure add(const Value: t);
+    procedure Clear;
+    class
+      function Create: TListAsRecord<t>;
+        static;
+    end;
 
-  { *******************************************************
-    Class: TIDSortedList
-    Author:    pawelp
-    Date:      2004-03-30 13:48
+    { *******************************************************
+      Class: TIDSortedList
+      Author:    pawelp
+      Date:      2004-03-30 13:48
 
-    DESCRIPTION:
-    This list uses QuickSort Algo to sort its items by the given ID, which can be either
-    an Integer or an Single.
-    NOTE:
-    It is not recomendet to mix integer and Single values... it is posible... byt the result are not tested
-    ******************************************************* }
+      DESCRIPTION:
+      This list uses QuickSort Algo to sort its items by the given ID, which can be either
+      an Integer or an Single.
+      NOTE:
+      It is not recomendet to mix integer and Single values... it is posible... byt the result are not tested
+      ******************************************************* }
 
-  TSortedList<TKey, TValue> = class
+    TSortedList<TKey, TValue> = class
     private
-    type
-    TIDSortedListItem = packed record
-    Data: TValue;
-  IID: TKey;
-  end;
+      type
+        TIDSortedListItem = packed record
+          Data: TValue;
+          IID: TKey;
+        end;
 
-private
-  fComparer: IComparer<TKey>;
-  fHasManagedType: boolean;
-
-  fCount: Integer;
-  FGrowthFactor: single;
-  FDupIgnore: boolean;
-  procedure SetCapacity(const Value: Integer);
-  function getCapacity: Integer;
-  function GetFirst: TValue;
-  function GetLast: TValue;
-
-  function getItem(index: Integer): TValue;
-  procedure setItem(index: Integer; const Value: TValue);
-  procedure setCount(const Value: Integer);
-  procedure SetGrowthFactor(const Value: single);
-  procedure SetDupIgnore(const Value: boolean);
-  function DoFind(const id: TKey;
-    var L, H: Integer;
-    out index: Integer): boolean;
-  inline;
-public
-  // you have direct access to the underlying itens, but, do not change the iid, otherwise you will need to resort the array
-  Items: array of TIDSortedListItem;
-
-  constructor Create(aComparer: IComparer<TKey>);
-  overload;
-  constructor Create;
-  overload;
-  destructor Destroy;
-  override;
-
-  // I know... should be name/value, but that is like that to keep backwards copatibility with some legacy code
-  // returns false if IgnoreDuplicates is true and this item already exists
-  function add(const Value: TValue; const id: TKey): boolean;
-  procedure AddOrSet(const Value: TValue; const id: TKey);
-  // if you know exactly where it goes, then you can use this method
-  procedure Insert(aIndex: Integer; const Value: TValue; const id: TKey);
-
-  // note: if duplicates are allowed, then this will return an undefined item from the items with the same id. please refer to GetRangeIndices if you need to get the minIndex and maxIndex of the items with the same id
-  function Find(const id: TKey; out index: Integer): boolean;
-  virtual;
-  // please note: it will return just the first item that matches
-  // aOffset tells us from which item to start, in other words, how many items to skip
-  function IndexOf(const Value: TValue; aOffset: Integer = 0;
-    aComparer: IComparer<TValue> = nil): Integer;
-
-  { Allows us to retrive the min and max index of items with the same id
-    Note: aLeftIndex and aRightIndex will be the same if there is 1 or less items with the same id }
-  function FindMinMaxIndex(const aId: TKey; out aLowIndex, aHighIndex: Integer): boolean;
-
-  { will search of items that are between those values  : aLeftKey <= aItem.ID <= aRightKey
-    will return false if aRightKey< aLeftKey
-    will return false if none of the values are between aLeftKey and aRightKey
-    NOTE: on result= false the indices are undefined }
-  function FindValuesBetween(const aLeftKey, aRightKey: TKey;
-    out aLowIndex, aHighIndex: Integer): boolean;
-
-  procedure Delete(index: Integer);
-  virtual;
-  procedure Clear;
-  virtual;
-  procedure TrimExcess;
-  virtual;
-
-  // re-sort the underlying array
-  // useful if you used the insert method to append values
-  Procedure Sort;
-
-  // please note, this will work only if TKey and TValue are neither strings,pointers, classes or interfaces
-  // that is here mostly for backwards compatibility
-  procedure SaveToStream(Stream: TStream);
-  function SaveToMemorySize: Integer;
-  class function GetMinRequiredmemorySizeForSaving: Integer;
-  class procedure SaveEmptyListToMemory(var pb: pByte);
-  procedure SaveToMemory(var bytes: pByte);
-  procedure LoadFromStream(Stream: TStream);
-  procedure LoadFromMemory(var pb: pByte);
-
-  property First: TValue read GetFirst;
-  property Last: TValue read GetLast;
-  property Capacity: Integer read getCapacity write SetCapacity;
-  // Please note: the new items are of undefined value, they are not filled in with anything - except if they are managed types, in that case they are set to their default values
-  property Count: Integer read fCount write setCount;
-  property item[index: Integer]: TValue read getItem write setItem;
-  default;
-  property GrowthFactor: single read FGrowthFactor write SetGrowthFactor;
-  // ATTENTION: Existing values are not checked to be unique. this applies only to adding values
-  property DupIgnore: boolean read FDupIgnore write SetDupIgnore;
-  // ATTENTION: call sort() to re-sort the underlying array
-  property Comparer: IComparer<TKey> read fComparer write fComparer;
-  end;
-
-  TIdIntegerSortedList = TSortedList<Integer, Pointer>;
-  TIdFloatSortedList = TSortedList<single, Pointer>;
-
-  TIDSortedListItem2 = packed record
-    Data1: Pointer;
-  Data2: Pointer;
-  end;
-
-  TIDSortedList2 = class(TSortedList<Integer, TIDSortedListItem2>)
     private
-  function GetFirst_Data1: Pointer;
-  function GetFirst_Data2: Pointer;
-  function GetLast_Data1: Pointer;
-  function GetLast_Data2: Pointer;
-  function GetItem_Data1(index: Integer): Pointer;
-  function GetItem_Data2(index: Integer): Pointer;
-  procedure SetItem_Data1(index: Integer; const Value: Pointer);
-  procedure SetItem_Data2(index: Integer; const Value: Pointer);
-public
-  property First_Data1: Pointer read GetFirst_Data1;
-  property First_Data2: Pointer read GetFirst_Data2;
-  property Last_Data1: Pointer read GetLast_Data1;
-  property Last_Data2: Pointer read GetLast_Data2;
-  property Item_Data1[index: Integer]: Pointer read GetItem_Data1 write SetItem_Data1;
-  property Item_Data2[index: Integer]: Pointer read GetItem_Data2 write SetItem_Data2;
+      fComparer: IComparer<TKey>;
+      fHasManagedType: boolean;
 
-  procedure add(p1, p2: Pointer; id: Integer);
-  reintroduce;
+      fCount: integer;
+      FGrowthFactor: Single;
+      FDupIgnore: boolean;
+      procedure SetCapacity(const Value: integer);
+      function getCapacity: integer;
+      function GetFirst: TValue;
+      function GetLast: TValue;
 
-  function IndexOf_data1(p: Pointer): Integer;
-  function IndexOf_data2(p: Pointer): Integer;
-  end;
+      function GetItem(Index: integer): TValue;
+      procedure Setitem(Index: integer; const Value: TValue);
+      procedure setCount(const Value: integer);
+      procedure SetGrowthFactor(const Value: Single);
+      procedure SetDupIgnore(const Value: boolean);
+      function DoFind(const Id: TKey;
+        var l, H: integer;
+        out Index: integer): boolean;
+        inline;
+    public
+      // you have direct access to the underlying itens, but, do not change the iid, otherwise you will need to resort the array
+      Items: array of TIDSortedListItem;
 
-  TIndexedIDSortedListItem = packed record
-    Data: Pointer;
-  pIndex: pInteger;
-  case boolean of
-    true:
-    (IID: Integer;);
-  False:
-    (FID: single;);
-  end;
+      constructor Create(aComparer: IComparer<TKey>);
+        overload;
+      constructor Create;
+        overload;
+      destructor Destroy;
+        override;
 
-  { *******************************************************
-    Class: TIndexedIDSortedList
-    Author:    pawelp
-    Date:      2004-03-30 13:50
+      // I know... should be name/value, but that is like that to keep backwards copatibility with some legacy code
+      // returns false if IgnoreDuplicates is true and this item already exists
+      function add(const Value: TValue; const Id: TKey): boolean;
+      procedure AddOrSet(const Value: TValue; const Id: TKey);
+      // if you know exactly where it goes, then you can use this method
+      procedure Insert(aIndex: integer; const Value: TValue; const Id: TKey);
 
-    DESCRIPTION:
-    This is a mix between the FastList and the IDSortedList.
-    Like the IDSortedList the IndexedIDSortedList sorts its items by an given ID,
-    which can be an Integer or an Single value (please do not mix single and integers!!!).
-    And Stores the Index of an Item in pIndex which is an pointer to an use given Integer Value
-    ******************************************************* }
+      // note: if duplicates are allowed, then this will return an undefined item from the items with the same id. please refer to GetRangeIndices if you need to get the minIndex and maxIndex of the items with the same id
+      function find(const Id: TKey; out Index: integer): boolean;
+        virtual;
+      // please note: it will return just the first item that matches
+      // aOffset tells us from which item to start, in other words, how many items to skip
+      function IndexOf(const Value: TValue; aOffset: integer = 0;
+        aComparer: IComparer<TValue> = nil): integer;
 
-  TIndexedIDSortedList = class
+      { Allows us to retrive the min and max index of items with the same id
+        Note: aLeftIndex and aRightIndex will be the same if there is 1 or less items with the same id }
+      function FindMinMaxIndex(const aId: TKey; out aLowIndex, aHighIndex: integer): boolean;
+
+      { will search of items that are between those values  : aLeftKey <= aItem.ID <= aRightKey
+        will return false if aRightKey< aLeftKey
+        will return false if none of the values are between aLeftKey and aRightKey
+        NOTE: on result= false the indices are undefined }
+      function FindValuesBetween(const aLeftKey, aRightKey: TKey;
+        out aLowIndex, aHighIndex: integer): boolean;
+
+      procedure Delete(Index: integer);
+        virtual;
+      procedure Clear;
+        virtual;
+      procedure TrimExcess;
+        virtual;
+
+      // re-sort the underlying array
+      // useful if you used the insert method to append values
+      procedure sort;
+
+      // please note, this will work only if TKey and TValue are neither strings,pointers, classes or interfaces
+      // that is here mostly for backwards compatibility
+      procedure SaveToStream(Stream: TStream);
+      function SaveToMemorySize: integer;
+      class function GetMinRequiredmemorySizeForSaving: integer;
+      class procedure SaveEmptyListToMemory(var pb: pByte);
+      procedure SaveToMemory(var bytes: pByte);
+      procedure LoadFromStream(Stream: TStream);
+      procedure LoadFromMemory(var pb: pByte);
+
+      property First: TValue read GetFirst;
+      property Last: TValue read GetLast;
+      property Capacity: integer read getCapacity write SetCapacity;
+      // Please note: the new items are of undefined value, they are not filled in with anything - except if they are managed types, in that case they are set to their default values
+      property Count: integer read fCount write setCount;
+      property Item[Index: integer]: TValue read GetItem write Setitem;
+      default;
+      property GrowthFactor: Single read FGrowthFactor write SetGrowthFactor;
+      // ATTENTION: Existing values are not checked to be unique. this applies only to adding values
+      property dupIgnore: boolean read FDupIgnore write SetDupIgnore;
+      // ATTENTION: call sort() to re-sort the underlying array
+      property Comparer: IComparer<TKey>read fComparer write fComparer;
+    end;
+
+    TIdIntegerSortedList = TSortedList<integer, Pointer>;
+    TIdFloatSortedList = TSortedList<Single, Pointer>;
+
+    TIDSortedListItem2 = packed record
+      Data1: Pointer;
+      Data2: Pointer;
+    end;
+
+    TIDSortedList2 = class(TSortedList<integer, TIDSortedListItem2>)
     private
-    FCapacity: Integer;
-  fCount: Integer;
-  procedure SetCapacity(const Value: Integer);
-  function GetFirst: Pointer;
-  function GetLast: Pointer;
+      function GetFirst_Data1: Pointer;
+      function GetFirst_Data2: Pointer;
+      function GetLast_Data1: Pointer;
+      function GetLast_Data2: Pointer;
+      function GetItem_Data1(Index: integer): Pointer;
+      function GetItem_Data2(Index: integer): Pointer;
+      procedure SetItem_Data1(Index: integer; const Value: Pointer);
+      procedure SetItem_Data2(Index: integer; const Value: Pointer);
+    public
+      property First_Data1: Pointer read GetFirst_Data1;
+      property First_Data2: Pointer read GetFirst_Data2;
+      property Last_Data1: Pointer read GetLast_Data1;
+      property Last_Data2: Pointer read GetLast_Data2;
+      property Item_Data1[Index: integer]: Pointer read GetItem_Data1 write SetItem_Data1;
+      property Item_Data2[Index: integer]: Pointer read GetItem_Data2 write SetItem_Data2;
 
-  function getItem(index: Integer): Pointer;
+      procedure add(p1, p2: Pointer; Id: integer);
+        reintroduce;
 
-protected
+      function IndexOf_data1(p: Pointer): integer;
+      function IndexOf_data2(p: Pointer): integer;
+    end;
 
-public
-  Items: array of TIndexedIDSortedListItem;
+    TIndexedIDSortedListItem = packed record
+      Data: Pointer;
+      pIndex: pInteger;
+      case boolean of
+        True:
+        (IID: integer; );
+        False:
+        (fid: Single; );
+    end;
 
-  property First: Pointer read GetFirst;
-  property Last: Pointer read GetLast;
-  property Capacity: Integer read FCapacity write SetCapacity;
-  property Count: Integer read fCount;
-  property item[index: Integer]: Pointer read getItem;
-  default;
+    { *******************************************************
+      Class: TIndexedIDSortedList
+      Author:    pawelp
+      Date:      2004-03-30 13:50
 
-  constructor Create;
-  destructor Destroy;
-  override;
+      DESCRIPTION:
+      This is a mix between the FastList and the IDSortedList.
+      Like the IDSortedList the IndexedIDSortedList sorts its items by an given ID,
+      which can be an Integer or an Single value (please do not mix single and integers!!!).
+      And Stores the Index of an Item in pIndex which is an pointer to an use given Integer Value
+      ******************************************************* }
 
-  procedure add(p: Pointer; id: Integer; pIndex: pInteger);
-  overload;
-  procedure add(p: Pointer; id: single; pIndex: pInteger);
-  overload;
-
-  function Find(id: Integer; out index: Integer): boolean;
-  overload;
-  function Find(id: single; out index: Integer): boolean;
-  overload;
-
-  function IndexOf(p: Pointer): Integer;
-
-  procedure Delete(i: Integer);
-  procedure Clear;
-  end;
-
-  { *******************************************************
-    Date:      2004-03-30 13:53
-    DESCRIPTION:
-    THis is an Array based List, like TList, but it does not change its Capacity during deleting or
-    Clear Proc. So we have an much smaller memory allocation Rate.
-    ******************************************************* }
-
-  TSimpleList<T> = class
+    TIndexedIDSortedList = class
     private
-    fCount: Integer;
-  FGrowthFactor: single;
-  fComparer: IComparer<T>;
-  FSorted: boolean;
-  fHasManagedType: boolean;
-  FDupIgnore: boolean;
+      FCapacity: integer;
+      fCount: integer;
+      procedure SetCapacity(const Value: integer);
+      function GetFirst: Pointer;
+      function GetLast: Pointer;
 
-  procedure SetCapacity(const Value: Integer);
-  function getItem(index: Integer): T;
-  procedure setItem(index: Integer; const Value: T);
-  procedure SetGrowthFactor(const Value: single);
-  procedure setCount(const Value: Integer);
-  procedure SetSorted(const Value: boolean);
-  function getCapacity: Integer;
-  procedure SetDupIgnore(const Value: boolean);
-public
-  // you have direct access to the array, but please be aware not to mess with it
-  Items: array of T;
+      function GetItem(Index: integer): Pointer;
 
-  function Slice(acount: Integer): TArray<T>;
+    protected
 
-  property Count: Integer read fCount write setCount;
-  property Capacity: Integer read getCapacity write SetCapacity;
-  property item[index: Integer]: T read getItem write setItem;
-  default;
-  // ATTENTION: Existing values are not checked to be unique. this applies only to adding values
-  // ATTENTION: use only in combination with sorted!.
-  // if dupIgnore = true this will set sorted to true  as well
-  property DupIgnore: boolean read FDupIgnore write SetDupIgnore;
+    public
+      Items: array of TIndexedIDSortedListItem;
 
-  // the multiplier when growing the list. default is 2.0
-  property GrowthFactor: single read FGrowthFactor write SetGrowthFactor;
-  // ATTENTION: seting this to false will set dupIgnore to false as well
-  property Sorted: boolean read FSorted write SetSorted;
+      property First: Pointer read GetFirst;
+      property Last: Pointer read GetLast;
+      property Capacity: integer read FCapacity write SetCapacity;
+      property Count: integer read fCount;
+      property Item[Index: integer]: Pointer read GetItem;
+      default;
 
-  constructor Create(aComparer: IComparer<T>);
-  overload;
-  constructor Create;
-  overload;
-  destructor Destroy;
-  override;
+      constructor Create;
+      destructor Destroy;
+        override;
 
-  // if DupIgnore is true, then it will check first, if the value does exist.
-  // returns true, if the value was added, false otherwise
-  function add(const Value: T): boolean;
-  // does not check for duplicates, ignores sorted. Be careful, you might end up with a miss sorted list
-  procedure Insert(index: Integer; const Value: T);
+      procedure add(p: Pointer; Id: integer; pIndex: pInteger);
+        overload;
+      procedure add(p: Pointer; Id: Single; pIndex: pInteger);
+        overload;
 
-  // if you want to add only a part of the array, then set aStartIndex and aCount
-  // NOTE: doesn't check for duplicate values inside the avalues array
-  procedure addSortedArray(const avalues: array of T; aStartIndex: Integer; acount: Integer);
-  procedure addList(const avalues: TSimpleList<T>);
+      function find(Id: integer; out Index: integer): boolean;
+        overload;
+      function find(Id: Single; out Index: integer): boolean;
+        overload;
 
-  // note: if sorted = true, the values will be sorted and addSortedArray will be called
-  // otherwise the values are just appended at the end
-  // NOTE: doesn't check for duplicate values inside the avalues array
-  procedure append(const values: TArray<T>; aStartIndex: Integer; acount: Integer);
+      function IndexOf(p: Pointer): integer;
 
-  procedure Clear;
-  procedure TrimExcess;
-  function IndexOf(const Value: T): Integer;
-  // requires sorted to be true!
-  function Find(const Value: T; out index: Integer): boolean;
-  virtual;
-  function Contains(const aValue: T): boolean;
-  // requires sorted to be true!
-  // returns false if the range is not contained in the list
-  function GetRangeIndices(const LeftValue, RightValue: T; out LeftIndex, RightIndex: Integer): boolean;
+      procedure Delete(i: integer);
+      procedure Clear;
+    end;
 
-  procedure Delete(i: Integer);
-  overload;
-  procedure Delete(aStartIndex, aNumOfItemsToDelete: Integer);
-  overload;
+    { *******************************************************
+      Date:      2004-03-30 13:53
+      DESCRIPTION:
+      THis is an Array based List, like TList, but it does not change its Capacity during deleting or
+      Clear Proc. So we have an much smaller memory allocation Rate.
+      ******************************************************* }
 
-  procedure Exchange(i1, i2: Integer);
-  function toarray: TArray<T>;
-
-  procedure SaveToStream(Stream: TStream);
-  procedure LoadFromStream(Stream: TStream);
-  end;
-
-  pLLItem = ^TTLLItem;
-
-  TTLLItem = record
-    prev,
-    Next: pLLItem;
-  Data: Pointer;
-  end;
-
-  { *******************************************************
-    Class: TLinkedList
-    Author:    pawelp
-    Date:      2004-03-30 13:52
-
-    DESCRIPTION:
-    An typical Linked List
-    ******************************************************* }
-
-  TLinkedList = class
+    TSimpleList<t> = class
     private
-    fCount: Integer;
-  fFirst, fLast: pLLItem;
+      fCount: integer;
+      FGrowthFactor: Single;
+      fComparer: IComparer<t>;
+      FSorted: boolean;
+      fHasManagedType: boolean;
+      FDupIgnore: boolean;
 
-  function GetLLItems(index: Integer): pLLItem;
-  function getItem(index: Integer): Pointer;
-  procedure setItem(index: Integer; const Value: Pointer);
-  function GetNextLLItem(LLItem: pLLItem): pLLItem;
-  function GetPrevLLItem(LLItem: pLLItem): pLLItem;
-  function GetEmpty: boolean;
-protected
+      procedure SetCapacity(const Value: integer);
+      function GetItem(Index: integer): t;
+      procedure Setitem(Index: integer; const Value: t);
+      procedure SetGrowthFactor(const Value: Single);
+      procedure setCount(const Value: integer);
+      procedure SetSorted(const Value: boolean);
+      function getCapacity: integer;
+      procedure SetDupIgnore(const Value: boolean);
+    public
+      // you have direct access to the array, but please be aware not to mess with it
+      Items: array of t;
 
-public
-  property LLItems[index: Integer]: pLLItem read GetLLItems;
-  property First: pLLItem read fFirst;
-  property Last: pLLItem read fLast;
-  property Empty: boolean read GetEmpty; // tells if the list is empty or not
+      function Slice(acount: integer): TArray<t>;
 
-  property Next[LLItem: pLLItem]: pLLItem read GetNextLLItem;
-  property prev[LLItem: pLLItem]: pLLItem read GetPrevLLItem;
+      property Count: integer read fCount write setCount;
+      property Capacity: integer read getCapacity write SetCapacity;
+      property Item[Index: integer]: t read GetItem write Setitem;
+      default;
+      // ATTENTION: Existing values are not checked to be unique. this applies only to adding values
+      // ATTENTION: use only in combination with sorted!.
+      // if dupIgnore = true this will set sorted to true  as well
+      property dupIgnore: boolean read FDupIgnore write SetDupIgnore;
 
-  property Count: Integer read fCount;
-  property Items[index: Integer]: Pointer read getItem write setItem;
+      // the multiplier when growing the list. default is 2.0
+      property GrowthFactor: Single read FGrowthFactor write SetGrowthFactor;
+      // ATTENTION: seting this to false will set dupIgnore to false as well
+      property Sorted: boolean read FSorted write SetSorted;
 
-  constructor Create;
-  destructor Destroy;
-  override;
+      constructor Create(aComparer: IComparer<t>);
+        overload;
+      constructor Create;
+        overload;
+      destructor Destroy;
+        override;
 
-  procedure add(Obj: Pointer);
-  procedure AddAfter(item: pLLItem; Obj: Pointer);
-  procedure AddBefore(item: pLLItem; Obj: Pointer);
-  procedure Delete(index: Integer);
-  overload;
-  procedure Delete(p: pLLItem);
-  overload;
-  procedure DeleteFirst;
-  procedure DeleteLast;
+      // if DupIgnore is true, then it will check first, if the value does exist.
+      // returns true, if the value was added, false otherwise
+      function add(const Value: t): boolean;
+      // does not check for duplicates, ignores sorted. Be careful, you might end up with a miss sorted list
+      procedure Insert(Index: integer; const Value: t);
 
-  procedure Exchange(i1, i2: Integer);
-  procedure Clear;
-  function IndexOf(p: Pointer; var LLItem: pLLItem): Integer;
-  end;
+      // if you want to add only a part of the array, then set aStartIndex and aCount
+      // NOTE: doesn't check for duplicate values inside the avalues array
+      procedure addSortedArray(const avalues: array of t; aStartIndex: integer; acount: integer);
+      procedure addList(const avalues: TSimpleList<t>);
 
-  TFastListItem = record
-    Obj: Pointer;
-  pIndex: pInteger;
-  end;
+      // note: if sorted = true, the values will be sorted and addSortedArray will be called
+      // otherwise the values are just appended at the end
+      // NOTE: doesn't check for duplicate values inside the avalues array
+      procedure append(const Values: TArray<t>; aStartIndex: integer; acount: integer);
 
-  { *******************************************************
-    Class : TFastList
-    Author:    pawelp
-    Date:      2004-03-30 13:44
+      procedure Clear;
+      procedure TrimExcess;
+      function IndexOf(const Value: t): integer;
+      // requires sorted to be true!
+      function find(const Value: t; out Index: integer): boolean;
+        virtual;
+      function Contains(const aValue: t): boolean;
+      // requires sorted to be true!
+      // returns false if the range is not contained in the list
+      function GetRangeIndices(const LeftValue, RightValue: t; out LeftIndex, RightIndex: integer): boolean;
 
-    DESCRIPTION:
-    This is a fast List, where each Item have an Pointer to some user defined data
-    and an Pointer where it updates its actual position.
-    This is very good for often searchable Lists
+      procedure Delete(i: integer);
+        overload;
+      procedure Delete(aStartIndex, aNumOfItemsToDelete: integer);
+        overload;
 
-    During deletion the last Item in the list is moved into the place
-    of the deleted item, this way we have only a small memory movment, and the indexes of most ites are not affected
-    ******************************************************* }
+      procedure Exchange(i1, i2: integer);
+      function toarray: TArray<t>;
 
-  TFastList = class
+      procedure SaveToStream(Stream: TStream);
+      procedure LoadFromStream(Stream: TStream);
+    end;
+
+    pLLItem = ^TTLLItem;
+
+    TTLLItem = record
+      prev,
+        Next: pLLItem;
+      Data: Pointer;
+    end;
+
+    { *******************************************************
+      Class: TLinkedList
+      Author:    pawelp
+      Date:      2004-03-30 13:52
+
+      DESCRIPTION:
+      An typical Linked List
+      ******************************************************* }
+
+    TLinkedList = class
     private
-    fItems: array of TFastListItem;
-  FCapacity, fCount, fInitSize: Integer;
-  function getItem(index: Integer): Pointer;
-protected
+      fCount: integer;
+      fFirst, fLast: pLLItem;
 
-public
-  property item[index: Integer]: Pointer read getItem;
-  default;
-  property Count: Integer read fCount;
+      function GetLLItems(Index: integer): pLLItem;
+      function GetItem(Index: integer): Pointer;
+      procedure Setitem(Index: integer; const Value: Pointer);
+      function GetNextLLItem(LLItem: pLLItem): pLLItem;
+      function GetPrevLLItem(LLItem: pLLItem): pLLItem;
+      function GetEmpty: boolean;
+    protected
 
-  constructor Create(InitSize: Integer);
-  destructor Destroy;
-  override;
+    public
+      property LLItems[Index: integer]: pLLItem read GetLLItems;
+      property First: pLLItem read fFirst;
+      property Last: pLLItem read fLast;
+      property Empty: boolean read GetEmpty; // tells if the list is empty or not
 
-  procedure Clear;
-  procedure ClearHard;
+      property Next[LLItem: pLLItem]: pLLItem read GetNextLLItem;
+      property prev[LLItem: pLLItem]: pLLItem read GetPrevLLItem;
 
-  procedure Delete(index: Integer);
-  function IndexOf(p: Pointer): Integer;
-  procedure add(p: Pointer; pIndex: pInteger);
-  end;
+      property Count: integer read fCount;
+      property Items[Index: integer]: Pointer read GetItem write Setitem;
 
-  TThreadSaveObjectList = class(TObject)
+      constructor Create;
+      destructor Destroy;
+        override;
+
+      procedure add(Obj: Pointer);
+      procedure AddAfter(Item: pLLItem; Obj: Pointer);
+      procedure AddBefore(Item: pLLItem; Obj: Pointer);
+      procedure Delete(Index: integer);
+        overload;
+      procedure Delete(p: pLLItem);
+        overload;
+      procedure DeleteFirst;
+      procedure DeleteLast;
+
+      procedure Exchange(i1, i2: integer);
+      procedure Clear;
+      function IndexOf(p: Pointer; var LLItem: pLLItem): integer;
+    end;
+
+    TFastListItem = record
+      Obj: Pointer;
+      pIndex: pInteger;
+    end;
+
+    { *******************************************************
+      Class : TFastList
+      Author:    pawelp
+      Date:      2004-03-30 13:44
+
+      DESCRIPTION:
+      This is a fast List, where each Item have an Pointer to some user defined data
+      and an Pointer where it updates its actual position.
+      This is very good for often searchable Lists
+
+      During deletion the last Item in the list is moved into the place
+      of the deleted item, this way we have only a small memory movment, and the indexes of most ites are not affected
+      ******************************************************* }
+
+    TFastList = class
     private
-    fSec: TCriticalSection;
-  fList: TObjectList;
-  function GetCount: Integer;
-protected
+      fItems: array of TFastListItem;
+      FCapacity, fCount, fInitSize: integer;
+      function GetItem(Index: integer): Pointer;
+    protected
 
-public
-  constructor Create;
-  destructor Destroy;
-  override;
+    public
+      property Item[Index: integer]: Pointer read GetItem;
+      default;
+      property Count: integer read fCount;
 
-  procedure add(aObject: TObject);
-  procedure AddAsFirst(aObject: TObject);
-  function GetFirstAndRemFromList(out aObject: TObject): boolean;
-  function GetLastAndRemFromList(out aObject: TObject): boolean;
-  procedure Clear;
+      constructor Create(InitSize: integer);
+      destructor Destroy;
+        override;
 
-  property Count: Integer read GetCount;
+      procedure Clear;
+      procedure ClearHard;
 
-  end;
+      procedure Delete(Index: integer);
+      function IndexOf(p: Pointer): integer;
+      procedure add(p: Pointer; pIndex: pInteger);
+    end;
 
-  // windows replacement
-  procedure ZeroMemory(p: Pointer; Size: Integer);
+    TThreadSaveObjectList = class(TObject)
+    private
+      fSec: TCriticalSection;
+      fList: TObjectList;
+      function GetCount: integer;
+    protected
+
+    public
+      constructor Create;
+      destructor Destroy;
+        override;
+
+      procedure add(aObject: TObject);
+      procedure AddAsFirst(aObject: TObject);
+      function GetFirstAndRemFromList(out aObject: TObject): boolean;
+      function GetLastAndRemFromList(out aObject: TObject): boolean;
+      procedure Clear;
+
+      property Count: integer read GetCount;
+
+    end;
+
+    // windows replacement
+    procedure ZeroMemory(p: Pointer; Size: integer);
 
 implementation
 
 uses
-  System.RTLConsts, RTTI;
+  System.RTLConsts, Rtti;
 { TFastList }
 
-procedure ZeroMemory(p: Pointer; Size: Integer);
+procedure ZeroMemory(p: Pointer; Size: integer);
 begin
   FillChar(p^, Size, 0);
 end;
@@ -519,27 +519,27 @@ end;
 
 procedure TFastList.Clear;
 var
-  li: Integer;
+  li: integer;
 
-  procedure C(st: Integer);
+  procedure c(st: integer);
   var
-    x: Integer;
+    X: integer;
   begin
 
     try
-      for x := st to fCount - 1 do
+      for X := st to fCount - 1 do
       begin
-        li := x;
-        if fItems[x].pIndex <> nil then
-          fItems[x].pIndex^ := -1;
+        li := X;
+        if fItems[X].pIndex <> nil then
+          fItems[X].pIndex^ := -1;
       end;
     except
-      C(li + 1);
+      c(li + 1);
     end;
   end;
 
 begin
-  C(0);
+  c(0);
   fCount := 0;
 end;
 
@@ -548,7 +548,7 @@ begin
   fCount := 0;
 end;
 
-constructor TFastList.Create(InitSize: Integer);
+constructor TFastList.Create(InitSize: integer);
 begin
   inherited Create;
 
@@ -558,14 +558,14 @@ begin
   fInitSize := InitSize;
 end;
 
-procedure TFastList.Delete(index: Integer);
+procedure TFastList.Delete(Index: integer);
 begin
-  fItems[index].pIndex^ := -1;
+  fItems[Index].pIndex^ := -1;
 
-  if (index <> fCount - 1) and (fCount <> 1) then
+  if (Index <> fCount - 1) and (fCount <> 1) then
   begin
-    fItems[index] := fItems[fCount - 1];
-    fItems[index].pIndex^ := index;
+    fItems[Index] := fItems[fCount - 1];
+    fItems[Index].pIndex^ := Index;
   end;
   Dec(fCount);
 end;
@@ -578,20 +578,20 @@ begin
   inherited;
 end;
 
-function TFastList.getItem(index: Integer): Pointer;
+function TFastList.GetItem(Index: integer): Pointer;
 begin
-  Result := fItems[index].Obj;
+  Result := fItems[Index].Obj;
 end;
 
-function TFastList.IndexOf(p: Pointer): Integer;
+function TFastList.IndexOf(p: Pointer): integer;
 var
-  x: Integer;
+  X: integer;
 begin
-  for x := 0 to fCount - 1 do
-    if p = fItems[x].Obj then
+  for X := 0 to fCount - 1 do
+    if p = fItems[X].Obj then
     begin
-      Result := x;
-      Exit;
+      Result := X;
+      exit;
     end;
   Result := -1;
 end;
@@ -603,26 +603,26 @@ begin
   AddAfter(Last, Obj);
 end;
 
-procedure TLinkedList.AddAfter(item: pLLItem; Obj: Pointer);
+procedure TLinkedList.AddAfter(Item: pLLItem; Obj: Pointer);
 var
   NewItem: pLLItem;
 begin
-  New(NewItem);
+  new(NewItem);
   NewItem.Next := nil;
   NewItem.prev := nil;
   NewItem^.Data := Obj;
   Inc(fCount);
 
-  if (item = nil) and (fLast <> nil) then
-    item := fLast;
-  if item <> nil then
+  if (Item = nil) and (fLast <> nil) then
+    Item := fLast;
+  if Item <> nil then
   begin
-    NewItem.Next := item.Next;
-    if assigned(item.Next) then
-      item.Next.prev := NewItem;
-    item.Next := NewItem;
-    NewItem.prev := item;
-    if item = fLast then
+    NewItem.Next := Item.Next;
+    if assigned(Item.Next) then
+      Item.Next.prev := NewItem;
+    Item.Next := NewItem;
+    NewItem.prev := Item;
+    if Item = fLast then
       fLast := NewItem;
   end
   else
@@ -632,31 +632,31 @@ begin
   end;
 end;
 
-procedure TLinkedList.AddBefore(item: pLLItem; Obj: Pointer);
+procedure TLinkedList.AddBefore(Item: pLLItem; Obj: Pointer);
 var
   NewItem: pLLItem;
 begin
-  New(NewItem);
+  new(NewItem);
   NewItem.Next := nil;
   NewItem.prev := nil;
   NewItem^.Data := Obj;
   Inc(fCount);
 
-  if item = nil then
-    item := fFirst;
-  if item = nil then
+  if Item = nil then
+    Item := fFirst;
+  if Item = nil then
   begin
     fFirst := NewItem;
     fLast := NewItem;
   end
   else
   begin
-    NewItem.prev := item.prev;
-    if assigned(item.prev) then
-      item.prev.Next := NewItem;
-    item.prev := NewItem;
-    NewItem.Next := item;
-    if item = fFirst then
+    NewItem.prev := Item.prev;
+    if assigned(Item.prev) then
+      Item.prev.Next := NewItem;
+    Item.prev := NewItem;
+    NewItem.Next := Item;
+    if Item = fFirst then
       fFirst := NewItem;
 
   end;
@@ -672,7 +672,7 @@ begin
     p1 := p0;
     p0 := p0.Next;
 
-    DISPOSE(p1);
+    dispose(p1);
   end;
 
   fFirst := nil;
@@ -691,7 +691,7 @@ end;
 procedure TLinkedList.Delete(p: pLLItem);
 begin
   if p = nil then
-    Exit;
+    exit;
 
   if (p <> fLast) and (p <> fFirst) then
   begin
@@ -721,7 +721,7 @@ begin
     end;
   end;
 
-  DISPOSE(p);
+  dispose(p);
   Dec(fCount);
 end;
 
@@ -737,11 +737,11 @@ begin
     Delete(fFirst);
 end;
 
-procedure TLinkedList.Delete(index: Integer);
+procedure TLinkedList.Delete(Index: integer);
 var
   p: pLLItem;
 begin
-  p := LLItems[index];
+  p := LLItems[Index];
 
   if p <> nil then
     Delete(p);
@@ -753,7 +753,7 @@ begin
   inherited;
 end;
 
-procedure TLinkedList.Exchange(i1, i2: Integer);
+procedure TLinkedList.Exchange(i1, i2: integer);
 var
   p0, p1, p2: pLLItem;
 begin
@@ -793,26 +793,26 @@ begin
   Result := fFirst = nil;
 end;
 
-function TLinkedList.getItem(index: Integer): Pointer;
+function TLinkedList.GetItem(Index: integer): Pointer;
 var
   p: pLLItem;
 begin
-  p := LLItems[index];
+  p := LLItems[Index];
   if p <> nil then
     Result := p^.Data
   else
     Result := nil;
 end;
 
-function TLinkedList.GetLLItems(index: Integer): pLLItem;
+function TLinkedList.GetLLItems(Index: integer): pLLItem;
 var
-  i: Integer;
+  i: integer;
 begin
-  if (fCount - index) > index then
+  if (fCount - Index) > Index then
   begin
     Result := fFirst;
     i := 0;
-    while (Result <> nil) and (i <> index) do
+    while (Result <> nil) and (i <> Index) do
     begin
       Result := Result.Next;
       Inc(i);
@@ -822,7 +822,7 @@ begin
   begin
     Result := fLast;
     i := fCount - 1;
-    while (Result <> nil) and (i <> index) do
+    while (Result <> nil) and (i <> Index) do
     begin
       Result := Result.prev;
       Dec(i);
@@ -840,48 +840,48 @@ begin
   Result := LLItem.prev;
 end;
 
-function TLinkedList.IndexOf(p: Pointer; var LLItem: pLLItem): Integer;
+function TLinkedList.IndexOf(p: Pointer; var LLItem: pLLItem): integer;
 var
-  pI: pLLItem;
+  pi: pLLItem;
 begin
-  pI := First;
+  pi := First;
   Result := -1;
-  while pI <> nil do
+  while pi <> nil do
   begin
     Inc(Result);
-    if pI = p then
+    if pi = p then
     begin
       if LLItem <> nil then
-        LLItem := pI;
-      Exit;
+        LLItem := pi;
+      exit;
     end
     else
-      pI := pI.Next;
+      pi := pi.Next;
   end;
   Result := -1;
 end;
 
-procedure TLinkedList.setItem(index: Integer; const Value: Pointer);
+procedure TLinkedList.Setitem(Index: integer; const Value: Pointer);
 var
   p: pLLItem;
 begin
-  p := LLItems[index];
+  p := LLItems[Index];
   if p <> nil then
     p^.Data := Value;
 end;
 
 { TSimpleList<T> }
 
-function TSimpleList<T>.add(const Value: T): boolean;
+function TSimpleList<t>.add(const Value: t): boolean;
 var
-  C, i: Integer;
+  c, i: integer;
 begin
 
   if not FSorted then
   begin
-    Result := true;
+    Result := True;
     if Count + 1 >= Capacity then
-      Capacity := round((Capacity + 1) * GrowthFactor);
+      Capacity := Round((Capacity + 1) * GrowthFactor);
 
     Items[fCount] := Value;
     Inc(fCount);
@@ -892,7 +892,7 @@ begin
     begin
       Count := 1;
       Items[0] := Value;
-      Exit(true);
+      exit(True);
     end
     else
     begin
@@ -900,23 +900,23 @@ begin
         we know, that we mostly add the next bigger item,
         in that case, let us first check the last item, that way we can skip a lot of comparisions }
       i := Count - 1;
-      C := fComparer.Compare(Items[i], Value);
-      if FDupIgnore and (C = 0) then
-        Exit(False)
-      else if C < 0 then
+      c := fComparer.Compare(Items[i], Value);
+      if FDupIgnore and (c = 0) then
+        exit(False)
+      else if c < 0 then
         i := Count
-      else if Find(Value, i) and FDupIgnore then
-        Exit(False);
+      else if find(Value, i) and FDupIgnore then
+        exit(False);
     end;
-    Result := true;
+    Result := True;
     Insert(i, Value);
   end;
 end;
 
-procedure TSimpleList<T>.addList(const avalues: TSimpleList<T>);
+procedure TSimpleList<t>.addList(const avalues: TSimpleList<t>);
 begin
   if avalues.Count = 0 then
-    Exit;
+    exit;
 
   if avalues.Sorted then
     self.addSortedArray(avalues.Items, 0, avalues.Count)
@@ -924,26 +924,26 @@ begin
     self.append(avalues.Items, 0, avalues.Count);
 end;
 
-procedure TSimpleList<T>.addSortedArray(const avalues: array of T; aStartIndex: Integer; acount: Integer);
+procedure TSimpleList<t>.addSortedArray(const avalues: array of t; aStartIndex: integer; acount: integer);
 var
-  x, i1, i2: Integer;
-  elementsToMove, NewPosToMove: Integer;
+  X, i1, i2: integer;
+  elementsToMove, NewPosToMove: integer;
 begin
   if acount = -1 then
-    acount := Length(avalues) - aStartIndex;
+    acount := length(avalues) - aStartIndex;
 
   if fHasManagedType then
   begin
     // managed types must be properly assigned, not via move memory
-    for x := aStartIndex to (aStartIndex + acount) - 1 do
-      add(avalues[x]);
-    Exit;
+    for X := aStartIndex to (aStartIndex + acount) - 1 do
+      add(avalues[X]);
+    exit;
   end;
 
   if acount = 1 then
   begin
     add(avalues[0]);
-    Exit;
+    exit;
   end;
 
   while acount <> 0 do
@@ -959,53 +959,53 @@ begin
       acount := 0;
     end
     else
-      { // can we append the whole Array somewhere In the middle ? } if (not Find(avalues[aStartIndex], i1))
-        and
-        (not Find(avalues[(aStartIndex + acount) - 1], i2))
-        and
-        (i1 = i2) then
-      begin
-        elementsToMove := (Count - i1); // how many elements do we need to move to the end?
-        Count := Count + acount; // inc the count and capacity
-        // move the existing items to the end, so we have space for inserting the whole array
-        move(Items[i1], Items[i1 + acount], elementsToMove * sizeOf(avalues[0]));
-        move(avalues[aStartIndex], Items[i1], acount * sizeOf(avalues[0]));
-        acount := 0;
-      end
-      else
-      begin
-        /// add the first item in the array, maybe we can append the whole array later, without this element
-        add(avalues[aStartIndex]);
-        Inc(aStartIndex);
-        Dec(acount);
-      end;
+      { // can we append the whole Array somewhere In the middle ? }if (not find(avalues[aStartIndex], i1))
+      and
+      (not find(avalues[(aStartIndex + acount) - 1], i2))
+    and
+      (i1 = i2) then
+    begin
+      elementsToMove := (Count - i1); // how many elements do we need to move to the end?
+      Count := Count + acount; // inc the count and capacity
+      // move the existing items to the end, so we have space for inserting the whole array
+      move(Items[i1], Items[i1 + acount], elementsToMove * sizeOf(avalues[0]));
+      move(avalues[aStartIndex], Items[i1], acount * sizeOf(avalues[0]));
+      acount := 0;
+    end
+    else
+    begin
+      /// add the first item in the array, maybe we can append the whole array later, without this element
+      add(avalues[aStartIndex]);
+      Inc(aStartIndex);
+      Dec(acount);
+    end;
   end;
 end;
 
-procedure TSimpleList<T>.append(const values: TArray<T>; aStartIndex: Integer; acount: Integer);
+procedure TSimpleList<t>.append(const Values: TArray<t>; aStartIndex: integer; acount: integer);
 var
-  x, i: Integer;
-  lValues: TArray<T>;
+  X, i: integer;
+  lValues: TArray<t>;
 begin
   if acount = -1 then
-    acount := Length(values) - aStartIndex;
+    acount := length(Values) - aStartIndex;
 
   if acount = 0 then
-    Exit;
+    exit;
 
   if self.Sorted and (not fHasManagedType) then
   begin
-    lValues := copy(values, aStartIndex, acount);
-    TArray.Sort<T>(lValues, fComparer, 0, Length(lValues));
-    self.addSortedArray(lValues, 0, Length(lValues));
+    lValues := copy(Values, aStartIndex, acount);
+    TArray.sort<t>(lValues, fComparer, 0, length(lValues));
+    self.addSortedArray(lValues, 0, length(lValues));
 
   end
   else if fHasManagedType then
   begin
 
     // we need to add it one by one....
-    for x := aStartIndex to (aStartIndex + acount) - 1 do
-      add(values[x]);
+    for X := aStartIndex to (aStartIndex + acount) - 1 do
+      add(Values[X]);
 
   end
   else
@@ -1013,52 +1013,52 @@ begin
 
     i := Count;
     Count := Count + acount;
-    move(values[aStartIndex], Items[i], acount * sizeOf(T));
+    move(Values[aStartIndex], Items[i], acount * sizeOf(t));
   end;
 end;
 
-procedure TSimpleList<T>.Clear;
+procedure TSimpleList<t>.Clear;
 var
-  x: Integer;
+  X: integer;
 begin
   if fHasManagedType then
-    for x := 0 to fCount - 1 do
-      Items[x] := default (T);
+    for X := 0 to fCount - 1 do
+      Items[X] := default(t);
 
   fCount := 0;
 end;
 
-function TSimpleList<T>.Contains(const aValue: T): boolean;
+function TSimpleList<t>.Contains(const aValue: t): boolean;
 var
-  i: Integer;
+  i: integer;
 begin
   if FSorted then
-    Result := Find(aValue, i)
+    Result := find(aValue, i)
   else
     Result := IndexOf(aValue) <> -1;
 end;
 
-constructor TSimpleList<T>.Create;
+constructor TSimpleList<t>.Create;
 begin
   Create(nil);
 end;
 
-constructor TSimpleList<T>.Create(aComparer: IComparer<T>);
+constructor TSimpleList<t>.Create(aComparer: IComparer<t>);
 begin
   inherited Create;
-  fHasManagedType := isManaged(TypeInfo(T));
+  fHasManagedType := isManaged(TypeInfo(t));
   fComparer := aComparer;
   if fComparer = nil then
-    fComparer := TComparer<T>.default;
+    fComparer := TComparer<t>.default;
   FGrowthFactor := 2.0;
   fCount := 0;
   Items := nil;
 end;
 
-procedure TSimpleList<T>.Delete(i: Integer);
+procedure TSimpleList<t>.Delete(i: integer);
 begin
   if fHasManagedType then
-    Items[i] := default (T);
+    Items[i] := default(t);
 
   if i <> fCount - 1 then
   begin
@@ -1072,67 +1072,67 @@ begin
   Dec(fCount);
 end;
 
-procedure TSimpleList<T>.Delete(aStartIndex, aNumOfItemsToDelete: Integer);
+procedure TSimpleList<t>.Delete(aStartIndex, aNumOfItemsToDelete: integer);
 var
-  x: Integer;
-  TrailingItemsCount: Integer;
+  X: integer;
+  TrailingItemsCount: integer;
 begin
   // check left bound
   if aStartIndex >= fCount then
-    Exit;
+    exit;
 
   // check right bound
   if (aStartIndex + aNumOfItemsToDelete) > fCount then
     aNumOfItemsToDelete := fCount - aStartIndex;
 
   if fHasManagedType then
-    for x := aStartIndex to aStartIndex + aNumOfItemsToDelete - 1 do
-      Items[x] := default (T);
+    for X := aStartIndex to aStartIndex + aNumOfItemsToDelete - 1 do
+      Items[X] := default(t);
 
   TrailingItemsCount := Count - (aStartIndex + aNumOfItemsToDelete);
   if TrailingItemsCount > 0 then
   begin
     move(Items[aStartIndex + aNumOfItemsToDelete],
       Items[aStartIndex],
-      TrailingItemsCount * sizeOf(T));
+      TrailingItemsCount * sizeOf(t));
 
     // important to zero it here, because we moved the memory, if we would assign to a default(T) then we would reduce the reference count
     if fHasManagedType then
-      ZeroMemory(@Items[fCount - TrailingItemsCount], TrailingItemsCount * sizeOf(T));
+      ZeroMemory(@Items[fCount - TrailingItemsCount], TrailingItemsCount * sizeOf(t));
   end;
 
   Dec(fCount, aNumOfItemsToDelete);
 end;
 
-destructor TSimpleList<T>.Destroy;
+destructor TSimpleList<t>.Destroy;
 begin
   Clear;
   inherited;
 end;
 
-procedure TSimpleList<T>.Exchange(i1, i2: Integer);
+procedure TSimpleList<t>.Exchange(i1, i2: integer);
 var
-  p: T;
+  p: t;
 begin
   p := Items[i1];
   Items[i1] := Items[i2];
   Items[i2] := p;
 end;
 
-function TSimpleList<T>.getCapacity: Integer;
+function TSimpleList<t>.getCapacity: integer;
 begin
-  Result := Length(Items);
+  Result := length(Items);
 end;
 
-function TSimpleList<T>.getItem(index: Integer): T;
+function TSimpleList<t>.GetItem(Index: integer): t;
 begin
-  Result := Items[index];
+  Result := Items[Index];
 end;
 
-function TSimpleList<T>.GetRangeIndices(const LeftValue, RightValue: T;
-  out LeftIndex, RightIndex: Integer): boolean;
+function TSimpleList<t>.GetRangeIndices(const LeftValue, RightValue: t;
+  out LeftIndex, RightIndex: integer): boolean;
 var
-  C: Integer;
+  c: integer;
 begin
   Result := False;
 
@@ -1140,52 +1140,52 @@ begin
     raise Exception.Create(classname + '.GetRangeIndices requires sorted property to be true!');
 
   if self.Count = 0 then
-    Exit(False);
+    exit(False);
 
-  Find(LeftValue, LeftIndex);
+  find(LeftValue, LeftIndex);
 
   // left index outside bounds?
   if LeftIndex >= Count then
-    Exit(False);
+    exit(False);
 
-  C := fComparer.Compare(Items[LeftIndex], RightValue);
+  c := fComparer.Compare(Items[LeftIndex], RightValue);
   // if they are equal, we do not need to search for the right index
-  if C = 0 then
+  if c = 0 then
   begin
     RightIndex := LeftIndex;
-    Exit(true);
+    exit(True);
   end;
 
   // but... if leftIndex points to a value greater then the RightValue, then.... we too need to exit
-  if C > 0 then
-    Exit(False);
+  if c > 0 then
+    exit(False);
 
-  if not Find(RightValue, RightIndex) then
+  if not find(RightValue, RightIndex) then
     if RightIndex >= self.Count then
       RightIndex := self.Count - 1;
 
-  Result := true; // finally, if we are here, all is fine!
+  Result := True; // finally, if we are here, all is fine!
 end;
 
-function TSimpleList<T>.IndexOf(const Value: T): Integer;
+function TSimpleList<t>.IndexOf(const Value: t): integer;
 var
-  i, x: Integer;
+  i, X: integer;
 begin
   Result := -1;
 
   if FSorted then
   begin
-    if Find(Value, i) then
+    if find(Value, i) then
       Result := i;
-    Exit;
+    exit;
   end;
 
-  for x := 0 to Count - 1 do
-    if self.fComparer.Compare(Items[x], Value) = 0 then
-      Exit(x);
+  for X := 0 to Count - 1 do
+    if self.fComparer.Compare(Items[X], Value) = 0 then
+      exit(X);
 end;
 
-procedure TSimpleList<T>.SetCapacity(const Value: Integer);
+procedure TSimpleList<t>.SetCapacity(const Value: integer);
 begin
   if Capacity <> Value then
   begin
@@ -1195,10 +1195,10 @@ begin
   end;
 end;
 
-procedure TSimpleList<T>.setCount(const Value: Integer);
+procedure TSimpleList<t>.setCount(const Value: integer);
 var
-  oldCount: Integer;
-  x: Integer;
+  oldCount: integer;
+  X: integer;
 begin
   oldCount := fCount;
 
@@ -1207,21 +1207,21 @@ begin
   // finalize managed types
   if fHasManagedType then
     if fCount < oldCount then
-      for x := fCount to oldCount - 1 do
-        Items[x] := default (T);
+      for X := fCount to oldCount - 1 do
+        Items[X] := default(t);
 
   if fCount > Capacity then
     Capacity := fCount;
 end;
 
-procedure TSimpleList<T>.SetDupIgnore(const Value: boolean);
+procedure TSimpleList<t>.SetDupIgnore(const Value: boolean);
 begin
   FDupIgnore := Value;
   if Value then
-    Sorted := true;
+    Sorted := True;
 end;
 
-procedure TSimpleList<T>.SetGrowthFactor(const Value: single);
+procedure TSimpleList<t>.SetGrowthFactor(const Value: Single);
 begin
   if Value <= 1 then
     raise Exception.Create('GrowthFactor can not be 1 or less');
@@ -1231,48 +1231,49 @@ end;
 
 { TIDSortedListItem }
 
-procedure TSortedList<TKey, TValue>.AddOrSet(const Value: TValue; const id: TKey);
+procedure TSortedList<TKey, TValue>.AddOrSet(const Value: TValue; const Id: TKey);
 var
-  i: Integer;
+  i: integer;
 begin
-  if Find(id, i) then
+  if find(Id, i) then
     self.Items[i].Data := Value
   else
-    self.Insert(i, Value, id);
+    self.Insert(i, Value, Id);
 end;
 
-function TSortedList<TKey, TValue>.add(const Value: TValue; const id: TKey): boolean;
+function TSortedList<TKey, TValue>.add(const Value: TValue; const Id: TKey): boolean;
 var
-  C, i: Integer;
+  c, i: integer;
 begin
   if self.Count = 0 then
     i := 0
-  else begin
+  else
+  begin
     { a small speedup:
       we know, that we mostly add the next bigger item,
       in that case, let us first check the last item, that way we can skip a lot of comparisions }
     i := Count - 1;
-    C := fComparer.Compare(Items[i].IID, id);
-    if FDupIgnore and (C = 0) then
-      Exit(False)
-    else if C < 0 then
+    c := fComparer.Compare(Items[i].IID, Id);
+    if FDupIgnore and (c = 0) then
+      exit(False)
+    else if c < 0 then
       i := Count
-    else if Find(id, i) and FDupIgnore then
-      Exit(False);
+    else if find(Id, i) and FDupIgnore then
+      exit(False);
   end;
 
-  Result := true;
+  Result := True;
 
-  Insert(i, Value, id);
+  Insert(i, Value, Id);
 end;
 
 procedure TSortedList<TKey, TValue>.Clear;
 var
-  x: Integer;
+  X: integer;
 begin
   if fHasManagedType then
-    for x := 0 to fCount - 1 do
-      Items[x] := default (TIDSortedListItem);
+    for X := 0 to fCount - 1 do
+      Items[X] := default(TIDSortedListItem);
 
   fCount := 0;
 end;
@@ -1296,14 +1297,14 @@ begin
   Capacity := 0;
 end;
 
-procedure TSortedList<TKey, TValue>.Delete(index: Integer);
+procedure TSortedList<TKey, TValue>.Delete(Index: integer);
 begin
   if self.fHasManagedType then
-    Items[index] := default (TIDSortedListItem);
+    Items[Index] := default(TIDSortedListItem);
 
-  if index <> fCount - 1 then
+  if Index <> fCount - 1 then
   begin
-    move(Items[index + 1], Items[index], (fCount - (index + 1)) * sizeOf(Items[0]));
+    move(Items[Index + 1], Items[Index], (fCount - (Index + 1)) * sizeOf(Items[0]));
 
     if self.fHasManagedType then
       ZeroMemory(@Items[fCount - 1], sizeOf(Items[0]));
@@ -1317,47 +1318,47 @@ begin
   inherited;
 end;
 
-function TSortedList<TKey, TValue>.Find(const id: TKey;
-  out index: Integer): boolean;
+function TSortedList<TKey, TValue>.find(const Id: TKey;
+  out Index: integer): boolean;
 var
-  L, H: Integer;
+  l, H: integer;
 begin
-  L := 0;
+  l := 0;
   H := Count - 1;
-  Result := DoFind(id, L, H, index);
+  Result := DoFind(Id, l, H, Index);
 end;
 
-function TSortedList<TKey, TValue>.DoFind(const id: TKey;
-  var L, H: Integer;
-  out index: Integer): boolean;
+function TSortedList<TKey, TValue>.DoFind(const Id: TKey;
+  var l, H: integer;
+  out Index: integer): boolean;
 var
-  cmp, C, i: Integer;
+  cmp, c, i: integer;
 begin
   Result := False;
 
-  while L <= H do
+  while l <= H do
   begin
-    i := (L + H) shr 1;
+    i := (l + H) shr 1;
 
-    C := fComparer.Compare(Items[i].IID, id);
+    c := fComparer.Compare(Items[i].IID, Id);
 
-    if C = 0 then
+    if c = 0 then
     begin
-      index := i;
-      Exit(true);
+      Index := i;
+      exit(True);
     end;
 
-    if C < 0 then
-      L := i + 1
+    if c < 0 then
+      l := i + 1
     else
       H := i - 1;
   end;
-  index := L;
+  Index := l;
 end;
 
-function TSortedList<TKey, TValue>.getCapacity: Integer;
+function TSortedList<TKey, TValue>.getCapacity: integer;
 begin
-  Result := Length(Items);
+  Result := length(Items);
 end;
 
 function TSortedList<TKey, TValue>.GetFirst: TValue;
@@ -1368,10 +1369,10 @@ begin
     raise EArgumentOutOfRangeException.CreateRes(@SArgumentOutOfRange);
 end;
 
-function TSortedList<TKey, TValue>.getItem(index: Integer): TValue;
+function TSortedList<TKey, TValue>.GetItem(Index: integer): TValue;
 begin
-  if (index < fCount) and (index < Capacity) and (index >= 0) then
-    Result := Items[index].Data
+  if (Index < fCount) and (Index < Capacity) and (Index >= 0) then
+    Result := Items[Index].Data
   else
     raise EArgumentOutOfRangeException.CreateRes(@SArgumentOutOfRange);
 end;
@@ -1384,29 +1385,29 @@ begin
     raise EArgumentOutOfRangeException.CreateRes(@SArgumentOutOfRange);
 end;
 
-function TSortedList<TKey, TValue>.IndexOf(const Value: TValue; aOffset: Integer = 0;
-  aComparer: IComparer<TValue> = nil): Integer;
+function TSortedList<TKey, TValue>.IndexOf(const Value: TValue; aOffset: integer = 0;
+  aComparer: IComparer<TValue> = nil): integer;
 var
-  x: Integer;
-  C: IComparer<TValue>;
+  X: integer;
+  c: IComparer<TValue>;
 begin
   if aComparer <> nil then
-    C := aComparer
+    c := aComparer
   else
-    C := TComparer<TValue>.default;
+    c := TComparer<TValue>.default;
 
-  for x := aOffset to fCount - 1 do
-    if C.Compare(Items[x].Data, Value) = 0 then
-      Exit(x);
+  for X := aOffset to fCount - 1 do
+    if c.Compare(Items[X].Data, Value) = 0 then
+      exit(X);
 
   Result := -1;
 end;
 
-procedure TSortedList<TKey, TValue>.Insert(aIndex: Integer;
-  const Value: TValue; const id: TKey);
+procedure TSortedList<TKey, TValue>.Insert(aIndex: integer;
+  const Value: TValue; const Id: TKey);
 begin
   if Count + 1 >= Capacity then
-    Capacity := round((Capacity + 1) * GrowthFactor);
+    Capacity := Round((Capacity + 1) * GrowthFactor);
 
   if aIndex <> fCount then
   begin
@@ -1416,42 +1417,42 @@ begin
   end;
 
   Items[aIndex].Data := Value;
-  Items[aIndex].IID := id;
+  Items[aIndex].IID := Id;
 
   Inc(fCount);
 end;
 
 procedure TSortedList<TKey, TValue>.LoadFromMemory(
   var
-    pb: pByte);
+  pb: pByte);
 var
-  C: Integer;
+  c: integer;
 begin
-  C := pInteger(pb)^;
+  c := pInteger(pb)^;
   Inc(pb, 4);
-  Capacity := C;
-  Count := C;
-  if C > 0 then
+  Capacity := c;
+  Count := c;
+  if c > 0 then
   begin
-    move(pb^, Items[0], C * sizeOf(Items[0]));
-    Inc(pb, C * sizeOf(Items[0]));
+    move(pb^, Items[0], c * sizeOf(Items[0]));
+    Inc(pb, c * sizeOf(Items[0]));
   end;
 end;
 
 procedure TSortedList<TKey, TValue>.LoadFromStream(Stream: TStream);
 var
-  C: Integer;
+  c: integer;
 begin
-  Stream.readBuffer(C, 4);
-  Capacity := C;
-  Count := C;
-  if C > 0 then
-    Stream.readBuffer(Items[0], C * sizeOf(Items[0]));
+  Stream.readBuffer(c, 4);
+  Capacity := c;
+  Count := c;
+  if c > 0 then
+    Stream.readBuffer(Items[0], c * sizeOf(Items[0]));
 end;
 
 procedure TSortedList<TKey, TValue>.SaveToMemory(var bytes: pByte);
 var
-  s: Integer;
+  s: integer;
 begin
   s := Count * sizeOf(Items[0]);
   pInteger(bytes)^ := fCount;
@@ -1463,7 +1464,7 @@ begin
   end;
 end;
 
-function TSortedList<TKey, TValue>.SaveToMemorySize: Integer;
+function TSortedList<TKey, TValue>.SaveToMemorySize: integer;
 begin
   Result := 4 + Count * sizeOf(Items[0]);
 end;
@@ -1475,22 +1476,22 @@ begin
     Stream.writebuffer(Items[0], Count * sizeOf(Items[0]));
 end;
 
-procedure TSortedList<TKey, TValue>.SetCapacity(const Value: Integer);
+procedure TSortedList<TKey, TValue>.SetCapacity(const Value: integer);
 begin
   if Value <> Capacity then
     SetLength(Items, Value);
 
 end;
 
-procedure TSimpleList<T>.setItem(index: Integer; const Value: T);
+procedure TSimpleList<t>.Setitem(Index: integer; const Value: t);
 begin
-  Items[index] := Value;
+  Items[Index] := Value;
 end;
 
-procedure TSimpleList<T>.SetSorted(const Value: boolean);
+procedure TSimpleList<t>.SetSorted(const Value: boolean);
 begin
   if FSorted = Value then
-    Exit;
+    exit;
   if not Value then
     FDupIgnore := False;
 
@@ -1498,117 +1499,117 @@ begin
 
   if FSorted then
     if fCount <> 0 then
-      TArray.Sort<T>(Items, fComparer, 0, fCount);
+      TArray.sort<t>(Items, fComparer, 0, fCount);
 end;
 
-function TSimpleList<T>.Slice(acount: Integer): TArray<T>;
+function TSimpleList<t>.Slice(acount: integer): TArray<t>;
 begin
   SetLength(Result, acount);
   if acount <> 0 then
-    move(Items[0], Result[0], sizeOf(T) * acount);
+    move(Items[0], Result[0], sizeOf(t) * acount);
 end;
 
-function TSimpleList<T>.toarray: TArray<T>;
+function TSimpleList<t>.toarray: TArray<t>;
 begin
   Result := copy(Items, 0, Count);
 end;
 
-procedure TSimpleList<T>.TrimExcess;
+procedure TSimpleList<t>.TrimExcess;
 begin
   Capacity := Count;
 end;
 
-function TSimpleList<T>.Find(const Value: T; out index: Integer): boolean;
+function TSimpleList<t>.find(const Value: t; out Index: integer): boolean;
 var
-  cmp, C, L, H, i: Integer;
+  cmp, c, l, H, i: integer;
 begin
   Result := False;
 
   if not FSorted then
     raise Exception.Create(classname + '.Find requires sorted property to be true!');
 
-  L := 0;
+  l := 0;
   H := fCount - 1;
-  while L <= H do
+  while l <= H do
   begin
-    i := (L + H) shr 1;
+    i := (l + H) shr 1;
 
-    C := fComparer.Compare(Items[i], Value);
+    c := fComparer.Compare(Items[i], Value);
 
-    if C = 0 then
+    if c = 0 then
     begin
-      index := i;
-      Exit(true);
+      Index := i;
+      exit(True);
     end;
 
-    if C < 0 then
-      L := i + 1
+    if c < 0 then
+      l := i + 1
     else
       H := i - 1;
 
   end;
-  index := L;
+  Index := l;
 end;
 
-procedure TSimpleList<T>.Insert(index: Integer; const Value: T);
+procedure TSimpleList<t>.Insert(Index: integer; const Value: t);
 begin
   if Count >= Capacity then
-    Capacity := round((Capacity + 1) * GrowthFactor);
+    Capacity := Round((Capacity + 1) * GrowthFactor);
 
-  if index < fCount then
+  if Index < fCount then
   begin
-    move(Items[index], Items[index + 1],
-      sizeOf(T) * (Count - index));
-    ZeroMemory(@Items[index], sizeOf(Items[0]));
+    move(Items[Index], Items[Index + 1],
+      sizeOf(t) * (Count - Index));
+    ZeroMemory(@Items[Index], sizeOf(Items[0]));
   end;
-  Items[index] := Value;
+  Items[Index] := Value;
 
   Inc(fCount);
 end;
 
-procedure TSimpleList<T>.SaveToStream(Stream: TStream);
+procedure TSimpleList<t>.SaveToStream(Stream: TStream);
 begin
   Stream.writebuffer(fCount, 4);
   if fCount <> 0 then
-    Stream.writebuffer(Items[0], sizeOf(T) * fCount);
+    Stream.writebuffer(Items[0], sizeOf(t) * fCount);
 end;
 
-procedure TSimpleList<T>.LoadFromStream(Stream: TStream);
+procedure TSimpleList<t>.LoadFromStream(Stream: TStream);
 var
-  C: Integer;
+  c: integer;
 begin
   Clear;
 
-  Stream.readBuffer(C, 4);
-  Capacity := C;
-  fCount := C;
+  Stream.readBuffer(c, 4);
+  Capacity := c;
+  fCount := c;
   if fCount <> 0 then
-    Stream.readBuffer(Items[0], sizeOf(T) * fCount);
+    Stream.readBuffer(Items[0], sizeOf(t) * fCount);
 end;
 
 { TIndexedIDSortedList }
 
 procedure TIndexedIDSortedList.add(p: Pointer;
-  id:
-    single;
+  Id:
+  Single;
   pIndex:
-    pInteger);
+  pInteger);
 var
-  i, x: Integer;
+  i, X: integer;
 begin
-  Find(id, i);
+  find(Id, i);
   if Count >= Capacity then
     Capacity := Capacity + 1;
 
   if i < fCount then
   begin
     move(Items[i], Items[i + 1], sizeOf(TIndexedIDSortedListItem) * (Count - i));
-    for x := i + 1 to fCount do
-      Items[x].pIndex^ := x;
+    for X := i + 1 to fCount do
+      Items[X].pIndex^ := X;
   end;
 
   Items[i].Data := p;
-  Items[i].FID := id;
+  Items[i].fid := Id;
   Items[i].pIndex := pIndex;
   Items[i].pIndex^ := i;
 
@@ -1617,26 +1618,26 @@ begin
 end;
 
 procedure TIndexedIDSortedList.add(p: Pointer;
-  id:
-    Integer;
+  Id:
+  integer;
   pIndex:
-    pInteger);
+  pInteger);
 var
-  i, x: Integer;
+  i, X: integer;
 begin
-  Find(id, i);
+  find(Id, i);
   if Count >= Capacity then
     Capacity := Capacity + 1;
 
   if i < fCount then
   begin
     move(Items[i], Items[i + 1], sizeOf(TIndexedIDSortedListItem) * (Count - i));
-    for x := i + 1 to fCount do
-      Items[x].pIndex^ := x;
+    for X := i + 1 to fCount do
+      Items[X].pIndex^ := X;
   end;
 
   Items[i].Data := p;
-  Items[i].IID := id;
+  Items[i].IID := Id;
   Items[i].pIndex := pIndex;
   Items[i].pIndex^ := i;
 
@@ -1656,19 +1657,19 @@ begin
   Capacity := 0;
 end;
 
-procedure TIndexedIDSortedList.Delete(i: Integer);
+procedure TIndexedIDSortedList.Delete(i: integer);
 var
-  x: Integer;
+  X: integer;
 begin
   if (fCount = 1) or (i = fCount - 1) then
   begin
     Dec(fCount);
-    Exit;
+    exit;
   end;
 
   move(Items[i + 1], Items[i], (fCount - (i + 1)) * sizeOf(TIndexedIDSortedListItem));
-  for x := i to fCount - 2 do
-    Items[x].pIndex^ := x;
+  for X := i to fCount - 2 do
+    Items[X].pIndex^ := X;
   Dec(fCount);
 end;
 
@@ -1678,65 +1679,65 @@ begin
   inherited;
 end;
 
-function TIndexedIDSortedList.Find(id: Integer;
-  out index: Integer): boolean;
+function TIndexedIDSortedList.find(Id: integer;
+  out Index: integer): boolean;
 var
-  C, L, H, i: Integer;
+  c, l, H, i: integer;
 begin
   Result := False;
-  L := 0;
+  l := 0;
   H := fCount - 1;
-  while L <= H do
+  while l <= H do
   begin
-    i := (L + H) shr 1;
+    i := (l + H) shr 1;
 
-    C := Items[i].IID - id;
+    c := Items[i].IID - Id;
 
-    if C = 0 then
+    if c = 0 then
     begin
-      Result := true;
-      index := i;
-      Exit;
+      Result := True;
+      Index := i;
+      exit;
     end;
 
-    if C < 0 then
-      L := i + 1
+    if c < 0 then
+      l := i + 1
     else
       H := i - 1;
 
   end;
-  index := L;
+  Index := l;
 end;
 
-function TIndexedIDSortedList.Find(id: single;
-  out index: Integer): boolean;
+function TIndexedIDSortedList.find(Id: Single;
+  out Index: integer): boolean;
 var
-  C: single;
-  L, H, i: Integer;
+  c: Single;
+  l, H, i: integer;
 begin
   Result := False;
-  L := 0;
+  l := 0;
   H := fCount - 1;
-  while L <= H do
+  while l <= H do
   begin
-    i := (L + H) shr 1;
+    i := (l + H) shr 1;
 
-    C := Items[i].FID - id;
+    c := Items[i].fid - Id;
 
-    if C = 0 then
+    if c = 0 then
     begin
-      Result := true;
-      index := i;
-      Exit;
+      Result := True;
+      Index := i;
+      exit;
     end;
 
-    if C < 0 then
-      L := i + 1
+    if c < 0 then
+      l := i + 1
     else
       H := i - 1;
 
   end;
-  index := L;
+  Index := l;
 end;
 
 function TIndexedIDSortedList.GetFirst: Pointer;
@@ -1747,9 +1748,9 @@ begin
     Result := nil;
 end;
 
-function TIndexedIDSortedList.getItem(index: Integer): Pointer;
+function TIndexedIDSortedList.GetItem(Index: integer): Pointer;
 begin
-  Result := Items[index].Data;
+  Result := Items[Index].Data;
 end;
 
 function TIndexedIDSortedList.GetLast: Pointer;
@@ -1760,25 +1761,25 @@ begin
     Result := nil;
 end;
 
-function TIndexedIDSortedList.IndexOf(p: Pointer): Integer;
+function TIndexedIDSortedList.IndexOf(p: Pointer): integer;
 var
-  x: Integer;
+  X: integer;
 begin
   Result := -1;
-  for x := 0 to fCount - 1 do
+  for X := 0 to fCount - 1 do
   begin
-    if Items[x].Data = p then
+    if Items[X].Data = p then
     begin
-      Result := x;
-      Exit;
+      Result := X;
+      exit;
     end;
   end;
 end;
 
 procedure TIndexedIDSortedList.SetCapacity(
   const
-    Value:
-    Integer);
+  Value:
+  integer);
 begin
   if Value <> FCapacity then
   begin
@@ -1787,10 +1788,10 @@ begin
   end;
 end;
 
-procedure TSortedList<TKey, TValue>.setCount(const Value: Integer);
+procedure TSortedList<TKey, TValue>.setCount(const Value: integer);
 var
-  oldCount: Integer;
-  x: Integer;
+  oldCount: integer;
+  X: integer;
 begin
   if fCount <> Value then
   begin
@@ -1798,47 +1799,47 @@ begin
     fCount := Value;
 
     if fHasManagedType then
-      for x := fCount to oldCount - 1 do
-        Items[x] := default (TIDSortedListItem);
+      for X := fCount to oldCount - 1 do
+        Items[X] := default(TIDSortedListItem);
 
     if Capacity < Value then
       Capacity := Value;
   end;
 end;
 
-procedure TSortedList<TKey, TValue>.setItem(index: Integer;
+procedure TSortedList<TKey, TValue>.Setitem(Index: integer;
   const
-    Value:
-    TValue);
+  Value:
+  TValue);
 begin
-  if (index < fCount) and (index < Capacity) and (index >= 0) then
-    self.Items[index].Data := Value
+  if (Index < fCount) and (Index < Capacity) and (Index >= 0) then
+    self.Items[Index].Data := Value
   else
     raise EArgumentOutOfRangeException.CreateRes(@SArgumentOutOfRange);
 end;
 
-procedure TSortedList<TKey, TValue>.Sort;
+procedure TSortedList<TKey, TValue>.sort;
 var
   lComparer: IComparer<TIDSortedListItem>;
 begin
-  lComparer := TComparer<TIDSortedListItem>.Construct(function(const Item1, Item2: TIDSortedListItem): Integer
+  lComparer := TComparer<TIDSortedListItem>.Construct(function(const Item1, Item2: TIDSortedListItem): integer
     begin
       Result := fComparer.Compare(Item1.IID, Item2.IID);
     end);
 
-  TArray.Sort<TIDSortedListItem>(Items, lComparer, 0, fCount);
+  TArray.sort<TIDSortedListItem>(Items, lComparer, 0, fCount);
 end;
 
 { TIDSortedList2 }
 
-procedure TIDSortedList2.add(p1, p2: Pointer; id: Integer);
+procedure TIDSortedList2.add(p1, p2: Pointer; Id: integer);
 var
   d: TIDSortedListItem2;
 begin
   d.Data1 := p1;
   d.Data2 := p2;
 
-  inherited add(d, id);
+  inherited add(d, Id);
 end;
 
 function TIDSortedList2.GetFirst_Data1: Pointer;
@@ -1851,14 +1852,14 @@ begin
   Result := GetFirst.Data2;
 end;
 
-function TIDSortedList2.GetItem_Data1(index: Integer): Pointer;
+function TIDSortedList2.GetItem_Data1(Index: integer): Pointer;
 begin
-  Result := Items[index].Data.Data1;
+  Result := Items[Index].Data.Data1;
 end;
 
-function TIDSortedList2.GetItem_Data2(index: Integer): Pointer;
+function TIDSortedList2.GetItem_Data2(Index: integer): Pointer;
 begin
-  Result := Items[index].Data.Data2;
+  Result := Items[Index].Data.Data2;
 end;
 
 function TIDSortedList2.GetLast_Data1: Pointer;
@@ -1871,44 +1872,44 @@ begin
   Result := GetLast.Data2;
 end;
 
-function TIDSortedList2.IndexOf_data1(p: Pointer): Integer;
+function TIDSortedList2.IndexOf_data1(p: Pointer): integer;
 var
-  x: Integer;
+  X: integer;
 begin
-  for x := 0 to fCount - 1 do
-    if Items[x].Data.Data1 = p then
-      Exit(x);
+  for X := 0 to fCount - 1 do
+    if Items[X].Data.Data1 = p then
+      exit(X);
 
   Result := -1;
 
 end;
 
-function TIDSortedList2.IndexOf_data2(p: Pointer): Integer;
+function TIDSortedList2.IndexOf_data2(p: Pointer): integer;
 var
-  x: Integer;
+  X: integer;
 begin
-  for x := 0 to fCount - 1 do
-    if Items[x].Data.Data2 = p then
-      Exit(x);
+  for X := 0 to fCount - 1 do
+    if Items[X].Data.Data2 = p then
+      exit(X);
 
   Result := -1;
 end;
 
-procedure TIDSortedList2.SetItem_Data1(index: Integer;
-const
+procedure TIDSortedList2.SetItem_Data1(Index: integer;
+  const
   Value:
   Pointer);
 begin
-  Items[index].Data.Data1 := Value;
+  Items[Index].Data.Data1 := Value;
 end;
 
-procedure TIDSortedList2.SetItem_Data2(index: Integer;
-const
+procedure TIDSortedList2.SetItem_Data2(Index: integer;
+  const
   Value:
   Pointer);
 begin
 
-  Items[index].Data.Data2 := Value;
+  Items[Index].Data.Data2 := Value;
 end;
 
 { TThreadSaveObjectList }
@@ -1929,11 +1930,11 @@ end;
 
 procedure TThreadSaveObjectList.Clear;
 var
-  x: Integer;
+  X: integer;
 begin
   fSec.Enter;
-  for x := 0 to fList.Count - 1 do
-    fList[x].Free;
+  for X := 0 to fList.Count - 1 do
+    fList[X].Free;
   fList.Clear;
   fSec.Leave;
 end;
@@ -1954,7 +1955,7 @@ begin
   inherited;
 end;
 
-function TThreadSaveObjectList.GetCount: Integer;
+function TThreadSaveObjectList.GetCount: integer;
 begin
   fSec.Enter;
   Result := fList.Count;
@@ -2001,9 +2002,9 @@ begin
 end;
 
 procedure TSortedList<TKey, TValue>.SetGrowthFactor(
-const
+  const
   Value:
-  single);
+  Single);
 begin
   if Value > 1.0 then
     FGrowthFactor := Value;
@@ -2015,143 +2016,148 @@ begin
 end;
 
 class
-  function TSortedList<TKey, TValue>.GetMinRequiredmemorySizeForSaving: Integer;
-begin
-  Result := 4;
-end;
-
-function TSortedList<TKey, TValue>.FindMinMaxIndex(const aId: TKey; out aLowIndex, aHighIndex: Integer): boolean;
-var
-  i, C: Integer;
-  lLow, lHigh: Integer;
-begin
-  Result := False;
-  if DupIgnore then
+  function TSortedList<TKey, TValue>.GetMinRequiredmemorySizeForSaving: integer;
   begin
-    Result := Find(aId, aLowIndex);
-    aHighIndex := aLowIndex;
-  end else begin
-    // we need to make sure we catch the most "left" of the items with the same id...
-    lLow := 0;
-    lHigh := Count - 1;
-    aLowIndex := Count + 1; // will cause to exit of this method if we do not find anything
-    // while searching, it will change the low and high values...
-    while DoFind(aId, lLow, lHigh, i) do
-    begin
-      aLowIndex := i;
-      lHigh := i - 1; // let search again, this time from the current low bound to the new high bound
-      Result := true;
-    end;
+    Result := 4;
+  end;
 
-    // left index outside bounds? - this will be the case if find() did not find anything
-    if not Result then
+  function TSortedList<TKey, TValue>.FindMinMaxIndex(const aId: TKey; out aLowIndex, aHighIndex: integer): boolean;
+  var
+    i, c: integer;
+    lLow, lHigh: integer;
+  begin
+    Result := False;
+    if dupIgnore then
     begin
+      Result := find(aId, aLowIndex);
       aHighIndex := aLowIndex;
-      Exit(False);
-    end;
-
-    // search for the right index
-    lLow := aLowIndex + 1;
-    lHigh := Count - 1;
-    aHighIndex := aLowIndex;
-    while DoFind(aId, lLow, lHigh, i) do
+    end
+    else
     begin
-      aHighIndex := i;
-      lLow := i + 1; // let search again, this time from the current low bound to the new high bound
+      // we need to make sure we catch the most "left" of the items with the same id...
+      lLow := 0;
+      lHigh := Count - 1;
+      aLowIndex := Count + 1; // will cause to exit of this method if we do not find anything
+      // while searching, it will change the low and high values...
+      while DoFind(aId, lLow, lHigh, i) do
+      begin
+        aLowIndex := i;
+        lHigh := i - 1; // let search again, this time from the current low bound to the new high bound
+        Result := True;
+      end;
+
+      // left index outside bounds? - this will be the case if find() did not find anything
+      if not Result then
+      begin
+        aHighIndex := aLowIndex;
+        exit(False);
+      end;
+
+      // search for the right index
+      lLow := aLowIndex + 1;
+      lHigh := Count - 1;
+      aHighIndex := aLowIndex;
+      while DoFind(aId, lLow, lHigh, i) do
+      begin
+        aHighIndex := i;
+        lLow := i + 1; // let search again, this time from the current low bound to the new high bound
+      end;
     end;
   end;
-end;
 
-function TSortedList<TKey, TValue>.FindValuesBetween(const aLeftKey, aRightKey: TKey;
-out aLowIndex, aHighIndex: Integer): boolean;
-var
-  C: Integer;
-  lLow, lHigh: Integer;
-begin
-  Result := False;
-  if self.Count = 0 then
-    Exit(False);
-
-  if DupIgnore then
+  function TSortedList<TKey, TValue>.FindValuesBetween(const aLeftKey, aRightKey: TKey;
+    out aLowIndex, aHighIndex: integer): boolean;
+  var
+    c: integer;
+    lLow, lHigh: integer;
   begin
-    Find(aLeftKey, aLowIndex);
-    // note: find returns either the proper index or the index to insert the next item at
-    if aLowIndex >= Count then
-      Exit(False);
-    if not Find(aRightKey, aHighIndex) then
-      Dec(aHighIndex);
-    Result := aHighIndex >= aLowIndex;
-  end else begin
-    FindMinMaxIndex(aLeftKey, aLowIndex, lHigh);
-    // note: find returns either the proper index or the index to insert the next item at
-    if aLowIndex >= Count then
-      Exit(False);
-    if not FindMinMaxIndex(aRightKey, lLow, aHighIndex) then
-      Dec(aHighIndex);
-    Result := aHighIndex >= aLowIndex;
+    Result := False;
+    if self.Count = 0 then
+      exit(False);
+
+    if dupIgnore then
+    begin
+      find(aLeftKey, aLowIndex);
+      // note: find returns either the proper index or the index to insert the next item at
+      if aLowIndex >= Count then
+        exit(False);
+      if not find(aRightKey, aHighIndex) then
+        Dec(aHighIndex);
+      Result := aHighIndex >= aLowIndex;
+    end
+    else
+    begin
+      FindMinMaxIndex(aLeftKey, aLowIndex, lHigh);
+      // note: find returns either the proper index or the index to insert the next item at
+      if aLowIndex >= Count then
+        exit(False);
+      if not FindMinMaxIndex(aRightKey, lLow, aHighIndex) then
+        Dec(aHighIndex);
+      Result := aHighIndex >= aLowIndex;
+    end;
   end;
-end;
 
-class
-  procedure TSortedList<TKey, TValue>.SaveEmptyListToMemory(var pb: pByte);
-begin
-  pInteger(pb)^ := 0;
-  Inc(pb, 4);
-end;
+  class
+    procedure TSortedList<TKey, TValue>.SaveEmptyListToMemory(var pb: pByte);
+    begin
+      pInteger(pb)^ := 0;
+      Inc(pb, 4);
+    end;
 
-{ TListAsRecord<T> }
+    { TListAsRecord<T> }
 
-procedure TListAsRecord<T>.add(const Value: T);
-begin
-  if fCount <= Capacity then
-    Capacity := (fCount + 1) * 2;
+    procedure TListAsRecord<t>.add(const Value: t);
+    begin
+      if fCount <= Capacity then
+        Capacity := (fCount + 1) * 2;
 
-  Items[fCount] := Value;
-  Inc(fCount);
-end;
+      Items[fCount] := Value;
+      Inc(fCount);
+    end;
 
-procedure TListAsRecord<T>.Clear;
-begin
-  fCount := 0;
-end;
+    procedure TListAsRecord<t>.Clear;
+    begin
+      fCount := 0;
+    end;
 
-class
-  function TListAsRecord<T>.Create: TListAsRecord<T>;
-begin
-  Result := default (TListAsRecord<T>);
-end;
+    class
+      function TListAsRecord<t>.Create: TListAsRecord<t>;
+      begin
+        Result := default(TListAsRecord<t>);
+      end;
 
-function TListAsRecord<T>.getCapacity: Integer;
-begin
-  Result := Length(Items);
-end;
+      function TListAsRecord<t>.getCapacity: integer;
+      begin
+        Result := length(Items);
+      end;
 
-function TListAsRecord<T>.getItem(index: Integer): T;
-begin
-  Result := Items[index];
-end;
+      function TListAsRecord<t>.GetItem(Index: integer): t;
+      begin
+        Result := Items[Index];
+      end;
 
-procedure TListAsRecord<T>.SetCapacity(const Value: Integer);
-begin
-  if Value <> Capacity then
-  begin
-    SetLength(Items, Value);
+      procedure TListAsRecord<t>.SetCapacity(const Value: integer);
+      begin
+        if Value <> Capacity then
+        begin
+          SetLength(Items, Value);
 
-    if Capacity < fCount then
-      fCount := Capacity;
-  end;
-end;
+          if Capacity < fCount then
+            fCount := Capacity;
+        end;
+      end;
 
-procedure TListAsRecord<T>.setCount(const Value: Integer);
-begin
-  fCount := Value;
-  if Capacity < fCount then
-    Capacity := fCount * 2;
-end;
+      procedure TListAsRecord<t>.setCount(const Value: integer);
+      begin
+        fCount := Value;
+        if Capacity < fCount then
+          Capacity := fCount * 2;
+      end;
 
-procedure TListAsRecord<T>.setItem(index: Integer; const Value: T);
-begin
-  Items[index] := Value;
-end;
+      procedure TListAsRecord<t>.Setitem(Index: integer; const Value: t);
+      begin
+        Items[Index] := Value;
+      end;
 
-end.
+    end.
+

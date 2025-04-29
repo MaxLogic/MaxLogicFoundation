@@ -4,7 +4,7 @@ Unit MaxLogic.Logger;
 {
   Version: 1.2
   History
-  2024-07-28: Delphina: Added CloneWithTag for creating logger instances with different tags sharing the core writer.
+  2024-07-28: Added CloneWithTag for creating logger instances with different tags sharing the core writer.
                       Fixed bug in CheckDeleteOldLogFiles task.
                       Applied coding style and naming conventions.
                       Removed unused fCs field.
