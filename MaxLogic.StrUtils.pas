@@ -274,15 +274,16 @@ function MatchesMaskCaseSensitive_RegEx(const aText, aPattern: string): Boolean;
 var
   lRegexPattern: string;
 begin
-  // 1. Escape special RegEx characters in the original pattern
-  // Ensures characters like '.', '+', '\' are treated literally.
+  // 1. Escape special RegEx characters in the original pattern FIRST.
+  // This ensures characters like '.', '+', '\', '(', ')' etc., are treated literally.
+  // It also escapes our wildcards '*' and '?' into '\*' and '\?'.
   lRegexPattern := TRegEx.Escape(aPattern);
 
-  // 2. Replace wildcard characters with their RegEx equivalents
-  // IMPORTANT: Replace '*' first to avoid accidentally replacing the '.' within '.*'
-  // if '?' is replaced first.
-  lRegexPattern := lRegexPattern.Replace('*', '.*'); // '*' -> '.*' (zero or more any char)
-  lRegexPattern := lRegexPattern.Replace('?', '.');  // '?' -> '.' (any single char)
+  // 2. Replace the ESCAPED wildcard characters with their RegEx equivalents.
+  // IMPORTANT: Replace '\*' first to avoid issues if '\?' was replaced first
+  // and the pattern contained something like '\?*'.
+  lRegexPattern := lRegexPattern.Replace('\*', '.*'); // Replace escaped '*' with '.*'
+  lRegexPattern := lRegexPattern.Replace('\?', '.');  // Replace escaped '?' with '.'
 
   // 3. Anchor the pattern to match the whole string from start (^) to end ($)
   lRegexPattern := '^' + lRegexPattern + '$';
