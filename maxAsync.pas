@@ -65,7 +65,7 @@ interface
 
 uses
   {$IFDEF MsWindows}
-  Windows, Messages,
+  winApi.Windows, Winapi.Messages,
   {$IFNDEF CONSOLE}
   Forms, Dialogs, System.UITypes,
   {$ENDIF}
@@ -610,9 +610,9 @@ uses
   {$IFDEF madExcept}madExcept, {$ENDIF}
   {$IFDEF DEBUG_MAXASYNC}ClipBrd, {$ENDIF}
   {$IFDEF MsWindows}
-  mmSystem, ActiveX,
+  Winapi.mmSystem, Winapi.ActiveX,
   {$ENDIF}
-  Math, diagnostics;
+  system.Math, system.diagnostics;
 
 {$IFDEF MsWindows}{$IFNDEF CONSOLE}
 
@@ -1558,7 +1558,7 @@ end;
 
 class function TWaiter.WaitFor(const aEvents: TArray<TEvent>; Milliseconds: dword; DoProcessMessages: boolean): boolean;
 const
-  MAXCOUNT = Windows.MAXIMUM_WAIT_OBJECTS - 1;
+  MAXCOUNT = Winapi.Windows.MAXIMUM_WAIT_OBJECTS - 1;
 
   procedure Delete(var a: TArray<THandle>; Index, Count: integer);
   var
