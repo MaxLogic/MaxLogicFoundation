@@ -1,14 +1,18 @@
-Unit maxAsync;
+unit maxAsync;
 
 { .$DEFINE DEBUG_MAXASYNC }
 
-{ .$DEFINE ASYNC_LOOP_USES_SINGLETHREAD }// for debuging
+{ .$DEFINE ASYNC_LOOP_USES_SINGLETHREAD } // for debuging
+
+{$IFDEF MsWindows}
+{$WARN SYMBOL_PLATFORM OFF}
+{$ENDIF}
 
 { SOME OTHER USEFUL CONDITIONALS:
   NeverUninstall;NeverSleepOnMMThreadContention;UseSwitchToThread;UseReleaseStack   v }
 
 // forward unhandled exceptions to main thread?
-{$IFDEF MSWINDOWS} {$IFNDEF CONSOLE}
+{$IFDEF MsWindows}{$IFNDEF CONSOLE}
 {$DEFINE FORWARD_EXCEPTIONS_TO_MAIN_THREAD}
 {$ENDIF}{$ENDIF}
 
@@ -57,13 +61,13 @@ Unit maxAsync;
   - iAsync.Restart changed to iAsync.WakeUp, this one do no longer wait for the previos call to be finished, it just sets the signal to re awake the procedure
   2013-04-25:
   * fix in the function TmaxPool.WaitFor(var events: array of THandle; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): boolean; method, it was possible to reduce teh TimeOut below 0 }
-Interface
+interface
 
-Uses
-  {$IFDEF MSWINDOWS}
+uses
+  {$IFDEF MsWindows}
   Windows, Messages,
   {$IFNDEF CONSOLE}
-  Forms, dialogs, System.UITypes,
+  Forms, Dialogs, System.UITypes,
   {$ENDIF}
   {$ENDIF}
   {$IFDEF LINUX}
@@ -71,15 +75,15 @@ Uses
   posix.pthread,
   {$ENDIF}
   Classes, SysUtils, SyncObjs,
-  generics.defaults, generics.Collections,
+  generics.defaults, generics.collections,
   maxSignal;
 
-Type
+type
   {$IFNDEF MSWINDOWS}
   dword = Cardinal;
   {$ENDIF}
   // forward declaration
-  TmaxThread = Class;
+  TmaxThread = class;
 
   TSignal = maxSignal.TSignal;
   iSignal = maxSignal.iSignal;
@@ -101,76 +105,76 @@ Type
     tInterfacedCriticalSection = class;
     * *)
 
-  iAsync = Interface
+  iAsync = interface
     ['{41564891-4A25-464E-B756-B6EFD50063E4}']
-    Procedure WaitFor;
+    procedure WaitFor;
     {$IFDEF MsWindows}
-    Procedure MsgWaitFor;
+    procedure MsgWaitFor;
     {$ENDIF}
-    Function Finished: boolean;
+    function Finished: boolean;
     // After execution, the thread is still available, so you do not need to re-create it. The easiest way is just to WakeUp it. You can run it either with a new procedure to be called or with the same as before
-    Procedure WakeUp(aProc: TThreadProcedure; Const TaskName: String); Overload;
-    Procedure WakeUp; Overload;
+    procedure WakeUp(aProc: TThreadProcedure; const TaskName: string); overload;
+    procedure WakeUp; overload;
 
-    {$IFDEF MSWINDOWS}
-    Function GetThreadPriority: TThreadPriority;
-    Procedure SetThreadPriority(Const Value: TThreadPriority);
-    Property Priority: TThreadPriority Read GetThreadPriority Write SetThreadPriority;
+    {$IFDEF MsWindows}
+    function GetThreadPriority: TThreadPriority;
+    procedure SetThreadPriority(const Value: TThreadPriority);
+    property Priority: TThreadPriority read GetThreadPriority write SetThreadPriority;
     {$ENDIF}
-  End;
+  end;
 
-  iThreadData = Interface
+  iThreadData = interface
     ['{CC30782E-30D8-48E4-B3C6-33383C37C3BA}']
-    Function GetFinished: boolean;
-    Function GetFullThreadId: String;
-    Procedure SetThreadId(const aId: TThreadId);
-    Function GetWaiting: boolean;
-    Procedure SetFinished(Const Value: boolean);
-    Procedure SetWaiting(Const Value: boolean);
-    Procedure SetTerminated(Const Value: boolean);
-    Function GetTerminated: boolean;
-    Function GetReadySignal: iSignal;
-    Procedure SetThread(Const Value: TmaxThread);
-    Function GetThread: TmaxThread;
+    function GetFinished: boolean;
+    function GetFullThreadId: string;
+    procedure SetThreadId(const aId: TThreadId);
+    function GetWaiting: boolean;
+    procedure SetFinished(const Value: boolean);
+    procedure SetWaiting(const Value: boolean);
+    procedure SetTerminated(const Value: boolean);
+    function GetTerminated: boolean;
+    function GetReadySignal: iSignal;
+    procedure SetThread(const Value: TmaxThread);
+    function GetThread: TmaxThread;
 
-    Function GetWakeSignal: iSignal;
-    Function GetKeepAlive: boolean;
-    Function GetProc: TThreadProcedure;
-    Function GetTaskName: String;
-    Procedure SetKeepAlive(Const Value: boolean);
-    Procedure SetThreadToTerminated;
-    Procedure SetProc(Const Value: TThreadProcedure);
-    Procedure SetTaskName(Const Value: String);
-    Function GetStartSignal: iSignal;
+    function GetWakeSignal: iSignal;
+    function GetKeepAlive: boolean;
+    function GetProc: TThreadProcedure;
+    function GetTaskName: string;
+    procedure SetKeepAlive(const Value: boolean);
+    procedure SetThreadToTerminated;
+    procedure SetProc(const Value: TThreadProcedure);
+    procedure SetTaskName(const Value: string);
+    function GetStartSignal: iSignal;
 
-    Procedure SetDefaultValues;
+    procedure SetDefaultValues;
 
-    Property WakeUpSignal: iSignal Read GetWakeSignal;
-    Property Proc: TThreadProcedure Read GetProc Write SetProc;
-    Property KeepAlive: boolean Read GetKeepAlive Write SetKeepAlive;
-    Property TaskName: String Read GetTaskName Write SetTaskName;
+    property WakeUpSignal: iSignal read GetWakeSignal;
+    property Proc: TThreadProcedure read GetProc write SetProc;
+    property KeepAlive: boolean read GetKeepAlive write SetKeepAlive;
+    property TaskName: string read GetTaskName write SetTaskName;
 
-    Property StartSignal: iSignal Read GetStartSignal;
-    Property Finished: boolean Read GetFinished Write SetFinished;
-    Property Waiting: boolean Read GetWaiting Write SetWaiting;
-    Property Terminated: boolean Read GetTerminated Write SetTerminated;
-    Property ReadySignal: iSignal Read GetReadySignal;
+    property StartSignal: iSignal read GetStartSignal;
+    property Finished: boolean read GetFinished write SetFinished;
+    property Waiting: boolean read GetWaiting write SetWaiting;
+    property Terminated: boolean read GetTerminated write SetTerminated;
+    property ReadySignal: iSignal read GetReadySignal;
 
     // direct access
-    Property Thread: TmaxThread Read GetThread Write SetThread;
-  End;
+    property Thread: TmaxThread read GetThread write SetThread;
+  end;
 
-  TDummy = Record
-    Case byte Of
+  TDummy = record
+    case byte of
       0:
-        (byteArray: Array [0 .. 95] Of byte;);
+      (byteArray: array[0..95] of byte; );
       1:
-        (integerArray: Array [0 .. 23] Of integer;);
+      (integerArray: array[0..23] of integer; );
       2:
-        (int64Array: Array [0 .. 11] Of int64;);
+      (int64Array: array[0..11] of int64; );
       3:
-        (FloatArray: Array [0 .. 11] Of double;);
-  End;
+      (FloatArray: array[0..11] of double; );
+  end;
 
   { http://delphitools.info/2011/11/30/fixing-tcriticalsection/
     TFixedCriticalSection (along with TMonitor*) suffers from a severe design flaw in which entering/leaving different TFixedCriticalSection instances can end up serializing your threads, and the whole can even end up performing worse than if your threads had been serialized.
@@ -178,589 +182,591 @@ Type
     How severe can that be? Well, it depends on how many cores you have, but the more cores you have, the more severe it can get. On a quad core, a bad case of contention can easily result in a 200% slowdown on top of the serialization. And it won’t always be reproducible, since it’s related to dynamic memory allocation.
     There is thankfully a simple fix for that, use TFixedCriticalSection: }
 
-  TFixedCriticalSection = Class(TCriticalSection)
-  Public
+  TFixedCriticalSection = class(TCriticalSection)
+  public
     Dummy: TDummy
-    End;
+  end;
 
-    // prefered is still the TRTLCriticalSection, or better, the TFixedRtlCriticalSection
-    {$IFDEF MSWINDOWS}
-    TRTLCriticalSectionHelper = Record Helper
-    For TRTLCriticalSection
+  // prefered is still the TRTLCriticalSection, or better, the TFixedRtlCriticalSection
+  {$IFDEF MsWindows}
+  TRTLCriticalSectionHelper = record helper
+    for TRTLCriticalSection
       Public
-      Class
-    Function Create: TRTLCriticalSection;
-    Static;
-  Public
-    Procedure Enter; Inline;
-    Procedure Leave; Inline;
-    // just an alias
-    Procedure Exit; Inline;
-    Procedure free; Inline;
-  End;
-  {$ENDIF}
-  {$IFDEF MSWINDOWS}
-
-  TFixedRtlCriticalSection = Record
-  Public
-    // you can access it directly if needed
-    CriticalSection: TRTLCriticalSection;
-    // see TFixedCriticalSection for details
-    Dummy: TDummy;
-
-    Class Function Create: TFixedRtlCriticalSection; Static; Inline;
-
-    Procedure Enter; Inline;
-    Procedure Leave; Inline;
-    // just an alias
-    Procedure Exit; Inline;
-    Procedure free; Inline;
-  End;
-  {$ENDIF}
-
-  TObjectWithCriticalSection = Class
-  Protected
-    {$IFDEF MSWINDOWS}
-    fCriticalSection: TFixedRtlCriticalSection;
-    {$ELSE}
-    fCriticalSection: TFixedCriticalSection;
+      class
+      function Create: TRTLCriticalSection;
+        static;
+    public
+      procedure Enter; inline;
+      procedure Leave; inline;
+      // just an alias
+      procedure exit; inline;
+      procedure Free; inline;
+    end;
     {$ENDIF}
-  Public
-    Constructor Create;
-    Destructor Destroy; Override;
-
-    Procedure lock; Inline;
-    Procedure unLock; Inline;
-  End;
-
-  iCriticalSection = Interface
-    ['{C906B8AD-2DCE-4E8B-9047-1B49FDCA5A98}']
-    Procedure Enter;
-    Procedure Leave;
-  End;
-
-  tInterfacedCriticalSection = Class(tInterfacedObject, iCriticalSection)
-  Private
-    fSec: TFixedCriticalSection;
-  Public
-    Constructor Create;
-    Destructor Destroy; Override;
-
-    Procedure Enter;
-    Procedure Leave;
-  End;
-
-  TThreadData = Class(tInterfacedObject, iThreadData)
-  Private
-    fFinished: boolean;
-    fWaiting: boolean;
-    fThreadId: TThreadId;
-    {$IFDEF MSWINDOWS}
-    fThreadHandle: THandle;
-    {$ENDIF}
-    fThread: TmaxThread;
-    fReadySignal: iSignal;
-    FWakeSignal: iSignal;
-    fTaskName: String;
-    fKeepAlive: boolean;
-    FProc: TThreadProcedure;
-    FTerminated: boolean;
-    fStartSignal: iSignal;
-
-    Function GetThread: TmaxThread;
-    Function GetFullThreadId: String;
-    Procedure SetThreadId(const aId: TThreadId);
-    Procedure SetThread(Const Value: TmaxThread);
-    Function GetFinished: boolean;
-    Function GetWaiting: boolean;
-    Procedure SetFinished(Const Value: boolean);
-    Procedure SetWaiting(Const Value: boolean);
-    Function GetReadySignal: iSignal;
-    Function GetWakeSignal: iSignal;
-
-    Function GetKeepAlive: boolean;
-    Function GetProc: TThreadProcedure;
-    Function GetTaskName: String;
-    Procedure SetKeepAlive(Const Value: boolean);
-    Procedure SetThreadToTerminated;
-    Procedure SetProc(Const Value: TThreadProcedure);
-    Procedure SetTaskName(Const Value: String);
-
-    Procedure SetTerminated(Const Value: boolean);
-    Function GetTerminated: boolean;
-    Function GetStartSignal: iSignal;
-  Public
-    Constructor Create;
-    Destructor Destroy; Override;
-
-    Procedure SetDefaultValues;
-
-    Property Thread: TmaxThread Read GetThread Write SetThread;
-    Property StartSignal: iSignal Read GetStartSignal;
-    Property Finished: boolean Read GetFinished Write SetFinished;
-    Property Waiting: boolean Read GetWaiting Write SetWaiting;
-    Property Terminated: boolean Read GetTerminated Write SetTerminated;
-    Property ReadySignal: iSignal Read GetReadySignal;
-    Property WakeUpSignal: iSignal Read GetWakeSignal;
-
-    Property Proc: TThreadProcedure Read GetProc Write SetProc;
-    Property KeepAlive: boolean Read GetKeepAlive Write SetKeepAlive;
-    Property TaskName: String Read GetTaskName Write SetTaskName;
-  End;
-
-  iAsyncIntern = Interface
-    ['{6C221063-5386-4C57-A645-B6E63DB04F1C}']
-    Function GetThreadData: iThreadData;
-  End;
-
-  TmaxAsync = Class(tInterfacedObject, iAsync, iAsyncIntern)
-  Private
-    fThreadData: iThreadData;
-    Function GetThreadData: iThreadData;
-    {$IFDEF MSWINDOWS}
-    Function GetThreadPriority: TThreadPriority;
-    Procedure SetThreadPriority(Const Value: TThreadPriority);
-    {$ENDIF}
-  Public
-    Constructor Create;
-    Destructor Destroy; Override;
     {$IFDEF MsWindows}
-    Procedure MsgWaitFor;
+
+    TFixedRtlCriticalSection = record
+    public
+      // you can access it directly if needed
+      CriticalSection: TRTLCriticalSection;
+      // see TFixedCriticalSection for details
+      Dummy: TDummy;
+
+      class function Create: TFixedRtlCriticalSection; static; inline;
+
+      procedure Enter; inline;
+      procedure Leave; inline;
+      // just an alias
+      procedure exit; inline;
+      procedure Free; inline;
+    end;
     {$ENDIF}
-    Procedure WaitFor;
-    Function Finished: boolean;
-    Procedure WakeUp(aProc: TThreadProcedure; Const TaskName: String); Overload;
-    Procedure WakeUp; Overload;
-    {$IFDEF MSWINDOWS}
-    Property Priority: TThreadPriority Read GetThreadPriority Write SetThreadPriority;
-    {$ENDIF}
-  End;
 
-  TmaxThread = Class(TThread)
-  Private
-    fThreadData: iThreadData;
-    fName: String;
+    TObjectWithCriticalSection = class
+    protected
+      {$IFDEF MsWindows}
+      fCriticalSection: TFixedRtlCriticalSection;
+      {$ELSE}
+      fCriticalSection: TFixedCriticalSection;
+      {$ENDIF}
+    public
+      constructor Create;
+      destructor Destroy; override;
 
-    Procedure HandleException;
-    Class Procedure DoSync(aProc: TThreadProcedure; DoWait: boolean);
-  Protected
-    Procedure Execute; Override;
-  Public
-    Destructor Destroy; Override;
-  End;
+      procedure lock; inline;
+      procedure unLock; inline;
+    end;
 
-  TAsyncEnumProc = reference To Procedure(CurIndex: integer);
-  TAsyncEnumProcWithCancel = reference To Procedure(CurIndex: integer; Var aCancel: boolean);
+    iCriticalSection = interface
+      ['{C906B8AD-2DCE-4E8B-9047-1B49FDCA5A98}']
+      procedure Enter;
+      procedure Leave;
+    end;
 
-  // iterates through a loop. It is a one time shoot, create it, run it and free it afterwards
-  TAsyncLoop = Class
-  Private
-    fReadySignal: iSignal;
-    fMax: integer;
-    fCurIndex: integer;
-    FProc: TAsyncEnumProc;
-    FOnFinished: TThreadProcedure;
-    FSimultanousThreadCount: integer;
-    fActivThreadCount: integer;
-    fThreads: Array Of iAsync;
+    tInterfacedCriticalSection = class(TInterfacedObject, iCriticalSection)
+    private
+      fSec: TFixedCriticalSection;
+    public
+      constructor Create;
+      destructor Destroy; override;
 
-    Procedure SetOnFinished(Const Value: TThreadProcedure);
-    Procedure SetSimultanousThreadCount(Const Value: integer);
-    Procedure asyncLoopIteration;
-  Public
-    Constructor Create;
-    Destructor Destroy; Override;
+      procedure Enter;
+      procedure Leave;
+    end;
 
-    Procedure Execute(aMin, aMax: integer; aProc: TAsyncEnumProc);
-    Procedure WaitFor;
-    Procedure Cancel;
+    TThreadData = class(TInterfacedObject, iThreadData)
+    private
+      fFinished: boolean;
+      fWaiting: boolean;
+      fThreadId: TThreadId;
+      {$IFDEF MsWindows}
+      fThreadHandle: THandle;
+      {$ENDIF}
+      fThread: TmaxThread;
+      fReadySignal: iSignal;
+      FWakeSignal: iSignal;
+      fTaskName: string;
+      fKeepAlive: boolean;
+      FProc: TThreadProcedure;
+      FTerminated: boolean;
+      fStartSignal: iSignal;
 
-    // simplyfied call.  If ThreadCount is 0 (or less), then the default value will be used
-    Class Procedure RunAndWait(Const aMin, aMax: integer; aProc: TAsyncEnumProcWithCancel; ThreadCount: integer = 0);
-    Class Procedure Run(Const aMin, aMax: integer; aProc: TAsyncEnumProcWithCancel; OnDone: TProc; ThreadCount: integer = 0);
+      function GetThread: TmaxThread;
+      function GetFullThreadId: string;
+      procedure SetThreadId(const aId: TThreadId);
+      procedure SetThread(const Value: TmaxThread);
+      function GetFinished: boolean;
+      function GetWaiting: boolean;
+      procedure SetFinished(const Value: boolean);
+      procedure SetWaiting(const Value: boolean);
+      function GetReadySignal: iSignal;
+      function GetWakeSignal: iSignal;
 
-    // set before running the loop
-    // finished will be executed in the thread context of the last active thread, so be aware to perform a sync if needed
-    Property OnFinished: TThreadProcedure Read FOnFinished Write SetOnFinished;
-    // default is the number of CPU cores, *4 - 2 seting it after running the loop will have no effects
-    Property SimultanousThreadCount: integer Read FSimultanousThreadCount Write SetSimultanousThreadCount;
-  End;
+      function GetKeepAlive: boolean;
+      function GetProc: TThreadProcedure;
+      function GetTaskName: string;
+      procedure SetKeepAlive(const Value: boolean);
+      procedure SetThreadToTerminated;
+      procedure SetProc(const Value: TThreadProcedure);
+      procedure SetTaskName(const Value: string);
 
-  TAsyncCollectionProcessorProc<T> = reference To Procedure(Const item: T);
-  // this will work in paralel on the items in the collection
-TAsyncCollectionProcessor < T >= Class
-  Private Type
-  TThreadHolder = Record
-  Id: int64;
-async:
-iAsync;
-End;
-Private
-  fReadySignal: iSignal;
-  fItems: TQueue<T>;
-  FSimultanousThreadCount: integer;
-  FOnFinished: TThreadProcedure;
-  FProc: TAsyncCollectionProcessorProc<T>;
+      procedure SetTerminated(const Value: boolean);
+      function GetTerminated: boolean;
+      function GetStartSignal: iSignal;
+    public
+      constructor Create;
+      destructor Destroy; override;
 
-  fThreads: TList<TThreadHolder>;
-  fNextThreadId: int64;
-  {$IFDEF MSWINDOWS}
-  fCriticalSection: TFixedRtlCriticalSection;
-  {$ELSE}
-  fCriticalSection: TFixedCriticalSection;
+      procedure SetDefaultValues;
+
+      property Thread: TmaxThread read GetThread write SetThread;
+      property StartSignal: iSignal read GetStartSignal;
+      property Finished: boolean read GetFinished write SetFinished;
+      property Waiting: boolean read GetWaiting write SetWaiting;
+      property Terminated: boolean read GetTerminated write SetTerminated;
+      property ReadySignal: iSignal read GetReadySignal;
+      property WakeUpSignal: iSignal read GetWakeSignal;
+
+      property Proc: TThreadProcedure read GetProc write SetProc;
+      property KeepAlive: boolean read GetKeepAlive write SetKeepAlive;
+      property TaskName: string read GetTaskName write SetTaskName;
+    end;
+
+    iAsyncIntern = interface
+      ['{6C221063-5386-4C57-A645-B6E63DB04F1C}']
+      function GetThreadData: iThreadData;
+    end;
+
+    TmaxAsync = class(TInterfacedObject, iAsync, iAsyncIntern)
+    private
+      fThreadData: iThreadData;
+      function GetThreadData: iThreadData;
+      {$IFDEF MsWindows}
+      function GetThreadPriority: TThreadPriority;
+      procedure SetThreadPriority(const Value: TThreadPriority);
+      {$ENDIF}
+    public
+      constructor Create;
+      destructor Destroy; override;
+      {$IFDEF MsWindows}
+      procedure MsgWaitFor;
+      {$ENDIF}
+      procedure WaitFor;
+      function Finished: boolean;
+      procedure WakeUp(aProc: TThreadProcedure; const TaskName: string); overload;
+      procedure WakeUp; overload;
+      {$IFDEF MsWindows}
+      property Priority: TThreadPriority read GetThreadPriority write SetThreadPriority;
+      {$ENDIF}
+    end;
+
+    TmaxThread = class(TThread)
+    private
+      fThreadData: iThreadData;
+      fName: string;
+
+      procedure HandleException;
+      class procedure DoSync(aProc: TThreadProcedure; DoWait: boolean);
+    protected
+      procedure Execute; override;
+    public
+      destructor Destroy; override;
+    end;
+
+    TAsyncEnumProc = reference to procedure(CurIndex: integer);
+    TAsyncEnumProcWithCancel = reference to procedure(CurIndex: integer; var aCancel: boolean);
+
+    // iterates through a loop. It is a one time shoot, create it, run it and free it afterwards
+    TAsyncLoop = class
+    private
+      fReadySignal: iSignal;
+      fMax: integer;
+      fCurIndex: integer;
+      FProc: TAsyncEnumProc;
+      FOnFinished: TThreadProcedure;
+      FSimultanousThreadCount: integer;
+      fActivThreadCount: integer;
+      fThreads: array of iAsync;
+
+      procedure SetOnFinished(const Value: TThreadProcedure);
+      procedure SetSimultanousThreadCount(const Value: integer);
+      procedure asyncLoopIteration;
+    public
+      constructor Create;
+      destructor Destroy; override;
+
+      procedure Execute(aMin, aMax: integer; aProc: TAsyncEnumProc);
+      procedure WaitFor;
+      procedure Cancel;
+
+      // simplyfied call.  If ThreadCount is 0 (or less), then the default value will be used
+      class procedure RunAndWait(const aMin, aMax: integer; aProc: TAsyncEnumProcWithCancel; ThreadCount: integer = 0);
+      class procedure Run(const aMin, aMax: integer; aProc: TAsyncEnumProcWithCancel; OnDone: TProc; ThreadCount: integer = 0);
+
+      // set before running the loop
+      // finished will be executed in the thread context of the last active thread, so be aware to perform a sync if needed
+      property OnFinished: TThreadProcedure read FOnFinished write SetOnFinished;
+      // default is the number of CPU cores, *4 - 2 seting it after running the loop will have no effects
+      property SimultanousThreadCount: integer read FSimultanousThreadCount write SetSimultanousThreadCount;
+    end;
+
+    TAsyncCollectionProcessorProc<t> = reference to procedure(const Item: t);
+    // this will work in paralel on the items in the collection
+    TAsyncCollectionProcessor<t >= class
+    private type
+        TThreadHolder = record
+          Id: int64;
+          async:
+          iAsync;
+        end;
+    private
+      fReadySignal: iSignal;
+      fItems: TQueue<t>;
+      FSimultanousThreadCount: integer;
+      FOnFinished: TThreadProcedure;
+      FProc: TAsyncCollectionProcessorProc<t>;
+
+      fThreads: TList<TThreadHolder>;
+      fNextThreadId: int64;
+      {$IFDEF MsWindows}
+      fCriticalSection: TFixedRtlCriticalSection;
+      {$ELSE}
+      fCriticalSection: TFixedCriticalSection;
+      {$ENDIF}
+      procedure SetOnFinished(const Value: TThreadProcedure);
+      procedure SetProc(const Value: TAsyncCollectionProcessorProc<t>);
+      procedure SetSimultanousThreadCount(const Value: integer);
+      procedure RestartThreads;
+      function CreateThreadHolder: TThreadHolder;
+      procedure AsyncProcessItem(const ThreadId: int64);
+    public
+      constructor Create;
+      destructor Destroy;
+        override;
+
+      procedure add(const Item: t);
+        overload;
+      procedure add(const Items: TArray<t>);
+        overload;
+      procedure add(const Items: TList<t>);
+        overload;
+      procedure ClearItems;
+
+      procedure WaitFor;
+
+      // set before running the loop
+      property Proc: TAsyncCollectionProcessorProc<t>read FProc write SetProc;
+      // finished will be executed in the thread context of the last active thread, so be aware to perform a sync if needed
+      // NOTE: this callback is called after the last item is processed. So if you do not stop the processor, and add more items later, this event may be triggered multiple times
+      property OnFinished: TThreadProcedure read FOnFinished write SetOnFinished;
+      // default is the number of CPU cores, *4 - 2 . if the system is already running, you can only increase the number of threads used, a decrease will be applied only after a restart.
+      property SimultanousThreadCount: integer read FSimultanousThreadCount write SetSimultanousThreadCount;
+    end;
+
+    TFindInSortedList<t >= class
+    private
+      fList: TList<t>;
+      fComparer:
+      iComparer<t>;
+    public
+      constructor Create(aList: TList<t>; aComparer: iComparer<t>);
+      function find(const Value: t; out Index: integer): boolean;
+    end;
+
+    TSafeValue<t: record > = record
+    private
+      fValue: t;
+      fSec: iCriticalSection;
+
+      function getValue: t;
+      procedure Setvalue(const aValue: t);
+      procedure EnsureInit;
+        inline;
+    public
+      property Value: t read getValue write Setvalue;
+      class
+        function new: TSafeValue<t>;
+          static;
+      end;
+
+    iUserData<t >= interface
+      ['{77527854-F405-4CBD-8FAA-B2ED87C6E2E1}']
+procedure Setvalue(const aValue: t);
+function getValue: t;
+property Value: t read getValue write Setvalue;
+    end;
+
+    // a very small lock artifact, use carefuly
+    TLockFreeLock = record
+    private
+      fLocked: integer;
+    public
+      procedure lock;
+        inline;
+      procedure unLock;
+        inline;
+    end;
+
+    TUserData<t >= class(TInterfacedObject, iUserData<t>)
+    private
+      fValue: t;
+      fLock: TLockFreeLock;
+      procedure Setvalue(const aValue: t);
+      function getValue: t;
+    public
+      constructor Create(const aValue: t);
+      property Value: t read getValue write Setvalue;
+    end;
+
+    TmaxAsyncGlobal = class
+    strict private
+      class var FNumberOfProcessors: dword;
+      class var fWaitingThreadDataList: TList<iThreadData>;
+      class var fAllThreads: TList<TThreadData>;
+        {$IFDEF MsWindows}
+      class var fCS: TRTLCriticalSection;
+        {$ELSE}
+      class var fCS: TCriticalSection;
+        {$ENDIF}
+      class var fGlobalThreadListDestroyed: boolean;
+    private
+      class constructor CreateClass;
+      class destructor Destroyclass;
+      class procedure ReleaseThreadData(const aThreadData: iThreadData);
+      class function GetThreadData: iThreadData;
+      class procedure AddToWaiting(ThreadData: iThreadData);
+
+      class procedure addToAllThreadList(aData: TThreadData);
+      class procedure removeFromAllThreadList(aData: TThreadData);
+    public
+      class property NumberOfProcessors: dword read FNumberOfProcessors;
+      class function GetThreadName(const aThreadId: TThreadId): string;
+    end;
+
+    {$IFDEF MsWindows}{$IFNDEF CONSOLE}
+    // helps to wait for multiple signas or multiple async Items
+    TWaiter = class
+    public
+      // returns false if the timeout is expired, otherwise true
+      // ProcessMessages will be set to false if we are not in the main VCL Thread
+      class function WaitFor(const async: TArray<iAsync>; Milliseconds: dword = infinite; DoProcessMessages: boolean = False): boolean; overload;
+      class function WaitFor(const Signals: TArray<iSignal>; Milliseconds: dword = infinite; DoProcessMessages: boolean = False): boolean; overload;
+      class function WaitFor(const aEvents: TArray<TEvent>; Milliseconds: dword = infinite; DoProcessMessages: boolean = False): boolean; overload;
+    end;
+    {$ENDIF}{$ENDIF}
+
+    IReaderWriterLock = interface
+      ['{044BC96C-BBD4-4B75-9487-048257D27679}']
+      procedure BeginRead;
+      procedure EndRead;
+      procedure BeginWrite;
+      procedure EndWrite;
+    end;
+
+    TAtomic = record
+      /// <summary>
+      /// Assures {$A8} or {$A+} state
+      /// </summary>
+      /// <seealso href="https://stackoverflow.com/questions/829235/ifopt-a4">
+      /// {$IFOPT A4}?
+      /// </seealso>
+      class constructor Create;
+    end;
+
+    TAsyncTimer = class
+    private
+      fAsync: iAsync;
+      fSignal: iSignal;
+      FProc: TProc;
+      FEnabled: boolean;
+      FInterval: integer;
+      FTerminated: boolean;
+      procedure asyncLoop;
+      procedure SetEnabled(const Value: boolean);
+      procedure SetInterval(const Value: integer);
+    public
+      constructor Create(aProc: TProc; aInterval: integer; aEnabled: boolean = True);
+      destructor Destroy;
+        override;
+      property Enabled: boolean read FEnabled write SetEnabled;
+      property Interval: integer read FInterval write SetInterval;
+    end;
+
+function SimpleAsyncCall(aProc: TThreadProcedure;
+  const TaskName: string = '';
+  SyncedAfterDone: TThreadProcedure = nil
+  {$IFDEF MsWindows}
+  ; aThreadPriority: TThreadPriority = tpNormal
   {$ENDIF}
-  Procedure SetOnFinished(Const Value: TThreadProcedure);
-  Procedure SetProc(Const Value: TAsyncCollectionProcessorProc<T>);
-  Procedure SetSimultanousThreadCount(Const Value: integer);
-  Procedure RestartThreads;
-  Function CreateThreadHolder: TThreadHolder;
-  Procedure AsyncProcessItem(const ThreadId: int64);
-Public
-  Constructor Create;
-  Destructor Destroy;
-  Override;
+  ): iAsync;
 
-  Procedure Add(Const item: T);
-  Overload;
-  Procedure Add(Const Items: TArray<T>);
-  Overload;
-  Procedure Add(Const Items: TList<T>);
-  Overload;
-  Procedure ClearItems;
+{ WARNING:
+  The sync code can only be executed when the main thread reaches a "safe" state, which, in a typical VCL application, is the message loop.
+  Now imagine, the main thread is waiting... in that case it will never  execute the sync code.
+  The main thread will wait for the thread to finish and the thread will wait for the main thread to sync. }
+procedure syncVclCall(aProc: TThreadProcedure; DoWait: boolean = False);
 
-  Procedure WaitFor;
-
-  // set before running the loop
-  Property Proc: TAsyncCollectionProcessorProc<T> Read FProc Write SetProc;
-  // finished will be executed in the thread context of the last active thread, so be aware to perform a sync if needed
-  // NOTE: this callback is called after the last item is processed. So if you do not stop the processor, and add more items later, this event may be triggered multiple times
-  Property OnFinished: TThreadProcedure Read FOnFinished Write SetOnFinished;
-  // default is the number of CPU cores, *4 - 2 . if the system is already running, you can only increase the number of threads used, a decrease will be applied only after a restart.
-  Property SimultanousThreadCount: integer Read FSimultanousThreadCount Write SetSimultanousThreadCount;
-  End;
-
-  TFindInSortedList < T >= Class
-    Private
-    fList: TList<T>;
-  fComparer:
-    iComparer<T>;
-Public
-  Constructor Create(aList: TList<T>; aComparer: iComparer<T>);
-  Function Find(Const Value: T; Out Index: integer): boolean;
-  End;
-
-  TSafeValue<T: Record > = Record
-    Private
-    fValue: T;
-  fSec: iCriticalSection;
-
-  Function GetValue: T;
-  Procedure Setvalue(Const aValue: T);
-  Procedure EnsureInit;
-  Inline;
-Public
-  Property Value: T Read GetValue Write Setvalue;
-  Class
-  Function New: TSafeValue<T>;
-  Static;
-  End;
-
-  iUserData < T >= Interface
-    ['{77527854-F405-4CBD-8FAA-B2ED87C6E2E1}']
-  Procedure Setvalue(Const aValue: T);
-  Function GetValue: T;
-  Property Value: T Read GetValue Write Setvalue;
-  End;
-
-  // a very small lock artifact, use carefuly
-  TLockFreeLock = Record
-    Private
-    fLocked: integer;
-Public
-  Procedure lock;
-  Inline;
-  Procedure unLock;
-  Inline;
-  End;
-
-  TUserData < T >= Class(tInterfacedObject, iUserData<T>)
-    Private
-    fValue: T;
-  fLock: TLockFreeLock;
-  Procedure Setvalue(Const aValue: T);
-  Function GetValue: T;
-Public
-  Constructor Create(Const aValue: T);
-  Property Value: T Read GetValue Write Setvalue;
-  End;
-
-  TmaxAsyncGlobal = Class
-  Strict private
-    class var FNumberOfProcessors: dword;
-    class var fWaitingThreadDataList: TList<iThreadData>;
-    class var fAllThreads: TList<TThreadData>;
-    {$IFDEF MSWINDOWS}
-    class var fCS: TRTLCriticalSection;
-    {$ELSE}
-    class var fCS: TCriticalSection;
-    {$ENDIF}
-    class var fGlobalThreadListDestroyed: boolean;
-  Private
-    Class Constructor CreateClass;
-    Class Destructor Destroyclass;
-    Class Procedure ReleaseThreadData(Const aThreadData: iThreadData);
-    Class Function GetThreadData: iThreadData;
-    Class Procedure AddToWaiting(ThreadData: iThreadData);
-
-    Class Procedure addToAllThreadList(aData: TThreadData);
-    Class Procedure removeFromAllThreadList(aData: TThreadData);
-  Public
-    Class Property NumberOfProcessors: dword Read FNumberOfProcessors;
-    Class Function GetThreadName(const aThreadId: TThreadId): String;
-  End;
-
-  {$IFDEF MSWINDOWS} {$IFNDEF CONSOLE}
-  // helps to wait for multiple signas or multiple async Items
-  TWaiter = Class
-  Public
-    // returns false if the timeout is expired, otherwise true
-    // ProcessMessages will be set to false if we are not in the main VCL Thread
-    Class Function WaitFor(Const async: TArray<iAsync>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): Boolean; Overload;
-    Class Function WaitFor(Const Signals: TArray<iSignal>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): Boolean; Overload;
-    Class Function WaitFor(Const aEvents: TArray<TEvent>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): Boolean; Overload;
-  End;
-  {$ENDIF}{$ENDIF}
-
-  IReaderWriterLock = Interface
-    ['{044BC96C-BBD4-4B75-9487-048257D27679}']
-  Procedure BeginRead;
-  Procedure EndRead;
-  Procedure BeginWrite;
-  Procedure EndWrite;
-  End;
-
-  TAtomic = Record
-  /// <summary>
-  /// Assures {$A8} or {$A+} state
-  /// </summary>
-  /// <seealso href="https://stackoverflow.com/questions/829235/ifopt-a4">
-  /// {$IFOPT A4}?
-  /// </seealso>
-    Class Constructor Create;
-  End;
-
-  TAsyncTimer = Class
-    Private
-    fAsync: iAsync;
-  fSignal: iSignal;
-  FProc: TProc;
-  FEnabled: boolean;
-  FInterval: integer;
-  FTerminated: boolean;
-  Procedure asyncLoop;
-  Procedure SetEnabled(Const Value: boolean);
-  Procedure SetInterval(Const Value: integer);
-Public
-  Constructor Create(aProc: TProc; aInterval: integer; aEnabled: boolean = True);
-  Destructor Destroy;
-  Override;
-  Property Enabled: boolean Read FEnabled Write SetEnabled;
-  Property Interval: integer Read FInterval Write SetInterval;
-  End;
-
-  Function SimpleAsyncCall(aProc: TThreadProcedure;
-    Const TaskName: String = '';
-    SyncedAfterDone: TThreadProcedure = Nil
-    {$IFDEF MSWINDOWS}
-    ; aThreadPriority: TThreadPriority = tpNormal
-    {$ENDIF}
-    ): iAsync;
-
-  { WARNING:
-    The sync code can only be executed when the main thread reaches a "safe" state, which, in a typical VCL application, is the message loop.
-    Now imagine, the main thread is waiting... in that case it will never  execute the sync code.
-    The main thread will wait for the thread to finish and the thread will wait for the main thread to sync. }
-  Procedure SyncVCLCall(aProc: TThreadProcedure; DoWait: boolean = false);
-
-  // this function will tell us if we are in the main thread or not
-  Function InsideMainThread: boolean;
+// this function will tell us if we are in the main thread or not
+function InsideMainThread: boolean;
   inline;
 
-  {$IFDEF MSWINDOWS}
-  Procedure MsgWaitForSingleObject(Handle: THandle; TimeOut: dword = infinite);
+{$IFDEF MsWindows}
+procedure MsgWaitForSingleObject(Handle: THandle; TimeOut: dword = infinite);
   inline;
-  {$ENDIF}
+{$ENDIF}
 
-  {$IFDEF MSWINDOWS} {$IFNDEF CONSOLE}
-  Function MessageDlg(Const Msg: String; DlgType: TMsgDlgType;
-    Buttons: TMsgDlgButtons; HelpCtx: Longint): integer;
-  Function MessageDlgThreadSafe(Const Msg: String; DlgType: TMsgDlgType;
-    Buttons: TMsgDlgButtons; HelpCtx: Longint): integer;
-  {$ENDIF}{$ENDIF}
+{$IFDEF MsWindows}{$IFNDEF CONSOLE}
+function MessageDlg(const msg: string; DlgType: TMsgDlgType;
+  Buttons: TMsgDlgButtons; HelpCtx: Longint): integer;
+function MessageDlgThreadSafe(const msg: string; DlgType: TMsgDlgType;
+  Buttons: TMsgDlgButtons; HelpCtx: Longint): integer;
+{$ENDIF}{$ENDIF}
 
-  // how to kill a thread:
-  // TerminateThread(fThread.Handle, 1);
-Implementation
+// how to kill a thread:
+// TerminateThread(fThread.Handle, 1);
+implementation
 
-Uses
+uses
   {$IFDEF madExcept}madExcept, {$ENDIF}
   {$IFDEF DEBUG_MAXASYNC}ClipBrd, {$ENDIF}
-  {$IFDEF MSWINDOWS}
+  {$IFDEF MsWindows}
   mmSystem, ActiveX,
   {$ENDIF}
-  math, Diagnostics;
+  Math, diagnostics;
 
-{$IFDEF MSWINDOWS} {$IFNDEF CONSOLE}
-Function MessageDlg(Const Msg: String; DlgType: TMsgDlgType; Buttons: TMsgDlgButtons; HelpCtx: Longint): integer;
-Begin
-  result := MessageDlgThreadSafe(Msg, DlgType, Buttons, HelpCtx)
-End;
+{$IFDEF MsWindows}{$IFNDEF CONSOLE}
+
+function MessageDlg(const msg: string; DlgType: TMsgDlgType; Buttons: TMsgDlgButtons; HelpCtx: Longint): integer;
+begin
+  Result := MessageDlgThreadSafe(msg, DlgType, Buttons, HelpCtx)
+end;
 {$ENDIF}{$ENDIF}
 
-{$IFDEF MSWINDOWS} {$IFNDEF CONSOLE}
-Function MessageDlgThreadSafe(Const Msg: String; DlgType: TMsgDlgType; Buttons: TMsgDlgButtons; HelpCtx: Longint): integer;
-Var
+{$IFDEF MsWindows}{$IFNDEF CONSOLE}
+
+function MessageDlgThreadSafe(const msg: string; DlgType: TMsgDlgType; Buttons: TMsgDlgButtons; HelpCtx: Longint): integer;
+var
   lResult: integer;
-Begin
-  If InsideMainThread Then
-    result := dialogs.MessageDlg(Msg, DlgType, Buttons, HelpCtx)
-  Else
-  Begin
+begin
+  if InsideMainThread then
+    Result := Dialogs.MessageDlg(msg, DlgType, Buttons, HelpCtx)
+  else
+  begin
     lResult := 0;
-    SyncVCLCall(
-        Procedure
-      Begin
-        lResult := dialogs.MessageDlg(Msg, DlgType, Buttons, HelpCtx);
-      End, True);
-    result := lResult;
-  End;
-End;
+    syncVclCall(
+      procedure
+      begin
+        lResult := Dialogs.MessageDlg(msg, DlgType, Buttons, HelpCtx);
+      end, True);
+    Result := lResult;
+  end;
+end;
 {$ENDIF}{$ENDIF}
 
-
-Function SimpleAsyncCall(aProc: TThreadProcedure; Const TaskName: String = ''; SyncedAfterDone: TThreadProcedure = Nil
-{$IFDEF MSWINDOWS}
+function SimpleAsyncCall(aProc: TThreadProcedure; const TaskName: string = ''; SyncedAfterDone: TThreadProcedure = nil
+  {$IFDEF MsWindows}
   ; aThreadPriority: TThreadPriority = tpNormal
-{$ENDIF}
-): iAsync;
+  {$ENDIF}
+  ): iAsync;
 
-  Function merge: TThreadProcedure;
-  Begin
-    result := (
-      Procedure
-      Begin
-        Try
+  function merge: TThreadProcedure;
+  begin
+    Result := (
+      procedure
+      begin
+        try
           aProc();
-        Finally
-          SyncVCLCall(
-              Procedure
-            Begin
+        finally
+          syncVclCall(
+            procedure
+            begin
               SyncedAfterDone();
-            End, false);
-        End;
-      End);
-  End;
+            end, False);
+        end;
+      end);
+  end;
 
-Var
+var
   async: TmaxAsync;
-Begin
+begin
   async := TmaxAsync.Create;
-  {$IFDEF MSWINDOWS}
+  {$IFDEF MsWindows}
   async.Priority := aThreadPriority;
   {$ENDIF}
-  result := async;
-  If Not assigned(SyncedAfterDone) Then
+  Result := async;
+  if not assigned(SyncedAfterDone) then
     async.fThreadData.Proc := aProc
-  Else
+  else
     async.fThreadData.Proc := merge();
 
   async.fThreadData.TaskName := TaskName;
   async.fThreadData.StartSignal.SetSignaled;
-End;
+end;
 
-Destructor TmaxThread.Destroy;
-Begin
-  fThreadData.Waiting := false;
+destructor TmaxThread.Destroy;
+begin
+  fThreadData.Waiting := False;
   fThreadData.Terminated := True;
   fThreadData.Finished := True;
   fThreadData.ReadySignal.SetSignaled;
-  fThreadData := NIL;
-  Inherited;
-End;
+  fThreadData := nil;
+  inherited;
+end;
 
-Class Procedure TmaxThread.DoSync(aProc: TThreadProcedure; DoWait: boolean);
-Var
+class procedure TmaxThread.DoSync(aProc: TThreadProcedure; DoWait: boolean);
+var
   Signal: iSignal;
   MyProc: TThreadProcedure;
-Begin
-  If InsideMainThread Then
-  Begin
-    If DoWait Then
+begin
+  if InsideMainThread then
+  begin
+    if DoWait then
       aProc()
-    Else begin
+    else
+    begin
       {$IFDEF ForceQueueNotAvailable}
-      TThread.Queue(Nil, aProc);
+      TThread.Queue(nil, aProc);
       {$ELSE}
-      TThread.ForceQueue(Nil, aProc);
+      TThread.ForceQueue(nil, aProc);
       {$ENDIF}
     end;
 
-  End
-  Else If Not DoWait Then
+  end
+  else if not DoWait then
     {$IFDEF ForceQueueNotAvailable}
-    TThread.Queue(Nil, aProc)
-    {$ELSE}
-    TThread.ForceQueue(Nil, aProc)
-    {$ENDIF}
-  Else
-  Begin
+    TThread.Queue(nil, aProc)
+      {$ELSE}
+    TThread.ForceQueue(nil, aProc)
+      {$ENDIF}
+  else
+  begin
     Signal := TSignal.Create;
     Signal.SetNonSignaled;
 
-    MyProc := Procedure
-      Begin
-        Try
-          aProc();
-        Finally
-          // prevent a dead lock in case of a exception
-          Signal.SetSignaled;
-        End;
-      End;
+    MyProc := procedure
+    begin
+      try
+        aProc();
+      finally
+        // prevent a dead lock in case of a exception
+        Signal.SetSignaled;
+      end;
+    end;
 
     {$IFDEF ForceQueueNotAvailable}
-    TThread.Queue(Nil, MyProc);
+    TThread.Queue(nil, MyProc);
     {$ELSE}
-    TThread.ForceQueue(Nil, MyProc);
+    TThread.ForceQueue(nil, MyProc);
     {$ENDIF}
     Signal.WaitForSignaled;
-    Signal := NIL;
-  End;
-End;
+    Signal := nil;
+  end;
+end;
 
-Procedure TmaxThread.Execute;
-Var
+procedure TmaxThread.Execute;
+var
   CoInitialized: boolean;
-  sName: String;
-Begin
+  sName: string;
+begin
   fThreadData.StartSignal.WaitForSignaled;
 
-  {$IFDEF MSWINDOWS}
-  CoInitialized := (CoInitialize(Nil) In [S_OK, S_FALSE]);
+  {$IFDEF MsWindows}
+  CoInitialized := (CoInitialize(nil) in [S_OK, S_FALSE]);
   {$ENDIF}
   fThreadData.SetThreadId(
-  {$IFDEF MSWINDOWS}
-  GetCurrentThreadId
-  {$ELSE}
-  TThread.CurrentThread.ThreadId
-  {$ENDIF}
-  );
+    {$IFDEF MsWindows}
+    GetCurrentThreadId
+    {$ELSE}
+    TThread.CurrentThread.ThreadId
+    {$ENDIF}
+    );
   {$IFDEF DEBUG_MAXASYNC}
   OutputDebugString(pwidechar('maxAsync: starting Thread:' + fThreadData.GetFullThreadId));
   {$ENDIF}
-  Try
-    Repeat
-      Repeat
-        If Terminated Then
+  try
+    repeat
+      repeat
+        if Terminated then
           break;
 
         {$IFDEF DEBUG_MAXASYNC}
@@ -769,10 +775,10 @@ Begin
         fThreadData.ReadySignal.SetNonSignaled;
         fThreadData.WakeUpSignal.SetNonSignaled;
 
-        fThreadData.Waiting := false;
-        fThreadData.Finished := false;
+        fThreadData.Waiting := False;
+        fThreadData.Finished := False;
 
-        sName := ClassName + '.' + fThreadData.TaskName;
+        sName := classname + '.' + fThreadData.TaskName;
         fName := sName;
         {$IFDEF DEBUG_MAXASYNC}
         OutputDebugString(pwidechar('maxAsync: naming Thread:' + fThreadData.GetFullThreadId + ' >> ' + sName));
@@ -782,25 +788,25 @@ Begin
         {$IFDEF madExcept}
         madExcept.NameThread(GetCurrentThreadId, sName);
         {$ENDIF}
-        If fThreadData.Proc <> Nil Then
-        Begin
-          Try
+        if fThreadData.Proc <> nil then
+        begin
+          try
             fThreadData.Proc();
-          Except
+          except
             HandleException;
-          End;
-        End
-        Else
-        Begin
+          end;
+        end
+        else
+        begin
           {$IFDEF DEBUG_MAXASYNC}
           OutputDebugString(pwidechar('maxAsync: no proc to run for Thread:' + fThreadData.GetFullThreadId));
           {$ENDIF}
-        End;
+        end;
 
         fThreadData.Finished := True;
         fThreadData.ReadySignal.SetSignaled;
 
-        If (Not fThreadData.KeepAlive) Or Terminated Then
+        if (not fThreadData.KeepAlive) or Terminated then
           break;
 
         fThreadData.Waiting := True;
@@ -812,137 +818,133 @@ Begin
         {$IFDEF DEBUG_MAXASYNC}
         OutputDebugString(pwidechar('maxAsync: after wait for awake signal Thread:' + fThreadData.GetFullThreadId));
         {$ENDIF}
-      Until Terminated Or (Not fThreadData.KeepAlive);
+      until Terminated or (not fThreadData.KeepAlive);
 
-      If Not Terminated Then
-      Begin
+      if not Terminated then
+      begin
         fThreadData.StartSignal.SetNonSignaled;
         TmaxAsyncGlobal.AddToWaiting(fThreadData);
         fThreadData.StartSignal.WaitForSignaled;
-      End;
+      end;
 
-    Until Terminated;
+    until Terminated;
 
-  Finally
+  finally
     {$IFDEF DEBUG_MAXASYNC}
     OutputDebugString(pwidechar('maxAsync: exit Thread:' + fThreadData.GetFullThreadId));
     {$ENDIF}
-    fThreadData.Waiting := false;
+    fThreadData.Waiting := False;
     fThreadData.Finished := True;
     fThreadData.Terminated := True;
     fThreadData.ReadySignal.SetSignaled;
 
-    {$IFDEF MSWINDOWS}
-    If CoInitialized Then
+    {$IFDEF MsWindows}
+    if CoInitialized then
       CoUninitialize;
     {$ENDIF}
-  End;
-End;
+  end;
+end;
 
-Procedure TmaxThread.HandleException;
-Var
+procedure TmaxThread.HandleException;
+var
   aException: Exception;
-Begin
+begin
   aException := Exception(ExceptObject);
 
   // Don't show EAbort messages
-  If Not(aException Is EAbort) Then
+  if not (aException is EAbort) then
     {$IFDEF FORWARD_EXCEPTIONS_TO_MAIN_THREAD}
     synchronize(
-      Procedure
-      Begin
+      procedure
+      begin
         aException.Message := aException.Message + '; Thread.Name: ' + fName;
-        If aException Is Exception Then
-          Application.ShowException(aException)
-        Else
-          SysUtils.ShowException(aException, Nil);
-      End);
+        if aException is Exception then
+          application.ShowException(aException)
+        else
+          SysUtils.ShowException(aException, nil);
+      end);
   {$ENDIF}
 
-End;
+end;
 
-{$IFDEF MSWINDOWS}
+{$IFDEF MsWindows}
 
-
-Procedure MsgWaitForSingleObject(Handle: THandle; TimeOut: dword = infinite);
-Begin
+procedure MsgWaitForSingleObject(Handle: THandle; TimeOut: dword = infinite);
+begin
   maxSignal.MsgWaitForSingleObject(Handle, TimeOut);
-End; // MsgWaitForSingleObject
+end; // MsgWaitForSingleObject
 {$ENDIF}
 
-
-Function InsideMainThread: boolean;
-Begin
-  result := maxSignal.InsideMainThread;
-End;
+function InsideMainThread: boolean;
+begin
+  Result := maxSignal.InsideMainThread;
+end;
 
 { TSimpleAsync }
 
-Constructor TmaxAsync.Create;
-Begin
-  Inherited Create;
+constructor TmaxAsync.Create;
+begin
+  inherited Create;
   fThreadData := TmaxAsyncGlobal.GetThreadData;
-End;
+end;
 
-Destructor TmaxAsync.Destroy;
-Begin
-  fThreadData.KeepAlive := false;
+destructor TmaxAsync.Destroy;
+begin
+  fThreadData.KeepAlive := False;
   fThreadData.WakeUpSignal.SetSignaled;
 
-  fThreadData := NIL;
-  Inherited;
-End;
+  fThreadData := nil;
+  inherited;
+end;
 
-Function TmaxAsync.Finished: boolean;
-Begin
-  result := fThreadData.Finished;
-End;
+function TmaxAsync.Finished: boolean;
+begin
+  Result := fThreadData.Finished;
+end;
 
-{$IFDEF MSWindows}
+{$IFDEF MsWindows}
 
-
-Procedure TmaxAsync.SetThreadPriority(Const Value: TThreadPriority);
-Begin
+procedure TmaxAsync.SetThreadPriority(const Value: TThreadPriority);
+begin
   self.fThreadData.Thread.Priority := Value;
-End;
+end;
 {$ENDIF}
 
-
-Procedure TmaxAsync.WakeUp;
-Begin
-  If fThreadData.Terminated Then
+procedure TmaxAsync.WakeUp;
+begin
+  if fThreadData.Terminated then
     WakeUp(fThreadData.Proc, fThreadData.TaskName)
-  Else
-  Begin
-    fThreadData.Finished := false;
+  else
+  begin
+    fThreadData.Finished := False;
     fThreadData.ReadySignal.SetNonSignaled;
     fThreadData.WakeUpSignal.SetSignaled;
-  End;
-End;
+  end;
+end;
 
-Procedure TmaxAsync.WakeUp(aProc: TThreadProcedure; Const TaskName: String);
-Begin
+procedure TmaxAsync.WakeUp(aProc: TThreadProcedure; const TaskName: string);
+begin
   fThreadData.Proc := aProc;
   fThreadData.TaskName := TaskName;
-  fThreadData.Finished := false;
+  fThreadData.Finished := False;
 
   fThreadData.ReadySignal.SetNonSignaled;
   fThreadData.WakeUpSignal.SetSignaled;
-End;
+end;
 
-Procedure TmaxAsync.WaitFor;
-Begin
+procedure TmaxAsync.WaitFor;
+begin
   // if not fThreadData.Finished then
   // if fThreadData.Thread <> nil then
   fThreadData.ReadySignal.WaitForSignaled;
   // fThreadData.Thread.WaitFor;
-End;
+end;
 
 { TTHreadData }
 
-Constructor TThreadData.Create;
-Begin
-  Inherited Create;
+constructor TThreadData.Create;
+begin
+  inherited Create;
 
   TmaxAsyncGlobal.addToAllThreadList(self);
 
@@ -953,276 +955,276 @@ Begin
   SetDefaultValues;
 
   fThread := TmaxThread.Create(True);
-  {$IFDEF MSWINDOWS}
+  {$IFDEF MsWindows}
   fThreadHandle := fThread.Handle;
   {$ENDIF}
   fThreadId := 0;
   fThread.fThreadData := self;
   fThread.FreeOnterminate := True;
 
-  fThread.Start;
+  fThread.start;
 
-End;
+end;
 
-Destructor TThreadData.Destroy;
-Begin
+destructor TThreadData.Destroy;
+begin
   TmaxAsyncGlobal.removeFromAllThreadList(self);
 
-  fReadySignal := NIL;
-  FWakeSignal := NIL;
-  Inherited;
-End;
+  fReadySignal := nil;
+  FWakeSignal := nil;
+  inherited;
+end;
 
-Function TThreadData.GetFinished: boolean;
-Begin
-  result := fFinished;
-End;
+function TThreadData.GetFinished: boolean;
+begin
+  Result := fFinished;
+end;
 
-Function TThreadData.GetKeepAlive: boolean;
-Begin
-  result := fKeepAlive;
-End;
+function TThreadData.GetKeepAlive: boolean;
+begin
+  Result := fKeepAlive;
+end;
 
-Function TThreadData.GetProc: TThreadProcedure;
-Begin
-  result := FProc;
-End;
+function TThreadData.GetProc: TThreadProcedure;
+begin
+  Result := FProc;
+end;
 
-Function TThreadData.GetReadySignal: iSignal;
-Begin
-  result := fReadySignal;
-End;
+function TThreadData.GetReadySignal: iSignal;
+begin
+  Result := fReadySignal;
+end;
 
-Function TThreadData.GetTaskName: String;
-Begin
-  result := fTaskName;
-End;
+function TThreadData.GetTaskName: string;
+begin
+  Result := fTaskName;
+end;
 
-Function TThreadData.GetTerminated: boolean;
-Begin
-  result := FTerminated;
-End;
+function TThreadData.GetTerminated: boolean;
+begin
+  Result := FTerminated;
+end;
 
-Function TThreadData.GetThread: TmaxThread;
-Begin
-  result := fThread;
-End;
+function TThreadData.GetThread: TmaxThread;
+begin
+  Result := fThread;
+end;
 
-Function TThreadData.GetFullThreadId: String;
-Begin
-  result := 'ID: ' + IntToStr(fThreadId) + ' ($' + IntToHex(fThreadId, 1)
-  {$IFDEF MSWINDOWS}
+function TThreadData.GetFullThreadId: string;
+begin
+  Result := 'ID: ' + IntToStr(fThreadId) + ' ($' + IntTohex(fThreadId, 1)
+    {$IFDEF MsWindows}
   + ' Handle: ' +
     IntToStr(fThreadHandle) + ' ($' +
-    IntToHex(fThreadHandle, 1) + ')';
+    IntTohex(fThreadHandle, 1) + ')';
   {$ENDIF}
-End;
+end;
 
-Function TThreadData.GetWaiting: boolean;
-Begin
-  result := fWaiting;
-End;
+function TThreadData.GetWaiting: boolean;
+begin
+  Result := fWaiting;
+end;
 
-Function TThreadData.GetWakeSignal: iSignal;
-Begin
-  result := FWakeSignal;
-End;
+function TThreadData.GetWakeSignal: iSignal;
+begin
+  Result := FWakeSignal;
+end;
 
-Procedure TThreadData.SetFinished(Const Value: boolean);
-Begin
+procedure TThreadData.SetFinished(const Value: boolean);
+begin
   fFinished := Value;
-End;
+end;
 
-Procedure TThreadData.SetKeepAlive(Const Value: boolean);
-Begin
+procedure TThreadData.SetKeepAlive(const Value: boolean);
+begin
   fKeepAlive := Value;
-End;
+end;
 
-Procedure TThreadData.SetProc(Const Value: TThreadProcedure);
-Begin
+procedure TThreadData.SetProc(const Value: TThreadProcedure);
+begin
   FProc := Value;
-End;
+end;
 
-Procedure TThreadData.SetTaskName(Const Value: String);
-Begin
+procedure TThreadData.SetTaskName(const Value: string);
+begin
   fTaskName := Value;
-End;
+end;
 
-Procedure TThreadData.SetTerminated(Const Value: boolean);
-Begin
+procedure TThreadData.SetTerminated(const Value: boolean);
+begin
   FTerminated := Value;
-End;
+end;
 
-Procedure TThreadData.SetThread(Const Value: TmaxThread);
-Begin
+procedure TThreadData.SetThread(const Value: TmaxThread);
+begin
   fThread := Value
-End;
+end;
 
-Procedure TThreadData.SetThreadId(const aId: TThreadId);
-Begin
+procedure TThreadData.SetThreadId(const aId: TThreadId);
+begin
   fThreadId := aId;
-End;
+end;
 
-Procedure TThreadData.SetWaiting(Const Value: boolean);
-Begin
+procedure TThreadData.SetWaiting(const Value: boolean);
+begin
   fWaiting := Value;
-End;
+end;
 
-Procedure SyncVCLCall(aProc: TThreadProcedure; DoWait: boolean);
-Begin
-  If InsideMainThread Then
+procedure syncVclCall(aProc: TThreadProcedure; DoWait: boolean);
+begin
+  if InsideMainThread then
     aProc()
-  Else
+  else
     TmaxThread.DoSync(aProc, DoWait)
-End;
+end;
 
-Function TThreadData.GetStartSignal: iSignal;
-Begin
-  result := fStartSignal;
-End;
+function TThreadData.GetStartSignal: iSignal;
+begin
+  Result := fStartSignal;
+end;
 
-Procedure TThreadData.SetThreadToTerminated;
-Begin
+procedure TThreadData.SetThreadToTerminated;
+begin
   fThread.terminate;
-End;
+end;
 
-Procedure TThreadData.SetDefaultValues;
-Begin
+procedure TThreadData.SetDefaultValues;
+begin
   fTaskName := '';
   fKeepAlive := True;
-  fFinished := false;
-  fWaiting := false;
-  FProc := Nil;
+  fFinished := False;
+  fWaiting := False;
+  FProc := nil;
 
   fStartSignal.SetNonSignaled;
   fReadySignal.SetNonSignaled;
   FWakeSignal.SetNonSignaled;
 
-  {$IFDEF MSWINDOWS}
-  If assigned(fThread) Then
+  {$IFDEF MsWindows}
+  if assigned(fThread) then
     self.fThread.Priority := TThreadPriority.tpNormal;
   {$ENDIF}
-End;
+end;
 
 { TFindInSortedList<T> }
 
-Constructor TFindInSortedList<T>.Create(aList: TList<T>;
-aComparer:
-  iComparer<T>);
-Begin
-  Inherited Create;
+constructor TFindInSortedList<t>.Create(aList: TList<t>;
+  aComparer:
+  iComparer<t>);
+begin
+  inherited Create;
   fList := aList;
   fComparer := aComparer;
 
-End;
+end;
 
-Function TFindInSortedList<T>.Find(
-Const
+function TFindInSortedList<t>.find(
+  const
   Value:
-  T;
-Out index: integer): boolean;
+  t;
+  out Index: integer): boolean;
 
-Var
-  L, H, i, C: integer;
-Begin
-  result := false;
-  L := 0;
-  H := fList.count - 1;
-  While L <= H Do
-  Begin
-    i := (L + H) Shr 1;
-    C := fComparer.compare(fList[i], Value);
-    If C < 0 Then
-      L := i + 1
-    Else
-    Begin
+var
+  l, H, i, c: integer;
+begin
+  Result := False;
+  l := 0;
+  H := fList.Count - 1;
+  while l <= H do
+  begin
+    i := (l + H) shr 1;
+    c := fComparer.compare(fList[i], Value);
+    if c < 0 then
+      l := i + 1
+    else
+    begin
       H := i - 1;
 
-      If C = 0 Then
-      Begin
-        result := True;
+      if c = 0 then
+      begin
+        Result := True;
         Index := i;
-        Exit;
-      End;
-    End;
-  End;
-  Index := L;
-End;
+        exit;
+      end;
+    end;
+  end;
+  Index := l;
+end;
 
 { TSafeValue<T> }
 
-Procedure TSafeValue<T>.EnsureInit;
-Begin
-  If fSec = Nil Then
+procedure TSafeValue<t>.EnsureInit;
+begin
+  if fSec = nil then
     fSec := tInterfacedCriticalSection.Create;
-End;
+end;
 
-Function TSafeValue<T>.GetValue: T;
-Begin
+function TSafeValue<t>.getValue: t;
+begin
   EnsureInit;
   fSec.Enter;
-  Try
-    result := fValue;
-  Finally
+  try
+    Result := fValue;
+  finally
     fSec.Leave;
-  End;
-End;
+  end;
+end;
 
-Class Function TSafeValue<T>.New: TSafeValue<T>;
-Begin
-  result := Default (TSafeValue<T>);
-  result.EnsureInit;
-End;
+class function TSafeValue<t>.new: TSafeValue<t>;
+begin
+  Result := default(TSafeValue<t>);
+  Result.EnsureInit;
+end;
 
-Procedure TSafeValue<T>.Setvalue(Const aValue: T);
-Begin
+procedure TSafeValue<t>.Setvalue(const aValue: t);
+begin
   EnsureInit;
   fSec.Enter;
-  Try
+  try
     fValue := aValue;
-  Finally
+  finally
     fSec.Leave;
-  End;
-End;
+  end;
+end;
 
 { tInterfacedCriticalSection }
 
-Constructor tInterfacedCriticalSection.Create;
-Begin
-  Inherited Create;
+constructor tInterfacedCriticalSection.Create;
+begin
+  inherited Create;
   fSec := TFixedCriticalSection.Create;
-End;
+end;
 
-Destructor tInterfacedCriticalSection.Destroy;
-Begin
-  fSec.free;
-  Inherited;
-End;
+destructor tInterfacedCriticalSection.Destroy;
+begin
+  fSec.Free;
+  inherited;
+end;
 
-Procedure tInterfacedCriticalSection.Enter;
-Begin
+procedure tInterfacedCriticalSection.Enter;
+begin
   fSec.Enter;
-End;
+end;
 
-Procedure tInterfacedCriticalSection.Leave;
-Begin
+procedure tInterfacedCriticalSection.Leave;
+begin
   fSec.Leave;
-End;
+end;
 
 { TAsyncLoop }
 
-Constructor TAsyncLoop.Create;
-Begin
-  Inherited Create;
+constructor TAsyncLoop.Create;
+begin
+  inherited Create;
   FSimultanousThreadCount := TmaxAsyncGlobal.NumberOfProcessors * 4 - 2 { for the main VCL Thread };
   fReadySignal := TSignal.Create;
   fReadySignal.SetSignaled;
-End;
+end;
 
-Procedure TAsyncLoop.Execute(aMin, aMax: integer; aProc: TAsyncEnumProc);
-Var
-  x: integer;
-Begin
+procedure TAsyncLoop.Execute(aMin, aMax: integer; aProc: TAsyncEnumProc);
+var
+  X: integer;
+begin
   // prevent double executions
   WaitFor;
   fReadySignal.SetNonSignaled;
@@ -1236,142 +1238,142 @@ Begin
   fMax := aMax;
   FProc := aProc;
 
-  fActivThreadCount := Length(fThreads);
+  fActivThreadCount := length(fThreads);
 
-  For x := 0 To Length(fThreads) - 1 Do
-    fThreads[x] := SimpleAsyncCall(
-      Procedure
-      Begin
+  for X := 0 to length(fThreads) - 1 do
+    fThreads[X] := SimpleAsyncCall(
+      procedure
+      begin
         asyncLoopIteration;
-      End, ClassName + IntToStr(x));
+      end, classname + IntToStr(X));
 
-End;
+end;
 
-Class Procedure TAsyncLoop.Run(Const aMin, aMax: integer; aProc: TAsyncEnumProcWithCancel; OnDone: TProc; ThreadCount: integer);
-Var
+class procedure TAsyncLoop.Run(const aMin, aMax: integer; aProc: TAsyncEnumProcWithCancel; OnDone: TProc; ThreadCount: integer);
+var
   loop: TAsyncLoop;
-Begin
+begin
   loop := TAsyncLoop.Create;
-  If ThreadCount <> 0 Then
+  if ThreadCount <> 0 then
     loop.SimultanousThreadCount := ThreadCount;
 
   loop.OnFinished :=
-      Procedure
-    Begin
-      loop.free;
-      OnDone;
-    End;
+    procedure
+  begin
+    loop.Free;
+    OnDone;
+  end;
 
   loop.Execute(aMin, aMax,
-    Procedure(i: integer)
-    Var
+    procedure(i: integer)
+    var
       aCancel: boolean;
-    Begin
-      aCancel := false;
+    begin
+      aCancel := False;
       aProc(i, aCancel);
-      If aCancel Then
+      if aCancel then
         loop.Cancel;
-    End);
+    end);
 
-End;
+end;
 
-Class Procedure TAsyncLoop.RunAndWait(Const aMin, aMax: integer; aProc: TAsyncEnumProcWithCancel; ThreadCount: integer);
-Var
+class procedure TAsyncLoop.RunAndWait(const aMin, aMax: integer; aProc: TAsyncEnumProcWithCancel; ThreadCount: integer);
+var
   loop: TAsyncLoop;
-Begin
+begin
   loop := TAsyncLoop.Create;
-  If ThreadCount <> 0 Then
+  if ThreadCount <> 0 then
     loop.SimultanousThreadCount := ThreadCount;
 
   loop.Execute(aMin, aMax,
-    Procedure(i: integer)
-    Var
+    procedure(i: integer)
+    var
       aCancel: boolean;
-    Begin
-      aCancel := false;
+    begin
+      aCancel := False;
       aProc(i, aCancel);
-      If aCancel Then
+      if aCancel then
         loop.Cancel;
-    End);
+    end);
 
   loop.WaitFor;
-  loop.free;
-End;
+  loop.Free;
+end;
 
-Procedure TAsyncLoop.WaitFor;
-Begin
+procedure TAsyncLoop.WaitFor;
+begin
   fReadySignal.WaitForSignaled;
-End;
+end;
 
-Procedure TAsyncLoop.SetOnFinished(
+procedure TAsyncLoop.SetOnFinished(
 
-Const
+  const
   Value:
   TThreadProcedure);
-Begin
+begin
   FOnFinished := Value;
-End;
+end;
 
-Procedure TAsyncLoop.SetSimultanousThreadCount(
+procedure TAsyncLoop.SetSimultanousThreadCount(
 
-Const
+  const
   Value:
   integer);
-Begin
+begin
   FSimultanousThreadCount := Value;
-End;
+end;
 
-Destructor TAsyncLoop.Destroy;
-Var
-  x: integer;
-Begin
+destructor TAsyncLoop.Destroy;
+var
+  X: integer;
+begin
   WaitFor;
-  For x := 0 To Length(fThreads) - 1 Do
-    If fThreads[x] <> Nil Then
-    Begin
-      fThreads[x].WaitFor;
-      fThreads[x] := Nil;
-    End;
-  fThreads := Nil;
-  fReadySignal := Nil;
-  Inherited;
-End;
+  for X := 0 to length(fThreads) - 1 do
+    if fThreads[X] <> nil then
+    begin
+      fThreads[X].WaitFor;
+      fThreads[X] := nil;
+    end;
+  fThreads := nil;
+  fReadySignal := nil;
+  inherited;
+end;
 
-Procedure TAsyncLoop.asyncLoopIteration;
-Var
-  index: integer;
+procedure TAsyncLoop.asyncLoopIteration;
+var
+  Index: integer;
   CallFinished: boolean;
-Begin
-  Repeat
-    CallFinished := false;
+begin
+  repeat
+    CallFinished := False;
     Index := TInterlocked.Increment(fCurIndex) - 1;
-    If Index > fMax Then
-      If TInterlocked.Decrement(fActivThreadCount) = 0 Then
+    if Index > fMax then
+      if TInterlocked.Decrement(fActivThreadCount) = 0 then
         CallFinished := True;
 
-    If CallFinished Then
-    Begin
+    if CallFinished then
+    begin
       fReadySignal.SetSignaled;
-      If assigned(FOnFinished) Then
+      if assigned(FOnFinished) then
         FOnFinished();
-    End
-    Else If Index <= fMax Then
-    Begin
+    end
+    else if Index <= fMax then
+    begin
       FProc(Index);
-    End;
-  Until Index > fMax;
-End;
+    end;
+  until Index > fMax;
+end;
 
-Procedure TAsyncLoop.Cancel;
-Begin
-  TInterlocked.Add(fCurIndex, fMax + 1);
-End;
+procedure TAsyncLoop.Cancel;
+begin
+  TInterlocked.add(fCurIndex, fMax + 1);
+end;
 
 { TmaxAsyncGlobal }
 
-Class Constructor TmaxAsyncGlobal.CreateClass;
-Begin
-  {$IFDEF MSWINDOWS}
+class constructor TmaxAsyncGlobal.CreateClass;
+begin
+  {$IFDEF MsWindows}
   InitializeCriticalSection(fCS);
   {$ELSE}
   fCS := TCriticalSection.Create;
@@ -1380,461 +1382,463 @@ Begin
   HideLeak(@fCS);
   {$ENDIF}
   FNumberOfProcessors := TThread.ProcessorCount;
-  fWaitingThreadDataList := Nil;
+  fWaitingThreadDataList := nil;
   fAllThreads := TList<TThreadData>.Create;
-End;
+end;
 
-Class Destructor TmaxAsyncGlobal.Destroyclass;
-Var
-  x: integer;
-Begin
+class destructor TmaxAsyncGlobal.Destroyclass;
+var
+  X: integer;
+begin
   fCS.Enter;
-  Try
+  try
     fGlobalThreadListDestroyed := True;
-    If assigned(fWaitingThreadDataList) Then
-    Begin
-      For x := 0 To fWaitingThreadDataList.count - 1 Do
-      Begin
-        ReleaseThreadData(fWaitingThreadDataList[x]);
-        fWaitingThreadDataList[x] := NIL;
-      End;
-      fWaitingThreadDataList.clear;
-      fWaitingThreadDataList.free;
-      fWaitingThreadDataList := Nil;
-    End;
+    if assigned(fWaitingThreadDataList) then
+    begin
+      for X := 0 to fWaitingThreadDataList.Count - 1 do
+      begin
+        ReleaseThreadData(fWaitingThreadDataList[X]);
+        fWaitingThreadDataList[X] := nil;
+      end;
+      fWaitingThreadDataList.Clear;
+      fWaitingThreadDataList.Free;
+      fWaitingThreadDataList := nil;
+    end;
 
-    fAllThreads.free;
-  Finally
+    fAllThreads.Free;
+  finally
     fCS.Leave;
-  End;
+  end;
   // leave it on...
   // deleteCriticalSection(fCS);
-End;
+end;
 
-Class Function TmaxAsyncGlobal.GetThreadData: iThreadData;
-Var
+class function TmaxAsyncGlobal.GetThreadData: iThreadData;
+var
   i: integer;
-Begin
-  result := Nil;
+begin
+  Result := nil;
   fCS.Enter;
-  Try
+  try
     // if there are some threads waiting... use them... otherwise we will need to create a new one
-    If (assigned(fWaitingThreadDataList)) And (fWaitingThreadDataList.count <> 0) Then
-    Begin
-      i := fWaitingThreadDataList.count - 1;
-      result := fWaitingThreadDataList[i];
-      fWaitingThreadDataList[i] := Nil;
+    if (assigned(fWaitingThreadDataList)) and (fWaitingThreadDataList.Count <> 0) then
+    begin
+      i := fWaitingThreadDataList.Count - 1;
+      Result := fWaitingThreadDataList[i];
+      fWaitingThreadDataList[i] := nil;
       fWaitingThreadDataList.Delete(i);
 
-      result.SetDefaultValues;
-    End;
-  Finally
+      Result.SetDefaultValues;
+    end;
+  finally
     fCS.Leave;
-  End;
+  end;
 
-  If result = Nil Then
-    result := TThreadData.Create;
-End;
+  if Result = nil then
+    Result := TThreadData.Create;
+end;
 
-Class Procedure TmaxAsyncGlobal.AddToWaiting(ThreadData: iThreadData);
-Begin
+class procedure TmaxAsyncGlobal.AddToWaiting(ThreadData: iThreadData);
+begin
   fCS.Enter;
-  Try
-    If fGlobalThreadListDestroyed Then
-    Begin
+  try
+    if fGlobalThreadListDestroyed then
+    begin
       ReleaseThreadData(ThreadData);
-      ThreadData := Nil;
-    End
-    Else
-    Begin
-      If Not assigned(fWaitingThreadDataList) Then
+      ThreadData := nil;
+    end
+    else
+    begin
+      if not assigned(fWaitingThreadDataList) then
         fWaitingThreadDataList := TList<iThreadData>.Create;
-      fWaitingThreadDataList.Add(ThreadData);
-    End;
-  Finally
+      fWaitingThreadDataList.add(ThreadData);
+    end;
+  finally
     fCS.Leave;
-  End;
-End;
+  end;
+end;
 
-Class Procedure TmaxAsyncGlobal.ReleaseThreadData(Const aThreadData: iThreadData);
-Begin
+class procedure TmaxAsyncGlobal.ReleaseThreadData(const aThreadData: iThreadData);
+begin
   aThreadData.SetThreadToTerminated;
-  aThreadData.KeepAlive := false;
+  aThreadData.KeepAlive := False;
   aThreadData.WakeUpSignal.SetSignaled;
   aThreadData.StartSignal.SetSignaled;
-End;
+end;
 
-Class Procedure TmaxAsyncGlobal.addToAllThreadList(aData: TThreadData);
-Begin
-  If fGlobalThreadListDestroyed Then
-    Exit;
+class procedure TmaxAsyncGlobal.addToAllThreadList(aData: TThreadData);
+begin
+  if fGlobalThreadListDestroyed then
+    exit;
 
   fCS.Enter;
-  Try
-    If Not fGlobalThreadListDestroyed Then
-      fAllThreads.Add(aData);
+  try
+    if not fGlobalThreadListDestroyed then
+      fAllThreads.add(aData);
 
-  Finally
+  finally
     fCS.Leave;
-  End;
-End;
+  end;
+end;
 
-Class Procedure TmaxAsyncGlobal.removeFromAllThreadList(aData: TThreadData);
-Var
+class procedure TmaxAsyncGlobal.removeFromAllThreadList(aData: TThreadData);
+var
   i: integer;
-Begin
-  If fGlobalThreadListDestroyed Then
-    Exit;
+begin
+  if fGlobalThreadListDestroyed then
+    exit;
 
   fCS.Enter;
-  Try
-    If Not fGlobalThreadListDestroyed Then
-    Begin
-      i := fAllThreads.indexOf(aData);
-      If i <> -1 Then
+  try
+    if not fGlobalThreadListDestroyed then
+    begin
+      i := fAllThreads.IndexOf(aData);
+      if i <> -1 then
         fAllThreads.Delete(i);
-    End;
-  Finally
+    end;
+  finally
     fCS.Leave;
-  End;
-End;
+  end;
+end;
 
-Class Function TmaxAsyncGlobal.GetThreadName(const aThreadId: TThreadId): String;
-Var
-  x: integer;
-Begin
-  result := '';
-  If fGlobalThreadListDestroyed Then
-    Exit;
+class function TmaxAsyncGlobal.GetThreadName(const aThreadId: TThreadId): string;
+var
+  X: integer;
+begin
+  Result := '';
+  if fGlobalThreadListDestroyed then
+    exit;
 
-  If aThreadId = MainThreadID Then
-    Exit('MainVclThread');
+  if aThreadId = MainThreadID then
+    exit('MainVclThread');
 
   fCS.Enter;
-  Try
-    If Not fGlobalThreadListDestroyed Then
-    Begin
-      For x := 0 To fAllThreads.count - 1 Do
-        If fAllThreads[x].fThreadId = aThreadId Then
-        Begin
-          result := fAllThreads[x].TaskName;
+  try
+    if not fGlobalThreadListDestroyed then
+    begin
+      for X := 0 to fAllThreads.Count - 1 do
+        if fAllThreads[X].fThreadId = aThreadId then
+        begin
+          Result := fAllThreads[X].TaskName;
           break;
-        End;
-    End;
-  Finally
+        end;
+    end;
+  finally
     fCS.Leave;
-  End;
-End;
+  end;
+end;
 
 { TWaiter }
 
-{$IFDEF MSWINDOWS} {$IFNDEF CONSOLE}
-                                    Class Function TWaiter.WaitFor(Const async: TArray<iAsync>; Milliseconds: dword = infinite; DoProcessMessages: boolean = false): boolean;
-Var
+{$IFDEF MsWindows}{$IFNDEF CONSOLE}
+
+class function TWaiter.WaitFor(const async: TArray<iAsync>; Milliseconds: dword = infinite; DoProcessMessages: boolean = False): boolean;
+var
   events: TArray<TEvent>;
-  x: integer;
-Begin
-  SetLength(events, Length(async));
-  For x := 0 To Length(async) - 1 Do
-    events[x] := (async[x] As iAsyncIntern).GetThreadData.ReadySignal.Event;
+  X: integer;
+begin
+  SetLength(events, length(async));
+  for X := 0 to length(async) - 1 do
+    events[X] := (async[X] as iAsyncIntern).GetThreadData.ReadySignal.Event;
 
-  result := WaitFor(events, Milliseconds, DoProcessMessages);
-End;
+  Result := WaitFor(events, Milliseconds, DoProcessMessages);
+end;
 
-Class Function TWaiter.WaitFor(Const Signals: TArray<iSignal>; Milliseconds: dword; DoProcessMessages: boolean): boolean;
-Var
+class function TWaiter.WaitFor(const Signals: TArray<iSignal>; Milliseconds: dword; DoProcessMessages: boolean): boolean;
+var
   events: TArray<TEvent>;
-  x: integer;
-Begin
-  SetLength(events, Length(Signals));
-  For x := 0 To Length(Signals) - 1 Do
-    events[x] := Signals[x].Event;
+  X: integer;
+begin
+  SetLength(events, length(Signals));
+  for X := 0 to length(Signals) - 1 do
+    events[X] := Signals[X].Event;
 
-  result := WaitFor(events, Milliseconds, DoProcessMessages);
-End;
+  Result := WaitFor(events, Milliseconds, DoProcessMessages);
+end;
 
-Class Function TWaiter.WaitFor(Const aEvents: TArray<TEvent>; Milliseconds: dword; DoProcessMessages: boolean): boolean;
-CONST
+class function TWaiter.WaitFor(const aEvents: TArray<TEvent>; Milliseconds: dword; DoProcessMessages: boolean): boolean;
+const
   MAXCOUNT = Windows.MAXIMUM_WAIT_OBJECTS - 1;
 
-  Procedure Delete(Var a: TArray<THandle>; index, count: integer);
-  Var
+  procedure Delete(var a: TArray<THandle>; Index, Count: integer);
+  var
     ItemsOnTheRight, len: integer;
-  Begin
-    len := Length(a);
-    ItemsOnTheRight := len - ((Index + count));
-    If ItemsOnTheRight > 0 Then
-    Begin
-      Move(
-      a[Index + count],
+  begin
+    len := length(a);
+    ItemsOnTheRight := len - ((Index + Count));
+    if ItemsOnTheRight > 0 then
+    begin
+      move(
+        a[Index + Count],
         a[Index],
         SizeOf(THandle) * ItemsOnTheRight);
-    End;
+    end;
 
-    SetLength(a, len - count);
-  End;
+    SetLength(a, len - Count);
+  end;
 
-Var
-  x: integer;
-  count: dword;
+var
+  X: integer;
+  Count: dword;
   SignalState: dword;
   StartTime: dword;
   orgTimeOutMilliseconds: dword;
   events: TArray<THandle>;
   st: TStopWatch;
-Begin
-  If DoProcessMessages And (Not InsideMainThread) Then
-    DoProcessMessages := false;
+begin
+  if DoProcessMessages and (not InsideMainThread) then
+    DoProcessMessages := False;
 
   orgTimeOutMilliseconds := Milliseconds;
-  st := TStopWatch.StartNew;
+  st := TStopWatch.startNew;
 
-  count := Length(aEvents);
-  If count = 0 Then
-    Exit(True);
+  Count := length(aEvents);
+  if Count = 0 then
+    exit(True);
 
-  SetLength(events, count);
-  Move(aEvents[0], events[0], count * SizeOf(THandle));
+  SetLength(events, Count);
+  move(aEvents[0], events[0], Count * SizeOf(THandle));
 
-  While Length(events) > 0 Do
-  Begin
-    count := Min(MAXCOUNT, Length(events));
+  while length(events) > 0 do
+  begin
+    Count := Min(MAXCOUNT, length(events));
 
-    If Not DoProcessMessages Then
-    Begin
-      SignalState := WaitForMultipleObjects(count, @events[0], True, Milliseconds);
-      If SignalState In [WAIT_OBJECT_0 .. WAIT_OBJECT_0 + count - 1] Then
-        Delete(events, 0, count);
+    if not DoProcessMessages then
+    begin
+      SignalState := WaitForMultipleObjects(Count, @events[0], True, Milliseconds);
+      if SignalState in [WAIT_OBJECT_0..WAIT_OBJECT_0 + Count - 1] then
+        Delete(events, 0, Count);
 
-    End
-    Else
-    Begin
+    end
+    else
+    begin
 
-      SignalState := MsgWaitForMultipleObjects(count, events[0], false, Milliseconds, QS_ALLINPUT);
+      SignalState := MsgWaitForMultipleObjects(Count, events[0], False, Milliseconds, QS_ALLINPUT);
       // GUI message
-      If SignalState = WAIT_OBJECT_0 + count Then
-        Application.ProcessMessages
-      Else If SignalState In [WAIT_OBJECT_0 .. WAIT_OBJECT_0 + count - 1] Then
+      if SignalState = WAIT_OBJECT_0 + Count then
+        application.ProcessMessages
+      else if SignalState in [WAIT_OBJECT_0..WAIT_OBJECT_0 + Count - 1] then
         Delete(events, SignalState - WAIT_OBJECT_0, 1);
-    End;
+    end;
 
     // check timeout
-    If (Milliseconds <> infinite) And (Length(events) <> 0) Then
-    Begin
+    if (Milliseconds <> infinite) and (length(events) <> 0) then
+    begin
       // if the timeOut is set, and is due, then exit
-      If (orgTimeOutMilliseconds <= st.ElapsedMilliseconds) Then
-      Begin
-        events := Nil;
-        Exit(false);
-      End;
+      if (orgTimeOutMilliseconds <= st.ElapsedMilliseconds) then
+      begin
+        events := nil;
+        exit(False);
+      end;
 
       // now calculate the new timeout for the WaitForMultipleObjects proc, take the time already passed into account, but wait at least 1 millisecond
       Milliseconds := Max(1, orgTimeOutMilliseconds - (st.ElapsedMilliseconds));
-    End;
+    end;
 
     // end of while loop
-  End;
-  result := True;
-End;
+  end;
+  Result := True;
+end;
 {$ENDIF}{$ENDIF}
 
 { TAsyncCollectionProcessor<T> }
 
-Constructor TAsyncCollectionProcessor<T>.Create;
-Begin
-  Inherited Create;
-  {$IFDEF MSWINDOWS}
+constructor TAsyncCollectionProcessor<t>.Create;
+begin
+  inherited Create;
+  {$IFDEF MsWindows}
   fCriticalSection := TFixedRtlCriticalSection.Create;
-  {$else}
-    fCriticalSection := TFixedCriticalSection.Create;
+  {$ELSE}
+  fCriticalSection := TFixedCriticalSection.Create;
   {$ENDIF}
-  fItems := TQueue<T>.Create;
+  fItems := TQueue<t>.Create;
 
   fThreads := TList<TThreadHolder>.Create;
 
   FSimultanousThreadCount := TmaxAsyncGlobal.NumberOfProcessors * 4 - 2 { for the main VCL Thread };
   fReadySignal := TSignal.Create;
   fReadySignal.SetSignaled;
-End;
+end;
 
-Destructor TAsyncCollectionProcessor<T>.Destroy;
-Begin
+destructor TAsyncCollectionProcessor<t>.Destroy;
+begin
   ClearItems;
   WaitFor;
-  fItems.free;
-  fThreads.free;
-  fCriticalSection.free;
-  Inherited;
-End;
+  fItems.Free;
+  fThreads.Free;
+  fCriticalSection.Free;
+  inherited;
+end;
 
-Procedure TAsyncCollectionProcessor<T>.Add(Const Items: TList<T>);
-Var
-  item: T;
-Begin
+procedure TAsyncCollectionProcessor<t>.add(const Items: TList<t>);
+var
+  Item: t;
+begin
   fCriticalSection.Enter;
-  Try
-    For item In Items Do
-      fItems.enQueue(item);
-  Finally
+  try
+    for Item in Items do
+      fItems.enQueue(Item);
+  finally
     fCriticalSection.Leave;
-  End;
+  end;
   RestartThreads;
 
-End;
+end;
 
-Procedure TAsyncCollectionProcessor<T>.Add(Const Items: TArray<T>);
-Var
-  item: T;
-Begin
+procedure TAsyncCollectionProcessor<t>.add(const Items: TArray<t>);
+var
+  Item: t;
+begin
   fCriticalSection.Enter;
-  Try
-    For item In Items Do
-      fItems.enQueue(item);
-  Finally
+  try
+    for Item in Items do
+      fItems.enQueue(Item);
+  finally
     fCriticalSection.Leave;
-  End;
+  end;
   RestartThreads;
-End;
+end;
 
-Procedure TAsyncCollectionProcessor<T>.Add(Const item: T);
-Begin
+procedure TAsyncCollectionProcessor<t>.add(const Item: t);
+begin
   fCriticalSection.Enter;
-  Try
-    fItems.enQueue(item);
-  Finally
+  try
+    fItems.enQueue(Item);
+  finally
     fCriticalSection.Leave;
-  End;
+  end;
   RestartThreads;
-End;
+end;
 
-Procedure TAsyncCollectionProcessor<T>.ClearItems;
-Begin
+procedure TAsyncCollectionProcessor<t>.ClearItems;
+begin
   fCriticalSection.Enter;
-  Try
-    fItems.clear;
-  Finally
+  try
+    fItems.Clear;
+  finally
     fCriticalSection.Leave;
-  End;
-End;
+  end;
+end;
 
-Procedure TAsyncCollectionProcessor<T>.SetOnFinished(Const Value: TThreadProcedure);
-Begin
+procedure TAsyncCollectionProcessor<t>.SetOnFinished(const Value: TThreadProcedure);
+begin
   FOnFinished := Value;
-End;
+end;
 
-Procedure TAsyncCollectionProcessor<T>.SetProc(Const Value: TAsyncCollectionProcessorProc<T>);
-Begin
+procedure TAsyncCollectionProcessor<t>.SetProc(const Value: TAsyncCollectionProcessorProc<t>);
+begin
   FProc := Value;
-End;
+end;
 
-Procedure TAsyncCollectionProcessor<T>.SetSimultanousThreadCount(Const Value: integer);
-Begin
-  If FSimultanousThreadCount <> Value Then
-  Begin
+procedure TAsyncCollectionProcessor<t>.SetSimultanousThreadCount(const Value: integer);
+begin
+  if FSimultanousThreadCount <> Value then
+  begin
     FSimultanousThreadCount := Value;
     RestartThreads;
-  End;
-End;
+  end;
+end;
 
-Procedure TAsyncCollectionProcessor<T>.WaitFor;
-Begin
+procedure TAsyncCollectionProcessor<t>.WaitFor;
+begin
   fReadySignal.WaitForSignaled;
-End;
+end;
 
-Procedure TAsyncCollectionProcessor<T>.RestartThreads;
-Begin
+procedure TAsyncCollectionProcessor<t>.RestartThreads;
+begin
   fReadySignal.SetNonSignaled;
   fCriticalSection.Enter;
-  Try
-    While fThreads.count < FSimultanousThreadCount Do
-      fThreads.Add(CreateThreadHolder);
+  try
+    while fThreads.Count < FSimultanousThreadCount do
+      fThreads.add(CreateThreadHolder);
 
-  Finally
+  finally
     fCriticalSection.Leave;
-  End;
-End;
+  end;
+end;
 
-Function TAsyncCollectionProcessor<T>.CreateThreadHolder: TThreadHolder;
-Var
+function TAsyncCollectionProcessor<t>.CreateThreadHolder: TThreadHolder;
+var
   Id: int64;
-Begin
+begin
   // this is already in a critical section, no need to lock it again
-  result := Default (TThreadHolder);
+  Result := default(TThreadHolder);
   {$R-}{$Q-}
   Id := TInterlocked.Increment(fNextThreadId);
-  result.Id := Id;
-  result.async := SimpleAsyncCall(
-    Procedure
-    Begin
+  Result.Id := Id;
+  Result.async := SimpleAsyncCall(
+    procedure
+    begin
       AsyncProcessItem(Id);
-    End, ClassName + 'Worker')
-End;
+    end, classname + 'Worker')
+end;
 
-Procedure TAsyncCollectionProcessor<T>.AsyncProcessItem(const ThreadId: int64);
-Var
-  x: integer;
-  item: T;
+procedure TAsyncCollectionProcessor<t>.AsyncProcessItem(const ThreadId: int64);
+var
+  X: integer;
+  Item: t;
   IsLast, NoItem: boolean;
-Begin
-  Repeat
-    IsLast := false;
-    NoItem := false;
-    Item:= default(T); // prevent 'variable might not be initialized' compiler warning
+begin
+  repeat
+    IsLast := False;
+    NoItem := False;
+    Item := default(t); // prevent 'variable might not be initialized' compiler warning
 
     fCriticalSection.Enter;
-    Try
-      If fItems.count <> 0 Then
+    try
+      if fItems.Count <> 0 then
       begin
-        item := fItems.dequeue;
+        Item := fItems.dequeue;
         NoItem := False;
-      end else begin
+      end
+      else
+      begin
         NoItem := True;
 
-        For x := 0 To fThreads.count - 1 Do
-          If fThreads[x].Id = ThreadId Then
-          Begin
-            fThreads.Delete(x);
+        for X := 0 to fThreads.Count - 1 do
+          if fThreads[X].Id = ThreadId then
+          begin
+            fThreads.Delete(X);
             break;
-          End;
-        IsLast := fThreads.count = 0
-      End;
+          end;
+        IsLast := fThreads.Count = 0
+      end;
 
-    Finally
+    finally
       fCriticalSection.Leave;
-    End;
+    end;
 
-    If NoItem And IsLast Then
-    Begin
-      Try
-        If assigned(FOnFinished) Then
+    if NoItem and IsLast then
+    begin
+      try
+        if assigned(FOnFinished) then
           FOnFinished();
-      Finally
+      finally
         fReadySignal.SetSignaled;
-      End;
-    end Else If Not NoItem Then
-      FProc(item);
-  Until NoItem;
-End;
+      end;
+    end
+    else if not NoItem then
+      FProc(Item);
+  until NoItem;
+end;
 
-Function TmaxAsync.GetThreadData: iThreadData;
-Begin
-  result := fThreadData;
-End;
+function TmaxAsync.GetThreadData: iThreadData;
+begin
+  Result := fThreadData;
+end;
 
-{$IFDEF MSWINDOWS}
+{$IFDEF MsWindows}
 
+function TmaxAsync.GetThreadPriority: TThreadPriority;
+begin
+  Result := self.fThreadData.Thread.Priority;
+end;
 
-Function TmaxAsync.GetThreadPriority: TThreadPriority;
-Begin
-  result := self.fThreadData.Thread.Priority;
-End;
-
-{$IFDEF MsWIndows}
-
+{$IFDEF MsWindows}
 
 procedure TmaxAsync.MsgWaitFor;
 begin
-  While Not fThreadData.Finished Do
+  while not fThreadData.Finished do
     fThreadData.ReadySignal.MsgWaitForSignaled;
 end;
 {$ENDIF}
@@ -1842,210 +1846,209 @@ end;
 {$ENDIF}
 { TUserData }
 
-Constructor TUserData<T>.Create(Const aValue: T);
-Begin
-  Inherited Create;
+constructor TUserData<t>.Create(const aValue: t);
+begin
+  inherited Create;
   fValue := aValue;
-  fLock := Default (TLockFreeLock);
-End;
+  fLock := default(TLockFreeLock);
+end;
 
-Function TUserData<T>.GetValue: T;
-Begin
+function TUserData<t>.getValue: t;
+begin
   fLock.lock;
-  Try
-    result := fValue;
-  Finally
+  try
+    Result := fValue;
+  finally
     fLock.unLock;
-  End;
-End;
+  end;
+end;
 
-Procedure TUserData<T>.Setvalue(Const aValue: T);
-Begin
+procedure TUserData<t>.Setvalue(const aValue: t);
+begin
   fLock.lock;
-  Try
+  try
     fValue := aValue;
-  Finally
+  finally
     fLock.unLock;
-  End;
-End;
+  end;
+end;
 
 { TRTLCriticalSectionHelper }
-{$IFDEF MSWINDOWS}
+{$IFDEF MsWindows}
 
+class function TRTLCriticalSectionHelper.Create: TRTLCriticalSection;
+begin
+  InitializeCriticalSection(Result);
+end;
 
-Class Function TRTLCriticalSectionHelper.Create: TRTLCriticalSection;
-Begin
-  InitializeCriticalSection(result);
-End;
-
-Procedure TRTLCriticalSectionHelper.Enter;
-Begin
+procedure TRTLCriticalSectionHelper.Enter;
+begin
   EnterCriticalSection(self);
-End;
+end;
 
-Procedure TRTLCriticalSectionHelper.Exit;
-Begin
+procedure TRTLCriticalSectionHelper.exit;
+begin
   LeaveCriticalSection(self);
-End;
+end;
 
-Procedure TRTLCriticalSectionHelper.free;
-Begin
+procedure TRTLCriticalSectionHelper.Free;
+begin
   DeleteCriticalSection(self);
-End;
+end;
 
-Procedure TRTLCriticalSectionHelper.Leave;
-Begin
+procedure TRTLCriticalSectionHelper.Leave;
+begin
   LeaveCriticalSection(self);
-End;
+end;
 {$ENDIF}
 
 { TObjectWithCriticalSection }
 
-Constructor TObjectWithCriticalSection.Create;
-Begin
-  Inherited Create;
-  {$IFDEF MSWINDOWS}
+constructor TObjectWithCriticalSection.Create;
+begin
+  inherited Create;
+  {$IFDEF MsWindows}
   fCriticalSection := TFixedRtlCriticalSection.Create;
   {$ELSE}
   fCriticalSection := TFixedCriticalSection.Create;
   {$ENDIF}
-End;
+end;
 
-Destructor TObjectWithCriticalSection.Destroy;
-Begin
-  fCriticalSection.free;
-  Inherited;
-End;
+destructor TObjectWithCriticalSection.Destroy;
+begin
+  fCriticalSection.Free;
+  inherited;
+end;
 
-Procedure TObjectWithCriticalSection.lock;
-Begin
+procedure TObjectWithCriticalSection.lock;
+begin
   fCriticalSection.Enter;
-End;
+end;
 
-Procedure TObjectWithCriticalSection.unLock;
-Begin
+procedure TObjectWithCriticalSection.unLock;
+begin
   fCriticalSection.Leave;
-End;
+end;
 
 { TFixedRtlCriticalSection }
 
-{$IFDEF MSWINDOWS}
+{$IFDEF MsWindows}
 
+class function TFixedRtlCriticalSection.Create: TFixedRtlCriticalSection;
+begin
+  Result.Dummy := default(TDummy);
+  Result.CriticalSection := TRTLCriticalSection.Create;
+end;
 
-Class Function TFixedRtlCriticalSection.Create: TFixedRtlCriticalSection;
-Begin
-  result.Dummy := Default (TDummy);
-  result.CriticalSection := TRTLCriticalSection.Create;
-End;
-
-Procedure TFixedRtlCriticalSection.Enter;
-Begin
+procedure TFixedRtlCriticalSection.Enter;
+begin
   CriticalSection.Enter;
-End;
+end;
 
-Procedure TFixedRtlCriticalSection.Exit;
-Begin
+procedure TFixedRtlCriticalSection.exit;
+begin
   CriticalSection.Leave;
-End;
+end;
 
-Procedure TFixedRtlCriticalSection.free;
-Begin
-  CriticalSection.free;
-End;
+procedure TFixedRtlCriticalSection.Free;
+begin
+  CriticalSection.Free;
+end;
 
-Procedure TFixedRtlCriticalSection.Leave;
-Begin
+procedure TFixedRtlCriticalSection.Leave;
+begin
   CriticalSection.Leave;
-End;
+end;
 {$ENDIF}
 
 { TLockFreeLock }
 
-Procedure TLockFreeLock.lock;
-Var
+procedure TLockFreeLock.lock;
+var
   Succeeded: boolean;
-Begin
-  Repeat
+begin
+  repeat
     TInterlocked.CompareExchange(fLocked, 1, 0, Succeeded);
-  Until Succeeded;
-End;
+  until Succeeded;
+end;
 
-Procedure TLockFreeLock.unLock;
-Begin
+procedure TLockFreeLock.unLock;
+begin
   // if we acquired the lock, then we do not need to wait or test the value
   TInterlocked.Exchange(fLocked, 0);
-End;
+end;
 
 { TAtomic }
 
-Class Constructor TAtomic.Create;
-Type
-  TTestRec = Record
+class constructor TAtomic.Create;
+type
+  TTestRec = record
     a: byte;
-    B: int64;
-  End;
+    b: int64;
+  end;
 
-Begin
+begin
   // In the {$A8} or {$A+} state, fields in record types that are declared without the packed modifier and fields in class structures are aligned on quadword boundaries.
   {$IF SIZEOF(TTestRec) <> 16}
   'App must be compiled in A8 mode'
-  {$IFEND}
-End;
+    {$IFEND}
+end;
 
 { TAsyncTimer }
 
-Procedure TAsyncTimer.SetEnabled(Const Value: boolean);
-Begin
-  If FEnabled <> Value Then
-  Begin
+procedure TAsyncTimer.SetEnabled(const Value: boolean);
+begin
+  if FEnabled <> Value then
+  begin
     FEnabled := Value;
-    If Value Then
+    if Value then
       fSignal.SetSignaled;
-  End;
-End;
+  end;
+end;
 
-Constructor TAsyncTimer.Create(aProc: TProc; aInterval: integer; aEnabled: boolean);
-Begin
-  Inherited Create;
+constructor TAsyncTimer.Create(aProc: TProc; aInterval: integer; aEnabled: boolean);
+begin
+  inherited Create;
   FInterval := aInterval;
   fSignal := TSignal.Create;
   fSignal.SetNonSignaled;
   FProc := aProc;
   FEnabled := aEnabled;
   fAsync := SimpleAsyncCall(asyncLoop)
-End;
+end;
 
-Destructor TAsyncTimer.Destroy;
-Begin
-  FEnabled := false;
+destructor TAsyncTimer.Destroy;
+begin
+  FEnabled := False;
   FTerminated := True;
   fSignal.SetSignaled;
   fAsync.WaitFor;
-  Inherited;
-End;
+  inherited;
+end;
 
-Procedure TAsyncTimer.asyncLoop;
-Begin
-  Repeat
+procedure TAsyncTimer.asyncLoop;
+begin
+  repeat
     fSignal.WaitForSignaled(FInterval);
-    If FEnabled Then
+    if FEnabled then
       FProc();
     fSignal.SetNonSignaled;
 
-  Until FTerminated;
-End;
+  until FTerminated;
+end;
 
-Procedure TAsyncTimer.SetInterval(Const Value: integer);
-Begin
+procedure TAsyncTimer.SetInterval(const Value: integer);
+begin
   FInterval := Value;
   fSignal.SetSignaled;
-End;
+end;
 
-Initialization
+initialization
 
-{$IFDEF MadExcept}
-madExcept.NameThread(GetCurrentThreadId, 'MainVclThread');
-{$ENDIF}
-System.NeverSleepOnMMThreadContention := True;
+  {$IFDEF madExcept}
+  madExcept.NameThread(GetCurrentThreadId, 'MainVclThread');
+  {$ENDIF}
+  System.NeverSleepOnMMThreadContention := True;
 
-End.
+end.
+
