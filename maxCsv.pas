@@ -21,7 +21,7 @@ Interface
 
 Uses
   MaxLogic.BufferedFile,
-  classes, sysUtils, RTTI, generics.collections;
+  system.classes, system.sysUtils, system.RTTI, generics.collections;
 
 Type
   // forward declarations
@@ -190,7 +190,7 @@ Uses
   {$IFDEF MSWINDOWS}
   maxInMemoryFile,
   {$ENDIF}
-  ioUtils, ansiStrings, System.WideStrUtils, autoFree;
+  system.ioUtils, system.ansiStrings, System.WideStrUtils, autoFree;
 
 { TCSVBase }
 
@@ -396,7 +396,7 @@ Begin
 
   If RequireQuote Then
     s := self.FQuoteChar +
-      ansiStrings.StringReplace(s, FQuoteChar, FQuoteChar + FQuoteChar, [rfReplaceAll]) +
+      system.ansiStrings.StringReplace(s, FQuoteChar, FQuoteChar + FQuoteChar, [rfReplaceAll]) +
       self.FQuoteChar;
 
   fBuffer.WriteBuffer(s[1], length(s));
