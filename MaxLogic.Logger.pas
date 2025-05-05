@@ -255,7 +255,12 @@ Type
     constructor Create(aMaxFileCount: Integer = 10;
       aMaxFileSizeInKb: Integer = 50 * 1024;
       Const aLogDir: String = '';
-      Const aLogFileNameFormat: String = TLoggerProFileAppender.DEFAULT_FILENAME_FORMAT_WITH_PID); overload;
+      Const aLogFileNameFormat: String
+        {$IFNDEF DISABLE_PRLOGGER}
+        = TLoggerProFileAppender.DEFAULT_FILENAME_FORMAT_WITH_PID
+        {$ELSE}
+        = ''
+        {$ENDIF}); overload;
     destructor Destroy; override;
 
     // iMaxLog public implementations
