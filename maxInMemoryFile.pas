@@ -1,5 +1,7 @@
 unit maxInMemoryFile;
 
+{$PLATFORM MSWINDOWS}
+
 { Author: pawel Piotrowski
   Copyright 2010 MaxLogic, Pawe³ Piotrowski
   Version: 1.8
