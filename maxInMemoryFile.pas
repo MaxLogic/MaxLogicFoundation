@@ -1,6 +1,9 @@
 unit maxInMemoryFile;
 
-{$PLATFORM MSWINDOWS}
+{$IFNDEF MSWINDOWS}
+  {$FATAL 'Unit maxInMemoryFile is only compatible with the MSWINDOWS platform.'}
+{$ENDIF}
+{$WARN SYMBOL_PLATFORM OFF}
 
 { Author: pawel Piotrowski
   Copyright 2010 MaxLogic, Pawe³ Piotrowski
@@ -25,8 +28,8 @@ unit maxInMemoryFile;
 interface
 
 uses
-  Windows,
-  SysUtils, classes;
+  WinApi.Windows,
+  system.SysUtils, system.classes;
 
 type
 
@@ -237,7 +240,7 @@ begin
 
   if OpenFileHandle(OptimizationMode) then
   begin
-      loSize := Windows.GetFileSize(hFile, @hiSize);
+      loSize := winApi.Windows.GetFileSize(hFile, @hiSize);
     fFileSize := (hiSize shl 32) + loSize;
     fFileCapacity := fFileSize;
 
@@ -257,7 +260,7 @@ begin
     // trim excess
     if not fReadOnly then
     begin
-        loSize := Windows.GetFileSize(hFile, @hiSize);
+        loSize := WinApi.Windows.GetFileSize(hFile, @hiSize);
       actualSize := hiSize shl 32 + loSize;
       if fFileSize <> actualSize then
         SetSize(fFileSize);
