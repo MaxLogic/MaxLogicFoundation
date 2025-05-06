@@ -1,6 +1,7 @@
 unit maxSoapHelper;
 { Version: 1.5
   History:
+  2025-04-26: support for compressed responses
   2019-04-23: delphi 10.3 compatible
   2017-08-17: added support for custom headers
   2016-10-03: added CloneSoapObject procedure }
@@ -10,14 +11,14 @@ unit maxSoapHelper;
 interface
 
 uses
-  windows, classes, SysUtils, Soap.InvokeRegistry,
-  ComObj, XMLIntf, XMLDoc, Soap.OPToSOAPDomConv, Soap.SOAPHTTPTrans,
+  winApi.Windows, System.Classes, System.SysUtils, Soap.InvokeRegistry,
+  System.win.ComObj, xml.XMLIntf, xml.XMLDoc, Soap.OPToSOAPDomConv, Soap.SOAPHTTPTrans,
   Soap.OpConvertOptions, Soap.SOAPHTTPClient,
   generics.collections, System.Net.HttpClient;
 
 type
-  TOnSoapMessage = procedure(sender: tobject; Stream: TStream;
-    IsRequest: Boolean; const RequestTimeStamp: TDateTime) of object;
+  TOnSoapMessage = procedure(Sender: TObject; Stream: TStream;
+    IsRequest: boolean; const RequestTimeStamp: TDateTime) of object;
 
   THTTPReqRespWithMonitor = class(THTTPReqResp)
   private
@@ -32,7 +33,7 @@ type
   end;
 
   THeaderItem = record
-    name: string;
+    Name: string;
     Value: string;
   end;
 
@@ -42,22 +43,22 @@ type
   protected
     fRequestCustomHttpHeaders: TList<THeaderItem>;
     // IsRequest = true, else false
-    fLastSoapMesage: array [Boolean] of string;
-    fLastUrl: String;
+    fLastSoapMesage: array[boolean] of String;
+    fLastUrl: string;
 
-    procedure AddRequestHttpheaderItem(const name, Value: string);
-    Function GetLogFileName: string; virtual; abstract;
-    procedure Log(const s: string); virtual; abstract;
-    function GetHttp(ConnectTimeout :Integer=30000;  SendTimeout :Integer=30000;  ReceiveTimeout : integer =30000; const aName:String=''): THTTPRIO;
+    procedure AddRequestHttpheaderItem(const Name, Value: string);
+    function GetLogFileName: string; virtual; abstract;
+    procedure log(const s: string); virtual; abstract;
+    function GetHttp(ConnectTimeout: integer = 30000; SendTimeout: integer = 30000; ReceiveTimeout: integer = 30000; const aName: string = ''): THTTPRIO;
     procedure BeforePost(const AHTTPReqResp: THTTPReqResp;
-{$IFDEF DELPHIX_RIO_UP      }
+      {$IFDEF DELPHIX_RIO_UP      }
       Client: THTTPClient
-{$ELSE}
+      {$ELSE}
       AData: Pointer
-{$ENDIF}); virtual;
+      {$ENDIF}); virtual;
     procedure BeforePost2; virtual;
-    procedure HttpOnSoapMessage(sender: tobject; Stream: TStream;
-      IsRequest: Boolean; const RequestTimeStamp: TDateTime); virtual;
+    procedure HttpOnSoapMessage(Sender: TObject; Stream: TStream;
+      IsRequest: boolean; const RequestTimeStamp: TDateTime); virtual;
     procedure AfterRequestSaved(const FileName: string); virtual;
     procedure LogBeforeExecute(const MethodName: string; Response: TStream); virtual;
     procedure LogAfterExecute(const MethodName: string; Response: TStream);
@@ -66,30 +67,30 @@ type
     destructor Destroy; override;
   end;
 
-Function SoapToString(obj: TRemotable; RootNodeName: string = '';
+function SoapToString(Obj: TRemotable; RootNodeName: string = '';
   nodeName: string = ''; Options: TObjectConvertOptions = [ocoDontPrefixNode,
-  ocoDontPutTypeAttr]): string;
-function SoapToString2(obj: TRemotable; RootNodeName: string = '';
+    ocoDontPutTypeAttr]): string;
+function SoapToString2(Obj: TRemotable; RootNodeName: string = '';
   nodeName: string = ''): string;
-Procedure SaveSoapToFile(obj: TRemotable; const FileName: string);
+procedure SaveSoapToFile(Obj: TRemotable; const FileName: string);
 procedure CloneSoapObject(Source, Target: TRemotable);
 
 implementation
 
 uses
-  {pawel1, }ioUtils, Wininet;
+  System.ioUtils, winApi.Wininet, autoFree;
 
-Procedure SaveSoapToFile(obj: TRemotable; const FileName: string);
+procedure SaveSoapToFile(Obj: TRemotable; const FileName: string);
 var
   s: string;
 begin
-  s := SoapToString(obj);
+  s := SoapToString(Obj);
   TFile.WriteAllText(FileName, s, TEncoding.UTF8);
 end;
 
-Function SoapToString(obj: TRemotable; RootNodeName: string = '';
+function SoapToString(Obj: TRemotable; RootNodeName: string = '';
   nodeName: string = ''; Options: TObjectConvertOptions = [ocoDontPrefixNode,
-  ocoDontPutTypeAttr]): string;
+    ocoDontPutTypeAttr]): string;
 var
   RootNode, ResultNode: iXMLNode;
   // Converter: IObjConverter;
@@ -105,10 +106,10 @@ begin
 
     xml := NewXMLDocument;
     if RootNodeName = '' then
-      RootNodeName := obj.classname;
+      RootNodeName := Obj.classname;
 
     if nodeName = '' then
-      nodeName := obj.classname;
+      nodeName := Obj.classname;
 
     RootNode := xml.CreateNode(RootNodeName);
     xml.DocumentElement := RootNode;
@@ -121,17 +122,17 @@ begin
     converter.Options := converter.Options - [soSendMultiRefObj,
       soSendMultiRefArray];
 
-    ResultNode := obj.ObjectToSOAP(RootNode, RootNode, converter, nodeName, '',
+    ResultNode := Obj.ObjectToSOAP(RootNode, RootNode, converter, nodeName, '',
       '', ObjConvOpts, RefId);
 
-    result := RootNode.xml;
+    Result := RootNode.xml;
 
   finally
     converter := nil;
   end;
 end;
 
-function SoapToString2(obj: TRemotable; RootNodeName: string = '';
+function SoapToString2(Obj: TRemotable; RootNodeName: string = '';
   nodeName: string = ''): string;
 var
   // Converter: IObjConverter;
@@ -146,42 +147,42 @@ begin
 
   xml := NewXMLDocument;
   if RootNodeName = '' then
-    RootNodeName := obj.classname;
+    RootNodeName := Obj.classname;
   if nodeName = '' then
-    nodeName := obj.classname;
+    nodeName := Obj.classname;
 
   RootNode := xml.CreateNode(RootNodeName);
   xml.DocumentElement := RootNode;
 
-  converter := TSOAPDomConv.Create(NIL);
+  converter := TSOAPDomConv.Create(nil);
 
   converter.Options := converter.Options + [soSendUntyped, soRootRefNodesToBody,
     soDocument, soLiteralParams];
 
   converter.Options := converter.Options - [soSendMultiRefObj];
 
-  ResultNode := obj.ObjectToSOAP(RootNode, RootNode, converter, nodeName, '',
+  ResultNode := Obj.ObjectToSOAP(RootNode, RootNode, converter, nodeName, '',
     '', ObjConvOpts, XMLStr);
 
-  result := RootNode.xml;
+  Result := RootNode.xml;
 end;
 
 { THTTPReqRespWithMonitor }
 
 procedure THTTPReqRespWithMonitor.Execute(const Request: TStream;
   Response: TStream);
-  var
-  d:TDateTime;
+var
+  d: TDateTime;
 begin
   d := now;
 
   if assigned(fOnSoapMessage) then
-    fOnSoapMessage(self, Request, true, d);
+    fOnSoapMessage(self, Request, True, d);
 
   inherited;
 
   if assigned(fOnSoapMessage) then
-    fOnSoapMessage(self, Response, false, d);
+    fOnSoapMessage(self, Response, False, d);
 
 end;
 
@@ -205,7 +206,7 @@ begin
   RootNode := xml.AddChild('Root');
   ParentNode := RootNode.AddChild('Parent');
 
-  converter := TSOAPDomConv.Create(NIL);
+  converter := TSOAPDomConv.Create(nil);
 
   ResultNode := Source.ObjectToSOAP(RootNode, ParentNode, converter,
     'CopyObject', '', '', ObjConvOpts, XMLStr);
@@ -215,23 +216,23 @@ end;
 
 { TSoapWithLog }
 
-procedure TSoapWithLog.AddRequestHttpheaderItem(const name, Value: string);
+procedure TSoapWithLog.AddRequestHttpheaderItem(const Name, Value: string);
 var
   h: THeaderItem;
 begin
-  h.name := name;
+  h.Name := Name;
   h.Value := Value;
 
   // eliminate duplicates
-  for var x := 0 to fRequestCustomHttpHeaders.count-1 do
-    if Name = fRequestCustomHttpHeaders[x].Name then
+  for var X := 0 to fRequestCustomHttpHeaders.Count - 1 do
+    if Name = fRequestCustomHttpHeaders[X].Name then
     begin
-      fRequestCustomHttpHeaders[x]:= h;
-      Exit;
+      fRequestCustomHttpHeaders[X] := h;
+      exit;
     end;
 
   // add as new
-  fRequestCustomHttpHeaders.Add(h);
+  fRequestCustomHttpHeaders.add(h);
 end;
 
 procedure TSoapWithLog.AfterRequestSaved(const FileName: string);
@@ -239,65 +240,72 @@ begin
 
 end;
 
-function TSoapWithLog.GetHttp(ConnectTimeout :Integer=30000;  SendTimeout :Integer=30000;  ReceiveTimeout : integer =30000; const aName:String=''): THTTPRIO;
+function TSoapWithLog.GetHttp(ConnectTimeout: integer = 30000; SendTimeout: integer = 30000; ReceiveTimeout: integer = 30000; const aName: string = ''): THTTPRIO;
 var
   mr: THTTPReqRespWithMonitor;
 begin
-  result := THTTPRIO.Create(nil);
-  result.OnBeforeExecute := LogBeforeExecute;
-  result.OnAfterExecute := LogAfterExecute;
-  mr := THTTPReqRespWithMonitor.Create(result);
+  Result := THTTPRIO.Create(nil);
+  Result.OnBeforeExecute := LogBeforeExecute;
+  Result.OnAfterExecute := LogAfterExecute;
+  mr := THTTPReqRespWithMonitor.Create(Result);
   mr.OnSoapMessage := HttpOnSoapMessage;
 
-  mr.ConnectTimeout := ConnectTimeout ;
-{$IFNDEF DELPHIX_RIO_UP      }
-  mr.SendTimeout := SendTimeout ;
-{$ENDIF}
-  mr.ReceiveTimeout := ReceiveTimeout ;
+  mr.ConnectTimeout := ConnectTimeout;
+  {$IFNDEF DELPHIX_RIO_UP      }
+  mr.SendTimeout := SendTimeout;
+  {$ENDIF}
+  mr.ReceiveTimeout := ReceiveTimeout;
 
   mr.OnBeforePost := BeforePost;
+  mr.AutomaticDecompression := [THTTPCompressionMethod.GZip, THTTPCompressionMethod.Deflate];
 
-  result.HTTPWebNode := mr;
+  Result.HTTPWebNode := mr;
 
-  if aName<>'' then
-    result.HTTPWebNode.name := aName
-    else
-  result.HTTPWebNode.name := 'HTTPWebNode2'; { do not localize }
+  if aName <> '' then
+    Result.HTTPWebNode.Name := aName
+  else
+    Result.HTTPWebNode.Name := 'HTTPWebNode2'; { do not localize }
 
-  result.HTTPWebNode.SetSubComponent(true);
-
+  Result.HTTPWebNode.SetSubComponent(True);
 end;
 
-procedure TSoapWithLog.HttpOnSoapMessage(sender: tobject; Stream: TStream;
-  IsRequest: Boolean; const RequestTimeStamp: TDateTime);
+
+procedure TSoapWithLog.HttpOnSoapMessage(Sender: TObject; Stream: TStream;
+  IsRequest: boolean; const RequestTimeStamp: TDateTime);
 var
   fn, s: string;
   l: TStringList;
   ms: TMemorystream;
   i: integer;
-  sTimeStamp: String;
+  sTimeStamp : String;
 begin
   if Stream.Size = 0 then
+  begin
+    Log('Stream.Size = 0');
     exit;
+  end;
 
-    sTimeStamp:= formatDateTime('yyyy"-"mm"-"dd" "hh";"nn";"ss"."zzz', RequestTimeStamp);
+  sTimeStamp := FormatDateTime('yyyy"-"mm"-"dd" "hh";"nn";"ss"."zzz', RequestTimeStamp);
 
-  i := Stream.position;
+  i := Stream.Position;
   ms := TMemorystream.Create;
-  Stream.position := 0;
-  ms.copyFrom(Stream, Stream.Size);
-  Stream.position := i;
+  gc(ms);
+  Stream.Position := 0;
+  ms.CopyFrom(Stream, Stream.Size);
+  Stream.Position := i;
 
-  ms.position := 0;
+  ms.Position := 0;
   l := TStringList.Create;
+  gc(l);
   try
     l.LoadFromStream(ms, TEncoding.UTF8);
   except
-    ms.position := 0;
+    ms.Position := 0;
     l.LoadFromStream(ms);
   end;
-  ms.position := 0;
+  ms.Position := 0;
 
+  if IsRequest then
   if IsRequest then
     s := 'Request'
   else
@@ -309,72 +317,77 @@ begin
     fn := changeFileExt(GetLogFileName, ' (' + sTimeStamp + ') '
       + s + '.xml');
 
-      // ensure the file does not yet exists
-      s:=fn;
-      i:=1;
-      while fileExists(fn) do
-      begin
-      fn:=changeFileExt(s, ' ('+IntToStr(i)+').xml');
-      inc(i);
-      end;
+    // ensure the file does not yet exists
+    s := fn;
+    i := 1;
+    while FileExists(fn) do
+    begin
+      fn := changeFileExt(s, ' (' + IntToStr(i) + ').xml');
+      Inc(i);
+    end;
 
     ms.SaveToFile(fn);
     AfterRequestSaved(fn);
-    Log('Saved SOAP ' + s + ' to: "' + fn + '"');
+    Log('Saved SOAP ' + s + ' to: "' + fn + '"'); // Use Log, include headers
   end;
-  ms.Free;
-  l.Free;
 end;
 
 procedure TSoapWithLog.LogAfterExecute(const MethodName: string;
   Response: TStream);
 begin
-  Log('rio.AfterExecute method: "' + MethodName + '"');
+  log('rio.AfterExecute method: "' + MethodName + '"');
 end;
 
 procedure TSoapWithLog.LogBeforeExecute(const MethodName: string;
   Response: TStream);
 begin
-  Log('rio.beforeExecute method: "' + MethodName + '"');
+  log('rio.beforeExecute method: "' + MethodName + '"');
 end;
 
 procedure TSoapWithLog.BeforePost;
 var
-{$IFNDEF DELPHIX_RIO_UP      }
+  {$IFNDEF DELPHIX_RIO_UP      }
   s: string;
-{$ENDIF}
-  x: integer;
+  {$ENDIF}
+  X: integer;
   n, v: string;
 begin
-  fLastUrl:= AHTTPReqResp.URL;
+  fLastUrl := AHTTPReqResp.URL;
+
+
+
+  {$IFDEF DELPHIX_RIO_UP}
+
+  {$ENDIF}
+
   BeforePost2;
 
-{$IFNDEF DELPHIX_RIO_UP      }
+  {$IFNDEF DELPHIX_RIO_UP      }
   s := '';
-{$ENDIF}
-  for x := 0 to fRequestCustomHttpHeaders.count - 1 do
+  {$ENDIF}
+  for X := 0 to fRequestCustomHttpHeaders.Count - 1 do
   begin
-    n := fRequestCustomHttpHeaders[x].name;
-    v := fRequestCustomHttpHeaders[x].Value;
+    n := fRequestCustomHttpHeaders[X].Name;
+    v := fRequestCustomHttpHeaders[X].Value;
 
-{$IFDEF DELPHIX_RIO_UP      }
+    {$IFDEF DELPHIX_RIO_UP      }
     Client.CustomHeaders[n] := v;
-{$ELSE}
+    {$ELSE}
     s := s + n;
     if v <> '' then
       s := s + ': ' + v;
-    s := s + cr;
-{$ENDIF}
+    s := s + CR;
+    {$ENDIF}
   end;
-{$IFNDEF DELPHIX_RIO_UP      }
+  {$IFNDEF DELPHIX_RIO_UP      }
   if s <> '' then
     HttpAddRequestHeaders(AData,
       // A pointer to a string variable containing the headers to append to the request.
       // Each header must be terminated by a CR/LF (carriage return/line feed) pair.
-      PChar(s), Length(s), HTTP_ADDREQ_FLAG_ADD
+      PChar(s), length(s), HTTP_ADDREQ_FLAG_ADD
       // or HTTP_ADDREQ_FLAG_REPLACE
       );
-{$ENDIF}
+  {$ENDIF}
 end;
 
 procedure TSoapWithLog.BeforePost2;
@@ -395,3 +408,4 @@ begin
 end;
 
 end.
+
