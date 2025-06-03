@@ -167,6 +167,8 @@ Type
     Constructor Create;
     Destructor Destroy; override;
 
+    procedure Clear;
+
     Function IndexOf(const aColName: String): Integer; inline;
     function TryGetByName(const aname: String; out aValue: String): Boolean;
     // empties the data array
@@ -715,6 +717,14 @@ Begin
 End;
 
 { TRowReaderWriter }
+
+procedure TRowReaderWriter.Clear;
+begin
+  fDic.Clear;
+  FHeader:= [];
+  FColCount:= 0;
+  FData:= [];
+end;
 
 constructor TRowReaderWriter.Create;
 begin
