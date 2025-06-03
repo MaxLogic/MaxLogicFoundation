@@ -1,46 +1,55 @@
-Unit MaxLogic.MadExcept;
+unit maxLogic.madExcept;
 
-Interface
+interface
 
-Uses
-  MadExcept,
-  Windows, sysUtils, generics.collections, classes;
+uses
+  madExcept,
+  Windows, SysUtils, generics.collections, Classes;
 
-Procedure AdjustMadExcept(Const aLogdir: String);
-Procedure SetUpSmtp(Const aServer, aUsername, aPassword: String; aPort: Integer);
-Procedure SetBugReportMailRecipient(Const amailAddres: String);
-Procedure AddFileToMadExcept(Const Filename: String);
+procedure AdjustMadExcept(const aLogdir: string);
+procedure SetUpSmtp(const aServer, aUsername, aPassword: string; aPort: integer);
+procedure SetBugReportMailRecipient(const amailAddres: string);
+procedure AddFileToMadExcept(const FileName: string);
 // thread safe
-Procedure AddFieldToBugReportHeader(Const aName, aValue: String);
+procedure AddFieldToBugReportHeader(const aName, aValue: string);
 
-Procedure UpdateMailSubject(Const ErrorMessage: String);
-Procedure handleException(Const exceptIntf: IMEException; Var handled: boolean);
+procedure UpdateMailSubject(const ErrorMessage: string);
+procedure handleException(const exceptIntf: IMEException; var handled: boolean);
 
-Procedure MadExceptOnBeforeSendMail(Action: TExceptAction;
-  Const exceptIntf: IMEException;
-  Var handled: boolean);
+procedure MadExceptOnBeforeSendMail(Action: TExceptAction;
+  const exceptIntf: IMEException;
+  var handled: boolean);
 
-Implementation
+function GetExceptionStackTrace(aException: Exception): string;
 
-Uses
-  MaxLogic.MadExceptStrings,
-  MaxLogic.ioUtils, syncObjs;
+implementation
 
-Var
-  fBuildInfo: String = '';
-  fBugReportMailRecipient: String = 'pawel@maxlogic.eu';
+uses
+  maxLogic.MadExceptStrings,
+  maxLogic.IOUtils, syncObjs, madStackTrace;
+
+var
+  fBuildInfo: string = '';
+  fBugReportMailRecipient: string = 'pawel@maxlogic.eu';
 
   AddFieldToBugReportHeaderList: TStringList;
   AddFieldToBugReportHeaderCS: TCriticalSection;
 
-Procedure MadExceptOnBeforeSendMail(Action: TExceptAction;
-  Const exceptIntf: IMEException;
-  Var handled: boolean);
-Var
-  s: String;
-Begin
-  If Action = eaSendBugReport Then
-  Begin
+var glLastBugReport: string;
+
+function GetExceptionStackTrace(aException: Exception): string;
+begin
+  Result := madExcept.GetCrashStackTrace;
+end;
+
+procedure MadExceptOnBeforeSendMail(Action: TExceptAction;
+  const exceptIntf: IMEException;
+  var handled: boolean);
+var
+  s: string;
+begin
+  if Action = eaSendBugReport then
+  begin
     // In some situations you might want to check whether the current exception is already stored somewhere.
     // Comparing exceptions is not too easy, though. Especially comparing callstacks is tough.
     // So madExcept offers you some help by adding a "CallstackCrc" property to the "IMEException" interface. It consists of 3 dwords.
@@ -52,44 +61,44 @@ Begin
     // property IMEException.CallstackCrc [index: integer] : dword;
 
     s := '[ID:' +
-      IntToHex(exceptIntf.CallstackCrc[0], 1) + '.' +
-      IntToHex(exceptIntf.CallstackCrc[1], 1) + '] ErrorMessage: ' +
+      IntTohex(exceptIntf.CallstackCrc[0], 1) + '.' +
+      IntTohex(exceptIntf.CallstackCrc[1], 1) + '] ErrorMessage: ' +
       exceptIntf.ExceptMessage;
 
     UpdateMailSubject(s);
-  End;
-End;
+  end;
+end;
 
-Procedure handleException(Const exceptIntf: IMEException; Var handled: boolean);
-Var
-  x: Integer;
-  n, v: String;
-Begin
+procedure handleException(const exceptIntf: IMEException; var handled: boolean);
+var
+  X: integer;
+  n, v: string;
+begin
   // UpdateMailSubject(exceptIntf.ExceptMessage);
-  exceptIntf.BugReportHeader.Lock;
-  Try
+  exceptIntf.BugReportHeader.lock;
+  try
     AddFieldToBugReportHeaderCS.enter;
-    Try
-      For x := 0 To AddFieldToBugReportHeaderList.Count - 1 Do
-      Begin
-        n := AddFieldToBugReportHeaderList.names[x];
-        v := AddFieldToBugReportHeaderList.ValueFromIndex[x];
-        If n <> '' Then
+    try
+      for X := 0 to AddFieldToBugReportHeaderList.Count - 1 do
+      begin
+        n := AddFieldToBugReportHeaderList.names[X];
+        v := AddFieldToBugReportHeaderList.ValueFromIndex[X];
+        if n <> '' then
           exceptIntf.BugReportHeader[n] := v;
-      End;
+      end;
 
-    Finally
+    finally
       AddFieldToBugReportHeaderCS.Leave;
-    End;
-  Finally
+    end;
+  finally
     exceptIntf.BugReportHeader.unLock;
-  End;
-End;
+  end;
+end;
 
-Procedure SetUpSmtp(Const aServer, aUsername, aPassword: String; aPort: Integer);
-Var
+procedure SetUpSmtp(const aServer, aUsername, aPassword: string; aPort: integer);
+var
   mcfg: IMEModuleSettings;
-Begin
+begin
   mcfg := MESettings;
 
   // use local mail client
@@ -98,42 +107,42 @@ Begin
   // mcfg.MailAsSmtpServer := False;
 
   // smtp client
-  mcfg.MailAsSmtpClient := true;
+  mcfg.MailAsSmtpClient := True;
   mcfg.SmtpServer := aServer; // 'mail.maxlogic.eu';
   mcfg.SmtpPort := aPort; // 465;
   mcfg.SmtpAccount := aUsername; // 'bugreport@maxlogic.eu';
   mcfg.SmtpPassword := aPassword;
-  mcfg.SmtpSsl := true;
+  mcfg.SmtpSsl := True;
   mcfg.SmtpTls := False;
-End;
+end;
 
-Procedure SetBugReportMailRecipient(Const amailAddres: String);
-Var
+procedure SetBugReportMailRecipient(const amailAddres: string);
+var
   mcfg: IMEModuleSettings;
-Begin
+begin
   fBugReportMailRecipient := amailAddres;
 
   mcfg := MESettings;
   mcfg.MailAddr := fBugReportMailRecipient;
-End;
+end;
 
-Procedure AdjustMadExcept(Const aLogdir: String);
-Var
+procedure AdjustMadExcept(const aLogdir: string);
+var
   mcfg: IMEModuleSettings;
-  ZipFileName: String;
-  s: String;
-Begin
-   madexcept.RegisterExceptionHandler(handleException, stDontSync, epQuickFiltering);
-  MadExcept.RegisterExceptActionHandler(MadExceptOnBeforeSendMail, stDontSync);
+  ZipFileName: string;
+  s: string;
+begin
+
+  madExcept.RegisterExceptActionHandler(MadExceptOnBeforeSendMail, stDontSync);
 
   ZipFileName := 'Log.zip';
   mcfg := MESettings;
   // reload resource strings
-  Try
+  try
     mcfg.Reload;
-  Except
+  except
     // do nothing
-  End;
+  end;
   // CollectStrings(mcfg);
   Translate(mcfg);
 
@@ -150,13 +159,13 @@ Begin
 
   // mcfg.Enabled := True;
   // mcfg.CheckFileCrc := True;
-  mcfg.AutoSave := true;
-  mcfg.AutoClipboard := FindWindow('TAppBuilder', Nil) > 0; // is delphi running
-  mcfg.ShowPleaseWaitBox := true;
+  mcfg.AutoSave := True;
+  mcfg.AutoClipboard := FindWindow('TAppBuilder', nil) > 0; // is delphi running
+  mcfg.ShowPleaseWaitBox := True;
 
   // Send mail Options
-  fBuildInfo := Trim(ExtractFilename(MaxLogic.ioUtils.GetCurrentDLLName) + ' ' +
-    MaxLogic.ioUtils.GetBuildInfo);
+  fBuildInfo := Trim(ExtractFileName(maxLogic.IOUtils.GetCurrentDLLName) + ' ' +
+    maxLogic.IOUtils.GetBuildInfo);
   mcfg.MailSubject := 'Bugreport - ' + fBuildInfo;
   mcfg.MailAddr := fBugReportMailRecipient;
 
@@ -177,34 +186,34 @@ Begin
     property IMESettings.BugTrackerAssignTo   : string;     // FogBugz/BugZilla/Mantis assign to
   }
 
-  mcfg := Nil;
-End;
+  mcfg := nil;
+end;
 
-Var
-  glSyncMadExceptFileAdder: TCriticalSection = Nil;
-  glMadExceptAttachments: TDictionary<String, byte> = Nil;
+var
+  glSyncMadExceptFileAdder: TCriticalSection = nil;
+  glMadExceptAttachments: TDictionary<string, BYTE> = nil;
 
-Procedure AddFileToMadExcept(Const Filename: String);
-Var
+procedure AddFileToMadExcept(const FileName: string);
+var
   mcfg: IMEModuleSettings;
   Attachments: IMEAttachments;
-  ZipFileName: String;
-  x: Integer;
+  ZipFileName: string;
+  X: integer;
   found: boolean;
-  LoFn: String;
-Begin
-  If glSyncMadExceptFileAdder = Nil Then
+  LoFn: string;
+begin
+  if glSyncMadExceptFileAdder = nil then
     glSyncMadExceptFileAdder := TCriticalSection.Create;
   glSyncMadExceptFileAdder.enter;
-  Try
-    If glMadExceptAttachments = Nil Then
-      glMadExceptAttachments := TDictionary<String, byte>.Create;
+  try
+    if glMadExceptAttachments = nil then
+      glMadExceptAttachments := TDictionary<string, BYTE>.Create;
 
-    LoFn := AnsiLowerCase(Filename);
+    LoFn := AnsiLowerCase(FileName);
     found := glMadExceptAttachments.ContainsKey(LoFn);
-    If Not found Then
-    Begin
-      glMadExceptAttachments.add(LoFn, 0);
+    if not found then
+    begin
+      glMadExceptAttachments.Add(LoFn, 0);
 
       mcfg := MESettings;
 
@@ -214,71 +223,72 @@ Begin
       ZipFileName := mcfg.BugReportZip;
       Attachments := mcfg.AdditionalAttachments;
 
-      Attachments.add(Filename,
-        ExtractFilename(Filename),
+      Attachments.Add(FileName,
+        ExtractFileName(FileName),
         ZipFileName,
         '');
 
-      Attachments := Nil;
-      mcfg := Nil;
-    End;
-  Finally
+      Attachments := nil;
+      mcfg := nil;
+    end;
+  finally
     glSyncMadExceptFileAdder.Leave;
-  End;
-End;
+  end;
+end;
 
-Procedure UpdateMailSubject(Const ErrorMessage: String);
-Var
+procedure UpdateMailSubject(const ErrorMessage: string);
+var
   mcfg: IMEModuleSettings;
-Begin
+begin
   mcfg := MESettings;
   mcfg.MailSubject := 'Bugreport - ' + fBuildInfo + ' - ' + ErrorMessage;
-End;
+end;
 
-Procedure AddFieldToBugReportHeader(Const aName, aValue: String);
-Begin
+procedure AddFieldToBugReportHeader(const aName, aValue: string);
+begin
   AddFieldToBugReportHeaderCS.enter;
-  Try
+  try
     AddFieldToBugReportHeaderList.Values[aName] := aValue;
-  Finally
+  finally
     AddFieldToBugReportHeaderCS.Leave;
-  End;
-End;
+  end;
+end;
 
-Initialization
+initialization
 
-// This function hides all leaks in unit "initialization" sections.
-// It's ok to use this for EXEs, but not recommended for DLLs.
-// HideInitializationLeaks;
+  // This function hides all leaks in unit "initialization" sections.
+  // It's ok to use this for EXEs, but not recommended for DLLs.
+  // HideInitializationLeaks;
 
-// hide some common leaks that we can not change...
-HideLeak('TJvCustomComboEdit.DefaultImages');
+  // hide some common leaks that we can not change...
+  HideLeak('TJvCustomComboEdit.DefaultImages');
 
-AddFieldToBugReportHeaderList := TStringList.Create;
-AddFieldToBugReportHeaderCS := TCriticalSection.Create;
+  AddFieldToBugReportHeaderList := TStringList.Create;
+  AddFieldToBugReportHeaderCS := TCriticalSection.Create;
 
-{$IFDEF Win32}
-AddFieldToBugReportHeaderList .values['Bitness'] := 'Win32';
-{$ENDIF}
+  {$IFDEF Win32}
+  AddFieldToBugReportHeaderList.Values['Bitness'] := 'Win32';
+  {$ENDIF}
 
-{$IFDEF Win64}
-AddFieldToBugReportHeaderList .values['Bitness'] := 'Win64';
-{$ENDIF}
+  {$IFDEF win64}
+  AddFieldToBugReportHeaderList.Values['Bitness'] := 'Win64';
+  {$ENDIF}
 
-Finalization
+finalization
 
-If glSyncMadExceptFileAdder <> Nil Then
-Begin
-  glSyncMadExceptFileAdder.Free;
-  glSyncMadExceptFileAdder := Nil;
-End;
-If assigned(glMadExceptAttachments) Then
-Begin
-  glMadExceptAttachments.Free;
-  glMadExceptAttachments := Nil;
-End;
+  if glSyncMadExceptFileAdder <> nil then
+  begin
+    glSyncMadExceptFileAdder.Free;
+    glSyncMadExceptFileAdder := nil;
+  end;
+  if assigned(glMadExceptAttachments) then
+  begin
+    glMadExceptAttachments.Free;
+    glMadExceptAttachments := nil;
+  end;
 
-AddFieldToBugReportHeaderList.Free;
-AddFieldToBugReportHeaderCS.Free;
+  AddFieldToBugReportHeaderList.Free;
+  AddFieldToBugReportHeaderCS.Free;
 
-End.
+end.
+
