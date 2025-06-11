@@ -204,6 +204,7 @@ Begin
   fConnection := TFDConnection.Create(Nil);
   fConnection.LoginPrompt := false;
   fConnection.UpdateOptions.LockWait := True;
+  fConnection.ResourceOptions.MacroExpand := False;
 
   fquery := TfdQuery.Create(Nil);
   fquery.Connection := fConnection;
