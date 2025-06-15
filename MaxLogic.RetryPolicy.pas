@@ -118,7 +118,6 @@ type
 // quick access methods
 procedure Retry(aAction: TFunc<Boolean>; aRetryCount: Cardinal = 3; aDelay: Cardinal = 100); overload;
 procedure Retry(aProc: TProc; aRetryCount: Cardinal = 3; aDelay: Cardinal = 100); overload;
-procedure Retry<T>(aProc: TProc<T>; aValue: T; aRetryCount: Cardinal = 3; aDelay: Cardinal = 100); overload;
 
 implementation
 
@@ -134,17 +133,11 @@ begin
     .WithInitialDelay(aDelay)
     .Execute(aAction);
 end;
+
 procedure Retry(aProc: TProc; aRetryCount: Cardinal = 3; aDelay: Cardinal = 100); overload;
 begin
   Retry(
     TRetryPolicy.WrapProc(aProc),
-    aRetryCount, aDelay);
-end;
-
-procedure Retry<T>(aProc: TProc<T>; aValue: T; aRetryCount: Cardinal = 3; aDelay: Cardinal = 100); overload;
-begin
-  Retry(
-    TRetryPolicy.WrapProc<T>(aProc, aValue),
     aRetryCount, aDelay);
 end;
 
@@ -188,7 +181,7 @@ begin
   end;
 end;
 
-class function TRetryRunner.ExecuteAsync(-aPolicy: TRetryPolicy; const aOptions: TRetryOptions; const aAction: TFunc<Boolean>): ITask;
+class function TRetryRunner.ExecuteAsync(aPolicy: TRetryPolicy; const aOptions: TRetryOptions; const aAction: TFunc<Boolean>): ITask;
 begin
   Result := TTask.Run(
     procedure
@@ -323,11 +316,6 @@ begin
   inherited Create;
   fOptions := TRetryOptions.GetDefault;
   fCancelled := False;
-end;
-
-class function TRetryPolicy.New: TRetryPolicy;
-begin
-  Result := TRetryPolicy.Create;
 end;
 
 procedure TRetryPolicy.Cancel;
