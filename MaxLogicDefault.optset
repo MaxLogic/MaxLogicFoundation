@@ -1,6 +1,6 @@
 ﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
-        <DCC_UnitSearchPath>f:\projects\maxLogic\MaxLogicFoundation\;F:\projects\3rdParty\Daniele Spinetti\loggerpro;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_UnitSearchPath>f:\projects\maxLogic\MaxLogicFoundation\;F:\projects\3rdParty\Daniele Spinetti\loggerpro;F:\projects\3rdParty\Spring4D\_git\spring4d\Source;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
         <DCC_FOR_VARIABLE>error</DCC_FOR_VARIABLE>
         <DCC_FOR_LOOP_VAR_VARPAR>error</DCC_FOR_LOOP_VAR_VARPAR>
         <DCC_FOR_LOOP_VAR_UNDEF>error</DCC_FOR_LOOP_VAR_UNDEF>
