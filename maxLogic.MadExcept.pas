@@ -4,11 +4,17 @@ interface
 
 uses
   madExcept,
-  Windows, SysUtils, generics.collections, Classes;
+  winApi.Windows, System.SysUtils, generics.collections, System.Classes;
 
 procedure AdjustMadExcept(const aLogdir: string);
+
+procedure SetUpWebUpload(const aUrl, aTenant: String; aDisableOtherSendBugRportMethods: Boolean = True);
+
+// --- smtp specific
 procedure SetUpSmtp(const aServer, aUsername, aPassword: string; aPort: integer);
 procedure SetBugReportMailRecipient(const amailAddres: string);
+// ---
+
 procedure AddFileToMadExcept(const FileName: string);
 // thread safe
 procedure AddFieldToBugReportHeader(const aName, aValue: string);
@@ -26,14 +32,14 @@ implementation
 
 uses
   maxLogic.MadExceptStrings,
-  maxLogic.IOUtils, syncObjs, madStackTrace;
+  maxLogic.IOUtils, System.syncObjs, madStackTrace;
 
 var
   fBuildInfo: string = '';
   fBugReportMailRecipient: string = 'pawel@maxlogic.eu';
 
-  AddFieldToBugReportHeaderList: TStringList;
-  AddFieldToBugReportHeaderCS: TCriticalSection;
+  glAddFieldToBugReportHeaderList: TStringList;
+  glAddFieldToBugReportHeaderCS: TCriticalSection;
 
 var glLastBugReport: string;
 
@@ -77,22 +83,55 @@ begin
   // UpdateMailSubject(exceptIntf.ExceptMessage);
   exceptIntf.BugReportHeader.lock;
   try
-    AddFieldToBugReportHeaderCS.enter;
+    glAddFieldToBugReportHeaderCS.enter;
     try
-      for X := 0 to AddFieldToBugReportHeaderList.Count - 1 do
+      for X := 0 to glAddFieldToBugReportHeaderList.Count - 1 do
       begin
-        n := AddFieldToBugReportHeaderList.names[X];
-        v := AddFieldToBugReportHeaderList.ValueFromIndex[X];
+        n := glAddFieldToBugReportHeaderList.names[X];
+        v := glAddFieldToBugReportHeaderList.ValueFromIndex[X];
         if n <> '' then
           exceptIntf.BugReportHeader[n] := v;
       end;
 
     finally
-      AddFieldToBugReportHeaderCS.Leave;
+      glAddFieldToBugReportHeaderCS.Leave;
     end;
   finally
     exceptIntf.BugReportHeader.unLock;
   end;
+end;
+
+procedure SetUpWebUpload(const aUrl, aTenant: String; aDisableOtherSendBugRportMethods: Boolean = True);
+var
+  mcfg: IMEModuleSettings;
+begin
+  mcfg := MESettings;
+
+  // use web upload only
+  if aDisableOtherSendBugRportMethods then
+  begin
+    mcfg.MailViaMapi := False;
+    mcfg.MailViaMailto := False;
+    mcfg.MailAsSmtpServer := False;
+    mcfg.MailAsSmtpClient := False;
+    mcfg.MailViaMapi := False;
+    mcfg.MailViaMailto := False;
+  end;
+
+  mcfg.UploadToCustomScript := true;
+  mcfg.HttpServer:= aUrl;
+  mcfg.HttpSsl:= True;
+  // Default port (0) means auto-select based on HttpSsl (443 for HTTPS, 80 for HTTP)
+  mcfg.HttpPort := 0;
+
+  // You might need to specify a custom field name if your PHP expects it explicitly
+  // By default, madExcept sends the bug report in the "bugreport" field
+  mcfg.AdditionalFields['BugReportField'] := 'bugreport';
+
+  // Optional: add extra form fields if needed
+  // mcfg.AdditionalFields['username'] := 'exampleuser';
+  if aTenant<>'' then
+    mcfg.AdditionalFields['customerIdentifier'] := aTenant;
 end;
 
 procedure SetUpSmtp(const aServer, aUsername, aPassword: string; aPort: integer);
@@ -246,49 +285,35 @@ end;
 
 procedure AddFieldToBugReportHeader(const aName, aValue: string);
 begin
-  AddFieldToBugReportHeaderCS.enter;
+  glAddFieldToBugReportHeaderCS.enter;
   try
-    AddFieldToBugReportHeaderList.Values[aName] := aValue;
+    glAddFieldToBugReportHeaderList.Values[aName] := aValue;
   finally
-    AddFieldToBugReportHeaderCS.Leave;
+    glAddFieldToBugReportHeaderCS.Leave;
   end;
 end;
 
 initialization
-
-  // This function hides all leaks in unit "initialization" sections.
-  // It's ok to use this for EXEs, but not recommended for DLLs.
-  // HideInitializationLeaks;
-
   // hide some common leaks that we can not change...
   HideLeak('TJvCustomComboEdit.DefaultImages');
 
-  AddFieldToBugReportHeaderList := TStringList.Create;
-  AddFieldToBugReportHeaderCS := TCriticalSection.Create;
+  glAddFieldToBugReportHeaderList := TStringList.Create;
+  glAddFieldToBugReportHeaderCS := TCriticalSection.Create;
 
   {$IFDEF Win32}
-  AddFieldToBugReportHeaderList.Values['Bitness'] := 'Win32';
+  glAddFieldToBugReportHeaderList.Values['Bitness'] := 'Win32';
   {$ENDIF}
 
   {$IFDEF win64}
-  AddFieldToBugReportHeaderList.Values['Bitness'] := 'Win64';
+  glAddFieldToBugReportHeaderList.Values['Bitness'] := 'Win64';
   {$ENDIF}
 
 finalization
 
-  if glSyncMadExceptFileAdder <> nil then
-  begin
-    glSyncMadExceptFileAdder.Free;
-    glSyncMadExceptFileAdder := nil;
-  end;
-  if assigned(glMadExceptAttachments) then
-  begin
-    glMadExceptAttachments.Free;
-    glMadExceptAttachments := nil;
-  end;
-
-  AddFieldToBugReportHeaderList.Free;
-  AddFieldToBugReportHeaderCS.Free;
+  FreeAndNil(glSyncMadExceptFileAdder);
+  FreeAndNil(glMadExceptAttachments);
+  FreeAndNil(glAddFieldToBugReportHeaderList);
+  FreeAndNil(glAddFieldToBugReportHeaderCS);
 
 end.
 
