@@ -966,7 +966,7 @@ end;
 
 function ReScaleValue(const aValue: int64; aControl: TControl; const aOldScaleFactor: Single): int64; overload;
 begin
-  Result:= ReScaleValue(Double( aValue), aControl, aOldScaleFactor);
+  Result:= ReScaleValue(Integer(aValue), aControl, aOldScaleFactor);
 end;
 
 function ReScaleValue(const aValue: integer; aControl: TControl; const aOldScaleFactor: Single): integer;
