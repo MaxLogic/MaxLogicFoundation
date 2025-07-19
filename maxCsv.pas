@@ -1,4 +1,4 @@
-Unit maxCsv;
+unit maxCsv;
 
 { Copyright: pawel Piotrowski
   Version: 1.4
@@ -17,72 +17,77 @@ Unit maxCsv;
 {$DEFINE USE_INLINE}
 {$ENDIF}
 
-Interface
+interface
 
-Uses
-  MaxLogic.BufferedFile,
-  system.classes, system.sysUtils, system.RTTI, generics.collections;
+uses
+  maxLogic.BufferedFile,
+  System.Classes, System.SysUtils, System.Rtti, generics.collections;
 
-Type
+type
   // forward declarations
-  TCSVBase = Class;
-  TCsvReader = Class;
-  TCsvWriter = Class;
-  TRow = TArray<String>;
+  TCSVBase = class;
+  TCsvReader = class;
+  TCsvWriter = class;
+  TRow = TArray<string>;
   TRawRow = TArray<rawByteString>;
 
-  TRawRowHelper = Record Helper For TRawRow
-  Public
-    Function ToUnicode: TRow; inline;
-  End;
+  TRawRowHelper = record helper for TRawRow
+  public
+    function ToUnicode: TRow; inline;
+  end;
 
-  TCSVBase = Class
-  protected Const
-    CR = #13 + #10;
+  TCSVBase = class
+  protected const
+      CR = #13 + #10;
   protected
-    fDelimiter: ansichar;
-    FQuoteChar: ansichar;
-    Procedure SetQuoteChar(Const Value: ansichar); virtual;
-    Procedure SetSeparator(Const Value: ansichar); virtual;
-  Public
-    Constructor Create;
-    Destructor Destroy; Override;
+    fDelimiter: AnsiChar;
+    FQuoteChar: AnsiChar;
+    procedure SetQuoteChar(const Value: AnsiChar); virtual;
+    procedure SetSeparator(const Value: AnsiChar); virtual;
+  public
+    constructor Create;
+    destructor Destroy; override;
 
-    Property QuoteChar: ansichar Read FQuoteChar Write SetQuoteChar;
-    Property Delimiter: ansichar Read fDelimiter Write SetSeparator;
-  End;
+    property QuoteChar: AnsiChar read FQuoteChar write SetQuoteChar;
+    property Delimiter: AnsiChar read fDelimiter write SetSeparator;
+  end;
 
-  TCsvReader = Class(TCSVBase)
-  Private Const
-    cBufferSize = 1024 * 1024;
+  TCsvReader = class(TCSVBase)
+  private const
+      cBufferSize = 1024 * 1024;
   private
-    class var fPotentialDelimiters:array[ansiChar] of Boolean;
+    class var fPotentialDelimiters: array[AnsiChar] of boolean;
     class constructor CreateClass;
-  Private
+  private
     fBuffer: TBufferedFile;
-    fUtf8BomDetected: Boolean;
+    fUtf8BomDetected: boolean;
 
-    fMaxColCountFound: Integer;
-    fForcedColCount: Integer;
-    fCsvFileSize: int64;
+    fMaxColCountFound: integer;
+    fForcedColCount: integer;
+    fCsvFileSize: Int64;
 
-
-    Function GetEof: Boolean; {$IFDEF USE_INLINE}Inline; {$ENDIF}
-    Procedure DetectBom;
+    function GetEof: boolean;
+    {$IFDEF USE_INLINE} inline;
+    {$ENDIF}
+    procedure DetectBom;
 
     // those methods are split for performance reasons. mostly quotes do not need to be checked, and we know when to check when the first char of a column is a quote char
-    Procedure ReadNonQuotedColValue(Var aValue: rawByteString; Var LineEndDetected: Boolean); {$IFDEF USE_INLINE}Inline; {$ENDIF}
-    Procedure ReadQuotedColValue(Var aValue: rawByteString; Var LineEndDetected: Boolean); {$IFDEF USE_INLINE}Inline; {$ENDIF}
-  Public
-    Constructor Create;
-    Destructor Destroy; Override;
+    procedure ReadNonQuotedColValue(var aValue: rawByteString; var LineEndDetected: boolean);
+    {$IFDEF USE_INLINE} inline;
+    {$ENDIF}
+    procedure ReadQuotedColValue(var aValue: rawByteString; var LineEndDetected: boolean);
+    {$IFDEF USE_INLINE} inline;
+    {$ENDIF}
+  public
+    constructor Create;
+    destructor Destroy; override;
 
     // this also calls detect delimiter if aUseDelimiter = #0. ATTENTION: the Delimiter will be converted to a ansiChar
-    Procedure Open(Const Filename: String; aShareMode: Cardinal = fmShareDenyWrite; aUseDelimiter: Char = #0); Overload;
-    Procedure Open(Const Filename: String;aUseDelimiter: Char); Overload;
-    Procedure Open(aStream: TStream; aTakeOwnerShipOfStream: Boolean = False; aUseDelimiter: Char = #0); Overload;
+    procedure Open(const FileName: string; aShareMode: Cardinal = fmShareDenyWrite; aUseDelimiter: char = #0); overload;
+    procedure Open(const FileName: string; aUseDelimiter: char); overload;
+    procedure Open(aStream: TStream; aTakeOwnerShipOfStream: boolean = False; aUseDelimiter: char = #0); overload;
 
-    Procedure Close;
+    procedure Close;
 
     // it tries to find the proper delimiter
     // valid characters are: ,;| and #9 (tab)
@@ -90,260 +95,276 @@ Type
     // only max 1024 bytes are checked
     // quoted columns are supported
     // default is comma ","
-    Function DetectDelimiter: ansichar;
+    function DetectDelimiter: AnsiChar;
 
-    Function ReadRow(Var row: TRawRow): Boolean; Overload; {$IFDEF USE_INLINE}Inline; {$ENDIF}
+    function ReadRow(var Row: TRawRow): boolean; overload;
+    {$IFDEF USE_INLINE} inline;
+    {$ENDIF}
     // this will try to convert the rawByteStrings to unicode
-    Function ReadRow(Var row: TRow): Boolean; Overload; {$IFDEF USE_INLINE}Inline; {$ENDIF}
-    Property Eof: Boolean Read GetEof;
-    Property Utf8BomDetected: Boolean Read fUtf8BomDetected;
-    Property MaxColCountFound: Integer Read fMaxColCountFound;
+    function ReadRow(var Row: TRow): boolean; overload;
+    {$IFDEF USE_INLINE} inline;
+    {$ENDIF}
+
+    // convenience helpers to load the whole CSV into memory
+    /// <summary>
+    ///  Reads the complete CSV file into a <see cref="TList<TRow>"/> where each entry
+    ///  represents a row. Caller owns the list and its contained dynamic arrays.
+    /// </summary>
+    class function ReadAllToList(const aFileName: string; aUseDelimiter: char = #0): TList<TRow>; static;
+    /// <summary>
+    ///  Reads the complete CSV file and returns all data as dynamic array of rows.
+    /// </summary>
+    class function ReadAllToArray(const aFileName: string; aUseDelimiter: char = #0): TArray<TRow>; static;
+
+    property EOF: boolean read GetEof;
+    property Utf8BomDetected: boolean read fUtf8BomDetected;
+    property MaxColCountFound: integer read fMaxColCountFound;
     // you can force the CSV reader to always output that amount of columns
-    Property ForcedColCount: Integer Read fForcedColCount Write fForcedColCount;
+    property ForcedColCount: integer read fForcedColCount write fForcedColCount;
 
     // some info about the underlying file
-    property CsvFileSize : int64 read fCsvFileSize ;
-  End;
+    property CsvFileSize: Int64 read fCsvFileSize;
+  end;
 
-  TCsvWriter = Class(TCSVBase)
-  Private Const
-    cBufferSize = 1024 * 1024;
-  Private
-    fBufferSize: Integer;
+  TCsvWriter = class(TCSVBase)
+  private const
+      cBufferSize = 1024 * 1024;
+  private
+    fBufferSize: integer;
     fStream: TStream;
-    fOwnsStream: Boolean;
+    fOwnsStream: boolean;
     fBuffer: TMemoryStream;
     fEncoding: TEncoding;
     FLineBreak: rawByteString;
-    FCloseRowWithDelimiter: Boolean;
-    fControlChars:array[Char] of Boolean;
+    FCloseRowWithDelimiter: boolean;
+    fControlChars: array[char] of boolean;
 
-    Procedure WriteCell(Const Value: String); Overload;
-    Procedure WriteCell(Const Value: rawByteString); Overload;
+    procedure WriteCell(const Value: string); overload;
+    procedure WriteCell(const Value: rawByteString); overload;
     procedure SetLineBreak(const Value: rawByteString);
-    procedure SetCloseRowWithDelimiter(const Value: Boolean);
+    procedure SetCloseRowWithDelimiter(const Value: boolean);
     procedure UpdateControlChars;
-    procedure SetQuoteChar(Const Value: ansichar); override;
-    Procedure SetSeparator(Const Value: ansichar); override;
-  Public
-    Constructor Create(aStream: TStream; aEncoding: TEncoding = Nil; aBufferSize: Integer = cBufferSize); Overload;
-    Constructor Create(Const aFilename: String; aEncoding: TEncoding = Nil; aBufferSize: Integer = cBufferSize); Overload;
-    Destructor Destroy; Override;
+    procedure SetQuoteChar(const Value: AnsiChar); override;
+    procedure SetSeparator(const Value: AnsiChar); override;
+  public
+    constructor Create(aStream: TStream; aEncoding: TEncoding = nil; aBufferSize: integer = cBufferSize); overload;
+    constructor Create(const aFileName: string; aEncoding: TEncoding = nil; aBufferSize: integer = cBufferSize); overload;
+    destructor Destroy; override;
 
     // Note: this will encapsulate all values in quotes if it either find a separator cha or a quote char in the cell values
-    Procedure WriteRow(Const row: TRow); Overload;
+    procedure WriteRow(const Row: TRow); overload;
     // no encoding will be performed here
-    Procedure WriteRow(Const row: TRawRow); Overload;
+    procedure WriteRow(const Row: TRawRow); overload;
     // per default no bom is written, but you can do it yourself here. just do it before you write any values
-    Procedure WriteUtf8Bom;
+    procedure WriteUtf8Bom;
 
     // flushes the internal buffer to the file stream. will be called automatically when the buffer exceeds the defined buffer size and on destroy
-    Procedure Flush;
+    procedure Flush;
 
     property LineBreak: rawByteString read FLineBreak write SetLineBreak;
-    property CloseRowWithDelimiter: Boolean read FCloseRowWithDelimiter write SetCloseRowWithDelimiter;
-  End;
+    property CloseRowWithDelimiter: boolean read FCloseRowWithDelimiter write SetCloseRowWithDelimiter;
+  end;
 
   TMissingColumnHandling = (mcOnReadReturnEmptyString, mcOnWriteIgnore, mcNoErrorsOnReadWrite);
 
   TRowReaderWriter = class
   private
-    fDic: TDictionary<String, Integer>;
+    fDic: TDictionary<string, integer>;
     FHeader: TRow;
-    FColCount: Integer;
+    FColCount: integer;
     FData: TRow;
     FMissingColumnHandling: TMissingColumnHandling;
 
-    function GetHeaderAsCommaSeparatedText: String;
-    procedure SetColCount(const Value: Integer);
+    function GetHeaderAsCommaSeparatedText: string;
+    procedure SetColCount(const Value: integer);
     procedure SetData(const Value: TRow);
     procedure SetHeader(const Value: TRow);
-    procedure SetHeaderAsCommaSeparatedText(const Value: String);
-    function GetValue(const aColName: String): String;
-    procedure SetValue(const aColName, Value: String);
+    procedure SetHeaderAsCommaSeparatedText(const Value: string);
+    function getValue(const aColName: string): string;
+    procedure SetValue(const aColName, Value: string);
     procedure SetMissingColumnHandling(
       const Value: TMissingColumnHandling);
   public
-    Constructor Create;
-    Destructor Destroy; override;
+    constructor Create;
+    destructor Destroy; override;
 
     procedure Clear;
 
-    Function IndexOf(const aColName: String): Integer; inline;
-    function TryGetByName(const aname: String; out aValue: String): Boolean;
+    function IndexOf(const aColName: string): integer; inline;
+    function TryGetByName(const aname: string; out aValue: string): boolean;
     // empties the data array
-    Procedure Reset;
+    procedure reset;
 
     // is used to set up the index
     property Header: TRow read FHeader write SetHeader;
-    Property HeaderAsCommaSeparatedText: String read GetHeaderAsCommaSeparatedText write SetHeaderAsCommaSeparatedText;
-    Property ColCount: Integer read FColCount write SetColCount;
+    property HeaderAsCommaSeparatedText: string read GetHeaderAsCommaSeparatedText write SetHeaderAsCommaSeparatedText;
+    property ColCount: integer read FColCount write SetColCount;
     // when setting, the length will be checked to be >= ColCount, if it is less, then it will be increased
-    Property Data: TRow read FData write SetData;
+    property Data: TRow read FData write SetData;
     // access the column values by their names
-    Property Values[const aColName: String]: String read GetValue write SetValue; default;
+    property Values[const aColName: string]: string read getValue write SetValue; default;
     // how the class should behave when you access a missing column?
-    Property MissingColumnHandling:TMissingColumnHandling read FMissingColumnHandling write SetMissingColumnHandling;
+    property MissingColumnHandling: TMissingColumnHandling read FMissingColumnHandling write SetMissingColumnHandling;
   end;
 
-Implementation
+implementation
 
-Uses
+uses
   {$IFDEF MSWINDOWS}
   maxInMemoryFile,
   {$ENDIF}
-  system.ioUtils, system.ansiStrings, System.WideStrUtils, autoFree;
+  System.IOUtils, System.AnsiStrings, System.WideStrUtils, AutoFree;
 
 { TCSVBase }
 
-Constructor TCSVBase.Create;
-Begin
-  Inherited Create;
+constructor TCSVBase.Create;
+begin
+  inherited Create;
   FQuoteChar := '"';
   fDelimiter := ',';
-End;
+end;
 
-Destructor TCSVBase.Destroy;
-Begin
+destructor TCSVBase.Destroy;
+begin
 
-  Inherited;
-End;
+  inherited;
+end;
 
-Procedure TCSVBase.SetQuoteChar(Const Value: ansichar);
-Begin
+procedure TCSVBase.SetQuoteChar(const Value: AnsiChar);
+begin
   FQuoteChar := Value;
-End;
+end;
 
-Procedure TCSVBase.SetSeparator(Const Value: ansichar);
-Begin
+procedure TCSVBase.SetSeparator(const Value: AnsiChar);
+begin
   fDelimiter := Value;
-End;
+end;
 
 { TCsvWriter }
 
-Constructor TCsvWriter.Create(aStream: TStream; aEncoding: TEncoding = Nil; aBufferSize: Integer = cBufferSize);
-Begin
-  Inherited Create;
+constructor TCsvWriter.Create(aStream: TStream; aEncoding: TEncoding = nil; aBufferSize: integer = cBufferSize);
+begin
+  inherited Create;
   self.FLineBreak := sLineBreak;
   fBuffer := TMemoryStream.Create;
   fStream := aStream;
   fOwnsStream := False;
   fEncoding := aEncoding;
-  If fEncoding = Nil Then
+  if fEncoding = nil then
     fEncoding := TEncoding.UTF8;
   fBufferSize := aBufferSize;
   fBuffer.Size := fBufferSize; // preallocate memory
   UpdateControlChars;
-End;
+end;
 
-Destructor TCsvWriter.Destroy;
-Begin
+destructor TCsvWriter.Destroy;
+begin
   Flush;
   fBuffer.Free;
-  If fOwnsStream Then
-    If assigned(fStream) Then
+  if fOwnsStream then
+    if assigned(fStream) then
       fStream.Free;
 
-  Inherited;
-End;
+  inherited;
+end;
 
-Procedure TCsvWriter.WriteCell(Const Value: String);
-Var
-  s: String;
-  x: Integer;
-  RequireQuote: Boolean;
+procedure TCsvWriter.WriteCell(const Value: string);
+var
+  s: string;
+  X: integer;
+  RequireQuote: boolean;
   bytes: TBytes;
-Begin
+begin
   s := Value;
   RequireQuote := False;
 
-  For x := 1 To length(s) Do
+  for X := 1 to length(s) do
     // optimization:
     // If charInSet(s[x], [FQuoteChar, fDelimiter, #10, #13]) Then
-    if fControlChars[s[x]] then
-    Begin
+    if fControlChars[s[X]] then
+    begin
       RequireQuote := True;
-      Break;
-    End;
+      break;
+    end;
 
-  If RequireQuote Then
+  if RequireQuote then
   begin
-    var lQuoteChar:= string(FQuoteChar); // prevent compuler warning: Implicit string cast from 'AnsiChar' to 'string'
+    var lQuoteChar := string(FQuoteChar); // prevent compuler warning: Implicit string cast from 'AnsiChar' to 'string'
     s := lQuoteChar +
-      StringReplace(s, lQuoteChar, lQuoteChar + lQuoteChar, [rfReplaceAll]) +
+      Stringreplace(s, lQuoteChar, lQuoteChar + lQuoteChar, [rfReplaceAll]) +
       lQuoteChar;
   end;
 
   bytes := fEncoding.getbytes(s);
-  If length(bytes) <> 0 Then
+  if length(bytes) <> 0 then
     fBuffer.WriteBuffer(bytes[0], length(bytes))
-End;
+end;
 
-Procedure TCsvWriter.WriteRow(Const row: TRow);
-Var
-  x: Integer;
-Begin
-  For x := 0 To length(row) - 1 Do
+procedure TCsvWriter.WriteRow(const Row: TRow);
+var
+  X: integer;
+begin
+  for X := 0 to length(Row) - 1 do
   begin
-    if x <> 0 then
+    if X <> 0 then
       fBuffer.Write(fDelimiter, 1);
-    WriteCell(row[x]);
+    WriteCell(Row[X]);
   end;
   if CloseRowWithDelimiter then
     fBuffer.Write(fDelimiter, 1);
   fBuffer.Write(self.FLineBreak[1], length(self.FLineBreak));
-  If fBuffer.Size > fBufferSize Then
+  if fBuffer.Size > fBufferSize then
     Flush;
-End;
+end;
 
-Constructor TCsvWriter.Create(Const aFilename: String; aEncoding: TEncoding = Nil; aBufferSize: Integer = cBufferSize);
-Var
+constructor TCsvWriter.Create(const aFileName: string; aEncoding: TEncoding = nil; aBufferSize: integer = cBufferSize);
+var
   stream: TStream;
-Begin
+begin
   {$IFNDEF MSWINDOWS}
-  stream := TFileStream.Create(aFilename, fmCreate);
+  stream := TFileStream.Create(aFileName, fmCreate);
   {$ELSE}
-  stream := TMMFStream.Create(aFilename, mmfCreate);
+  stream := TMMFStream.Create(aFileName, mmfCreate);
   {$ENDIF}
   Create(stream, aEncoding, aBufferSize);
   fOwnsStream := True;
-End;
+end;
 
-Procedure TCsvWriter.WriteUtf8Bom;
-Var
+procedure TCsvWriter.WriteUtf8Bom;
+var
   b: TBytes;
-Begin
+begin
   b := TEncoding.UTF8.GetPreamble;
   fStream.Write(b[0], length(b));
-End;
+end;
 
-Procedure TCsvWriter.WriteRow(Const row: TRawRow);
-Var
-  x: Integer;
-Begin
-  For x := 0 To length(row) - 1 Do
+procedure TCsvWriter.WriteRow(const Row: TRawRow);
+var
+  X: integer;
+begin
+  for X := 0 to length(Row) - 1 do
   begin
-    if x <> 0 then
+    if X <> 0 then
       fBuffer.Write(fDelimiter, 1);
-    WriteCell(row[x]);
+    WriteCell(Row[X]);
   end;
   if CloseRowWithDelimiter then
     fBuffer.Write(fDelimiter, 1);
   fBuffer.Write(self.FLineBreak[1], length(self.FLineBreak));
-  If fBuffer.Size > fBufferSize Then
+  if fBuffer.Size > fBufferSize then
     Flush;
-End;
+end;
 
-Procedure TCsvWriter.Flush;
-Begin
-  If fBuffer.Position <> 0 Then
-  Begin
+procedure TCsvWriter.Flush;
+begin
+  if fBuffer.Position <> 0 then
+  begin
     fStream.Write(fBuffer.Memory^, fBuffer.Position);
     fBuffer.Position := 0;
-  End;
-End;
+  end;
+end;
 
-procedure TCsvWriter.SetCloseRowWithDelimiter(const Value: Boolean);
+procedure TCsvWriter.SetCloseRowWithDelimiter(const Value: boolean);
 begin
   FCloseRowWithDelimiter := Value;
 end;
@@ -354,13 +375,13 @@ begin
   UpdateControlChars;
 end;
 
-procedure TCsvWriter.SetQuoteChar(const Value: ansichar);
+procedure TCsvWriter.SetQuoteChar(const Value: AnsiChar);
 begin
   inherited;
   UpdateControlChars;
 end;
 
-procedure TCsvWriter.SetSeparator(const Value: ansichar);
+procedure TCsvWriter.SetSeparator(const Value: AnsiChar);
 begin
   inherited;
   UpdateControlChars;
@@ -368,100 +389,100 @@ end;
 
 procedure TCsvWriter.UpdateControlChars;
 var
-  c: Char;
-  lChar: ansiChar;
+  c: char;
+  lChar: AnsiChar;
 begin
-  FillChar(fControlChars[#0], SizeOf(fControlChars), 0);
-  for lChar  in [FQuoteChar, fDelimiter, #10, #13] do
+  fillchar(fControlChars[#0], SizeOf(fControlChars), 0);
+  for lChar in [FQuoteChar, fDelimiter, #10, #13] do
   begin
-    c:= wideChar(Ord(lChar));
-    fControlChars[c]:= True;
+    c := wideChar(Ord(lChar));
+    fControlChars[c] := True;
   end;
 
 end;
 
-Procedure TCsvWriter.WriteCell(Const Value: rawByteString);
-Var
+procedure TCsvWriter.WriteCell(const Value: rawByteString);
+var
   s: rawByteString;
-  RequireQuote: Boolean;
-  x: Integer;
-Begin
+  RequireQuote: boolean;
+  X: integer;
+begin
   s := Value;
   RequireQuote := False;
 
-  For x := 1 To length(s) Do
-    If s[x] In [FQuoteChar, fDelimiter, #10, #13] Then
-    Begin
+  for X := 1 to length(s) do
+    if s[X] in [FQuoteChar, fDelimiter, #10, #13] then
+    begin
       RequireQuote := True;
-      Break;
-    End;
+      break;
+    end;
 
-  If RequireQuote Then
+  if RequireQuote then
     s := self.FQuoteChar +
-      system.ansiStrings.StringReplace(s, FQuoteChar, FQuoteChar + FQuoteChar, [rfReplaceAll]) +
+      System.AnsiStrings.Stringreplace(s, FQuoteChar, FQuoteChar + FQuoteChar, [rfReplaceAll]) +
       self.FQuoteChar;
 
   fBuffer.WriteBuffer(s[1], length(s));
-End;
+end;
 
 { TCsvReader }
 
-Procedure TCsvReader.Close;
-Begin
+procedure TCsvReader.Close;
+begin
   fCsvFileSize := 0;
-  If assigned(fBuffer) Then
-  Begin
+  if assigned(fBuffer) then
+  begin
     fBuffer.Free;
-    fBuffer := Nil;
-  End;
+    fBuffer := nil;
+  end;
 
   fUtf8BomDetected := False;
 
   fMaxColCountFound := 0;
-End;
+end;
 
-Constructor TCsvReader.Create;
-Begin
-  Inherited Create;
+constructor TCsvReader.Create;
+begin
+  inherited Create;
 
-End;
+end;
 
 class constructor TCsvReader.CreateClass;
 var
-  c: ansiChar;
+  c: AnsiChar;
 begin
   // this should be a bit faster then using charInSet
-  FillChar(fPotentialDelimiters[#0], SizeOf(fPotentialDelimiters), 0);
+  fillchar(fPotentialDelimiters[#0], SizeOf(fPotentialDelimiters), 0);
   for c in [',', ';', '|', #9] do
-    fPotentialDelimiters[c]:= True;
+    fPotentialDelimiters[c] := True;
 end;
 
-Destructor TCsvReader.Destroy;
-Begin
-  Close;
-  Inherited;
-End;
-
-Function TCsvReader.GetEof: Boolean;
-Begin
-  result := fBuffer.Eof;
-End;
-
-procedure TCsvReader.Open(const Filename: String; aUseDelimiter: Char);
+destructor TCsvReader.Destroy;
 begin
-Open(Filename, fmShareDenyWrite, aUseDelimiter);
+  Close;
+  inherited;
 end;
 
-Procedure TCsvReader.Open(Const Filename: String; aShareMode: Cardinal = fmShareDenyWrite; aUseDelimiter: Char = #0);
-Var
-  fs: TFileStream;
-Begin
-  fs := TFileStream.Create(Filename, fmOpenRead, aShareMode);
-  Open(fs, True, aUseDelimiter);
-End;
+function TCsvReader.GetEof: boolean;
+begin
+  Result := fBuffer.EOF;
+end;
 
-Procedure TCsvReader.Open(aStream: TStream; aTakeOwnerShipOfStream: Boolean = False; aUseDelimiter: Char = #0);
-Begin
+procedure TCsvReader.Open(const FileName: string; aUseDelimiter: char);
+begin
+  Open(FileName, fmShareDenyWrite, aUseDelimiter);
+end;
+
+procedure TCsvReader.Open(const FileName: string; aShareMode: Cardinal = fmShareDenyWrite; aUseDelimiter: char = #0);
+var
+  fs: TFileStream;
+begin
+  fs := TFileStream.Create(FileName, fmOpenRead, aShareMode);
+  Open(fs, True, aUseDelimiter);
+end;
+
+procedure TCsvReader.Open(aStream: TStream; aTakeOwnerShipOfStream: boolean = False; aUseDelimiter: char = #0);
+begin
   Close;
   fCsvFileSize := aStream.Size;
   fBuffer := TBufferedFile.Create(cBufferSize);
@@ -470,266 +491,290 @@ Begin
   if aUseDelimiter = #0 then
     fDelimiter := DetectDelimiter
   else
-    fDelimiter:= ansiChar( aUseDelimiter );
-End;
+    fDelimiter := AnsiChar(aUseDelimiter);
+end;
 
-Function TCsvReader.ReadRow(Var row: TRawRow): Boolean;
-Var
-  ColIndex: Integer;
-  colCapacity: Integer;
-  x: Integer;
-  LineEndDetected: Boolean;
-Begin
-  If Eof Then
+function TCsvReader.ReadRow(var Row: TRawRow): boolean;
+var
+  ColIndex: integer;
+  colCapacity: integer;
+  X: integer;
+  LineEndDetected: boolean;
+begin
+  if EOF then
     exit(False);
 
   LineEndDetected := False;
 
-  If fMaxColCountFound <> 0 Then
+  if fMaxColCountFound <> 0 then
     colCapacity := fMaxColCountFound
-  Else
+  else
     colCapacity := 255;
-  If length(row) < colCapacity Then
-    SetLength(row, colCapacity);
+  if length(Row) < colCapacity then
+    SetLength(Row, colCapacity);
 
   ColIndex := 0;
-  While True Do
-  Begin
+  while True do
+  begin
 
-    If ColIndex >= colCapacity Then
-    Begin
+    if ColIndex >= colCapacity then
+    begin
       colCapacity := colCapacity * 2;
-      SetLength(row, colCapacity);
-    End;
-    If (fBuffer.CharCursor <> FQuoteChar) Then
-      ReadNonQuotedColValue(row[ColIndex], LineEndDetected)
-    Else
-      ReadQuotedColValue(row[ColIndex], LineEndDetected);
+      SetLength(Row, colCapacity);
+    end;
+    if (fBuffer.CharCursor <> FQuoteChar) then
+      ReadNonQuotedColValue(Row[ColIndex], LineEndDetected)
+    else
+      ReadQuotedColValue(Row[ColIndex], LineEndDetected);
 
-    inc(ColIndex);
-    If LineEndDetected Then
-      Break;
-  End;
+    Inc(ColIndex);
+    if LineEndDetected then
+      break;
+  end;
 
-  If fMaxColCountFound < ColIndex Then
+  if fMaxColCountFound < ColIndex then
     fMaxColCountFound := ColIndex;
 
-  If fForcedColCount <> 0 Then
-    SetLength(row, fForcedColCount)
-  Else If length(row) <> ColIndex Then
-    SetLength(row, ColIndex);
+  if fForcedColCount <> 0 then
+    SetLength(Row, fForcedColCount)
+  else if length(Row) <> ColIndex then
+    SetLength(Row, ColIndex);
 
   // ensure no old date is present
-  For x := ColIndex To length(row) - 1 Do
-    row[x] := '';
+  for X := ColIndex to length(Row) - 1 do
+    Row[X] := '';
 
-  result := True;
-End;
+  Result := True;
+end;
 
-Function TCsvReader.DetectDelimiter: ansichar;
-Var
-  x: Integer;
+function TCsvReader.DetectDelimiter: AnsiChar;
+var
+  X: integer;
   orgPos: Int64;
-  LineEndDetected: Boolean;
+  LineEndDetected: boolean;
   s: rawByteString;
-Begin
+begin
   Result := ',';
   LineEndDetected := False;
 
-  If fBuffer.Eof Then // do nothing if there is no data
+  if fBuffer.EOF then // do nothing if there is no data
     exit;
 
   orgPos := fBuffer.Position;
 
-  If fBuffer.CharCursor = '"' Then
-  Begin
+  if fBuffer.CharCursor = '"' then
+  begin
     ReadQuotedColValue(s, LineEndDetected);
     // after reading, the cursor is moved to the next column start, so we need to go one back
     fBuffer.Seek(-1);
     // optimization:
     // If charInSet(fBuffer.CharCursor, [',', ';', '|', #9]) Then
     if fPotentialDelimiters[fBuffer.CharCursor] then
-      result := fBuffer.CharCursor;
-  End Else Begin
-    For x := 1 To 1024 Do
-    Begin
+      Result := fBuffer.CharCursor;
+  end else begin
+    for X := 1 to 1024 do
+    begin
       fBuffer.NextByte;
       // optimization:
       // If charInSet(fBuffer.CharCursor, [',', ';', '|', #9]) Then
       if fPotentialDelimiters[fBuffer.CharCursor] then
-      Begin
-        result := fBuffer.CharCursor;
-        Break;
-      End;
-    End;
-  End;
+      begin
+        Result := fBuffer.CharCursor;
+        break;
+      end;
+    end;
+  end;
 
   // reset the position
   fBuffer.Position := orgPos;
-End;
+end;
 
-Procedure TCsvReader.DetectBom;
-Var
+procedure TCsvReader.DetectBom;
+var
   b1, b2: TBytes;
-Begin
+begin
   b1 := TEncoding.UTF8.GetPreamble;
   b2 := fBuffer.copyBytes(0, length(b1));
 
-  If (length(b1) = length(b2))
-    And CompareMem(@b1[0], @b2[0], length(b1)) Then
-  Begin
+  if (length(b1) = length(b2))
+    and CompareMem(@b1[0], @b2[0], length(b1)) then
+  begin
     fUtf8BomDetected := True;
     fBuffer.Position := length(b1);
-  End
-  Else
+  end
+  else
     fUtf8BomDetected := False;
-End;
+end;
 
-Function TCsvReader.ReadRow(Var row: TRow): Boolean;
-Var
+function TCsvReader.ReadRow(var Row: TRow): boolean;
+var
   rawRow: TRawRow;
-Begin
-  result := ReadRow(rawRow);
-  If Not result Then
-    row := []
-  Else
-    row := rawRow.ToUnicode;
-End;
+begin
+  Result := ReadRow(rawRow);
+  if not Result then
+    Row := []
+  else
+    Row := rawRow.ToUnicode;
+end;
 
-Procedure TCsvReader.ReadNonQuotedColValue(Var aValue: rawByteString; Var LineEndDetected: Boolean);
-Var
-  start, count: Int64;
-Begin
+class function TCsvReader.ReadAllToList(const aFileName: string; aUseDelimiter: char): TList<TRow>;
+var
+  lReader: TCsvReader;
+  lRow: TRow;
+begin
+  Result := TList<TRow>.Create;
+  gc(lReader, TCsvReader.Create);
+  lReader.Open(aFileName, aUseDelimiter);
+  while lReader.ReadRow(lRow) do
+    Result.Add(lRow);
+end;
+
+class function TCsvReader.ReadAllToArray(const aFileName: string; aUseDelimiter: char): TArray<TRow>;
+var
+  lList: TList<TRow>;
+begin
+  lList := ReadAllToList(aFileName, aUseDelimiter);
+  try
+    Result := lList.ToArray;
+  finally
+    lList.Free;
+  end;
+end;
+
+procedure TCsvReader.ReadNonQuotedColValue(var aValue: rawByteString; var LineEndDetected: boolean);
+var
+  start, Count: Int64;
+begin
   start := fBuffer.Position;
-  While Not fBuffer.Eof Do
-  Begin
-    If fBuffer.CharCursor = fDelimiter Then
-    Begin
-      count := (fBuffer.Position - start);
-      aValue := fBuffer.CopyRawByteString(start, count);
+  while not fBuffer.EOF do
+  begin
+    if fBuffer.CharCursor = fDelimiter then
+    begin
+      Count := (fBuffer.Position - start);
+      aValue := fBuffer.CopyRawByteString(start, Count);
       fBuffer.NextByte; // move to the start of the next value
       exit;
 
-    End Else If fBuffer.Cursor^ In [10, 13] Then
-    Begin
+    end else if fBuffer.Cursor^ in [10, 13] then
+    begin
       LineEndDetected := True;
 
-      count := (fBuffer.Position - start);
-      aValue := fBuffer.CopyRawByteString(start, count);
+      Count := (fBuffer.Position - start);
+      aValue := fBuffer.CopyRawByteString(start, Count);
 
-      If fBuffer.Cursor^ = 10 Then
+      if fBuffer.Cursor^ = 10 then
         fBuffer.NextByte // move to the start of the next value
-      Else If fBuffer.Cursor^ = 13 Then // skip windows line break
+      else if fBuffer.Cursor^ = 13 then // skip windows line break
         fBuffer.Seek(2);
 
       exit;
 
-    End
-    Else
+    end
+    else
       fBuffer.NextByte;
 
-  End;
+  end;
 
   // if we are here, nothing was found, so retrive all
-  count := (fBuffer.Position - start);
-  aValue := fBuffer.CopyRawByteString(start, count);
+  Count := (fBuffer.Position - start);
+  aValue := fBuffer.CopyRawByteString(start, Count);
   LineEndDetected := True;
-End;
+end;
 
-Procedure TCsvReader.ReadQuotedColValue(Var aValue: rawByteString; Var LineEndDetected: Boolean);
-Var
-  start, count: Int64;
-Begin
+procedure TCsvReader.ReadQuotedColValue(var aValue: rawByteString; var LineEndDetected: boolean);
+var
+  start, Count: Int64;
+begin
   fBuffer.NextByte; // move beyond the first quote
   start := fBuffer.Position;
   aValue := '';
 
-  While Not fBuffer.Eof Do
-  Begin
-    If fBuffer.CharCursor = FQuoteChar Then
-    Begin
-      count := (fBuffer.Position - start);
-      aValue := aValue + fBuffer.CopyRawByteString(start, count); // copy all until before the quote
+  while not fBuffer.EOF do
+  begin
+    if fBuffer.CharCursor = FQuoteChar then
+    begin
+      Count := (fBuffer.Position - start);
+      aValue := aValue + fBuffer.CopyRawByteString(start, Count); // copy all until before the quote
 
       fBuffer.NextByte; // move either to the delimiter after the quote, an quote that makrs quote escape, or to a line break character
       // was this quote escaped?
-      If Not fBuffer.Eof And (fBuffer.CharCursor = FQuoteChar) Then
-      Begin
+      if not fBuffer.EOF and (fBuffer.CharCursor = FQuoteChar) then
+      begin
         // so this quote is escaped...
         aValue := aValue + FQuoteChar;
         fBuffer.NextByte;
         start := fBuffer.Position; // next time we will copy from here
         Continue;
-      End;
+      end;
       // right now the cursor points just after the quote char that closes the column value
 
-      If fBuffer.Eof Then
-      Begin
+      if fBuffer.EOF then
+      begin
         LineEndDetected := True;
         exit;
-      End;
+      end;
 
-      If (Not fBuffer.Eof) And (fBuffer.Cursor^ In [10, 13]) Then
-      Begin
+      if (not fBuffer.EOF) and (fBuffer.Cursor^ in [10, 13]) then
+      begin
         LineEndDetected := True;
-        If fBuffer.Cursor^ = 10 Then
+        if fBuffer.Cursor^ = 10 then
           fBuffer.NextByte // move to the start of the next value
-        Else If fBuffer.Cursor^ = 13 Then // skip windows line break
+        else if fBuffer.Cursor^ = 13 then // skip windows line break
           fBuffer.Seek(2);
-      End
-      Else
+      end
+      else
         fBuffer.NextByte; // move to the start of the next value
 
       exit;
 
-    End
-    Else
+    end
+    else
       fBuffer.NextByte;
 
-  End;
+  end;
 
   // if we are here, nothing was found, so retrive all
-  count := (fBuffer.Position - start) + 1;
-  aValue := aValue + fBuffer.CopyRawByteString(start, count);
+  Count := (fBuffer.Position - start) + 1;
+  aValue := aValue + fBuffer.CopyRawByteString(start, Count);
   LineEndDetected := True;
-End;
+end;
 
 { TRawRowHelper }
 
-Function TRawRowHelper.ToUnicode: TRow;
-Var
-  x: Integer;
+function TRawRowHelper.ToUnicode: TRow;
+var
+  X: integer;
   encoding: TEncodeType;
-Begin
-  SetLength(result, length(self));
-  For x := 0 To length(self) - 1 Do
-  Begin
-    encoding := System.WideStrUtils.DetectUTF8Encoding(self[x]);
-    Case encoding Of
+begin
+  SetLength(Result, length(self));
+  for X := 0 to length(self) - 1 do
+  begin
+    encoding := System.WideStrUtils.DetectUTF8Encoding(self[X]);
+    case encoding of
       etANSI,
-        etUSASCII:
-        result[x] := String(self[x]);
+        etUSAscii:
+        Result[X] := string(self[X]);
       etUTF8:
-        result[x] := Utf8ToString(self[x]);
+        Result[X] := Utf8ToString(self[X]);
 
-    End;
-  End;
-End;
+    end;
+  end;
+end;
 
 { TRowReaderWriter }
 
 procedure TRowReaderWriter.Clear;
 begin
   fDic.Clear;
-  FHeader:= [];
-  FColCount:= 0;
-  FData:= [];
+  FHeader := [];
+  FColCount := 0;
+  FData := [];
 end;
 
 constructor TRowReaderWriter.Create;
 begin
   inherited Create;
-  fDic:= TDictionary<String, Integer>.Create;
+  fDic := TDictionary<string, integer>.Create;
 end;
 
 destructor TRowReaderWriter.Destroy;
@@ -738,88 +783,88 @@ begin
   inherited;
 end;
 
-function TRowReaderWriter.GetHeaderAsCommaSeparatedText: String;
+function TRowReaderWriter.GetHeaderAsCommaSeparatedText: string;
 var
-  l:TStringList;
-  s: String;
+  l: TStringList;
+  s: string;
 begin
   gc(l, TStringList.Create);
-  l.StrictDelimiter:= True;
-  for s in fHeader do
+  l.StrictDelimiter := True;
+  for s in FHeader do
     l.Add(s);
-  Result:= l.CommaText;
+  Result := l.Commatext;
 end;
 
-function TRowReaderWriter.GetValue(const aColName: String): String;
+function TRowReaderWriter.getValue(const aColName: string): string;
 var
-  i: Integer;
+  i: integer;
 begin
-  i:= IndexOf(aColName);
-  if (i<>-1) then
-    Result:= fData[i]
+  i := IndexOf(aColName);
+  if (i <> -1) then
+    Result := FData[i]
   else begin
-    Result:= '';
-    if not(FMissingColumnHandling in [mcOnReadReturnEmptyString, mcNoErrorsOnReadWrite] ) then
-      raise Exception.Create('ERROR: column "'+aColName+'" not found');
+    Result := '';
+    if not (FMissingColumnHandling in [mcOnReadReturnEmptyString, mcNoErrorsOnReadWrite]) then
+      raise Exception.Create('ERROR: column "' + aColName + '" not found');
   end;
 end;
 
-function TRowReaderWriter.IndexOf(const aColName: String): Integer;
+function TRowReaderWriter.IndexOf(const aColName: string): integer;
 begin
   if not fDic.TryGetValue(aColName, Result) then
-    Result:= -1;
+    Result := -1;
 end;
 
-procedure TRowReaderWriter.Reset;
+procedure TRowReaderWriter.reset;
 var
-  ar: TArray<String>;
+  ar: TArray<string>;
 begin
-  setLength(ar, FColCount);
+  SetLength(ar, FColCount);
   self.FData := ar;
 end;
 
-procedure TRowReaderWriter.SetColCount(const Value: Integer);
+procedure TRowReaderWriter.SetColCount(const Value: integer);
 begin
   FColCount := Value;
-  if Length(fData) < fColCount then
-    SetLength(fData, fColCount);
-  if length(fHeader) < fColCount then
-    SetLength(fHeader, fColCount);
+  if length(FData) < FColCount then
+    SetLength(FData, FColCount);
+  if length(FHeader) < FColCount then
+    SetLength(FHeader, FColCount);
 end;
 
 procedure TRowReaderWriter.SetData(const Value: TRow);
 begin
   FData := Value;
-  if (fColCount <> 0) and (length(fData)<fColCount) then
-    setLength(fData, fColCount);
+  if (FColCount <> 0) and (length(FData) < FColCount) then
+    SetLength(FData, FColCount);
 
 end;
 
 procedure TRowReaderWriter.SetHeader(const Value: TRow);
 var
-  x: Integer;
+  X: integer;
 begin
   FHeader := Value;
-  ColCount:= length(fHeader);
+  ColCount := length(FHeader);
   fDic.Clear;
-  for x := 0 to length(fHeader)-1 do
-    fDic.Add(fHeader[x], x);
+  for X := 0 to length(FHeader) - 1 do
+    fDic.Add(FHeader[X], X);
 end;
 
 procedure TRowReaderWriter.SetHeaderAsCommaSeparatedText(
-  const Value: String);
+  const Value: string);
 var
   l: TStringList;
-  ar: TArray<String>;
-  x: Integer;
+  ar: TArray<string>;
+  X: integer;
 begin
-  gc(l, TStringList.create);
-  l.StrictDelimiter:= True;
-  l.CommaText:= value;
-  setLength(ar, l.Count);
-  for x := 0 to l.Count-1 do
-    ar[x]:= l[x];
-  self.Header:= ar;
+  gc(l, TStringList.Create);
+  l.StrictDelimiter := True;
+  l.Commatext := Value;
+  SetLength(ar, l.Count);
+  for X := 0 to l.Count - 1 do
+    ar[X] := l[X];
+  self.Header := ar;
 end;
 
 procedure TRowReaderWriter.SetMissingColumnHandling(
@@ -828,30 +873,31 @@ begin
   FMissingColumnHandling := Value;
 end;
 
-procedure TRowReaderWriter.SetValue(const aColName, Value: String);
+procedure TRowReaderWriter.SetValue(const aColName, Value: string);
 var
-  i: Integer;
+  i: integer;
 begin
-  i:= IndexOf(aColName);
-  if (i<>-1) then
-    fData[i]:= Value
+  i := IndexOf(aColName);
+  if (i <> -1) then
+    FData[i] := Value
   else begin
-    if not(FMissingColumnHandling in [mcOnWriteIgnore, mcNoErrorsOnReadWrite] ) then
-      raise Exception.Create('ERROR: column "'+aColName+'" not found');
+    if not (FMissingColumnHandling in [mcOnWriteIgnore, mcNoErrorsOnReadWrite]) then
+      raise Exception.Create('ERROR: column "' + aColName + '" not found');
   end;
 end;
 
-function TRowReaderWriter.TryGetByName(const aname: String;
-  out aValue: String): Boolean;
+function TRowReaderWriter.TryGetByName(const aname: string;
+  out aValue: string): boolean;
 var
-  i: Integer;
+  i: integer;
 begin
-  Result:= False;
-  if fDic.TryGetValue(aName, i) then
+  Result := False;
+  if fDic.TryGetValue(aname, i) then
   begin
-    Result:= True;
-    aValue:= fData[i];
+    Result := True;
+    aValue := FData[i];
   end;
 end;
 
-End.
+end.
+
