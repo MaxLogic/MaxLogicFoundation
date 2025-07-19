@@ -123,7 +123,6 @@ Function CombinePath(const aParts: array of String; aAddFinalTrailingPathDelimit
   /// </returns>
   function SanitizeFileName(const aRawName: string;
                             const aReplacement: Char = '_'): string;
-                                    aReplaceInvalidCharsWith: Char): string;
 
 
 /// <summary>
@@ -539,7 +538,7 @@ begin
 
 {$IFDEF MSWINDOWS}
   while (Result.EndsWith(' ')) or (Result.EndsWith('.')) do
-    Delete(Resukt, Length(Result), 1);
+    Delete(Result, Length(Result), 1);
 
   if MatchText(Result.ToUpper,
     ['CON','PRN','AUX','NUL','COM1','COM2','COM3','COM4','COM5','COM6','COM7','COM8','COM9',
