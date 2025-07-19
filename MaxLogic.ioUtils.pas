@@ -1,4 +1,4 @@
-Unit MaxLogic.ioUtils;
+﻿Unit MaxLogic.ioUtils;
 
 {
   work in progress: for now only some methods exported from old big the pawel1.pas
@@ -80,7 +80,51 @@ function RecycleItem(CONST ItemName: string; CONST DeleteToRecycle: Boolean = Tr
 {$ENDIF}
 
 Function CombinePath(const aParts: array of String; aAddFinalTrailingPathDelimiter: Boolean = False): String;
-function ConvertToValidDirectoryName(const aText: string; aReplaceInvalidCharsWith: Char = '_'): string;
+
+  /// <summary>
+  /// <b>OBSOLETE.</b>  Alias for <see cref="SanitizeFileName" />.
+  /// </summary>
+  /// <remarks>
+  /// *Kept for backward compatibility only.*  New code should call
+  /// <see cref="SanitizeFileName" /> directly.  The implementation
+  /// simply forwards to the new helper, so behaviour is identical.
+  /// </remarks>
+  {$WARN SYMBOL_DEPRECATED ON}
+  function ConvertToValidDirectoryName(const aText: string;
+                                       aReplaceInvalidCharsWith: Char = '_'): string;
+  deprecated 'ConvertToValidDirectoryName is obsolete. Use SanitizeFileName instead.';
+
+  /// <summary>
+  /// Sanitises a single *path segment* (file name **or** directory name)
+  /// so that it becomes legal on all Delphi-supported platforms.
+  /// </summary>
+  /// <param name="aRawName">
+  ///   The untrusted input.  It should be a *single* component —
+  ///   **not** a full path containing separators (`\`, `/`, `:` …).
+  ///   Examples:
+  ///   <list type="bullet">
+  ///     <item><description><c>'my report (draft).pdf'</c></description></item>
+  ///     <item><description><c>'data\2025\Q3'</c> &larr; <i>WRONG</i> – pass each part separately</description></item>
+  ///   </list>
+  /// </param>
+  /// <param name="aReplacement">
+  ///   Character used to replace every invalid character.  Defaults
+  ///   to an underscore.
+  /// </param>
+  /// <returns>
+  ///   A safe file/directory name that
+  ///   <list type="bullet">
+  ///     <item><description>contains only <c>TPath.IsValidFileNameChar</c> characters,</description></item>
+  ///     <item><description>is never empty (falls back to <c>'untitled'</c>),</description></item>
+  ///     <item><description>avoids Windows-reserved names (<c>CON</c>, <c>PRN</c> …),</description></item>
+  ///     <item><description>and has no trailing dot or space on Windows.</description></item>
+  ///   </list>
+  ///   The function performs <i>no filesystem I/O</i>; it merely returns the cleaned string.
+  /// </returns>
+  function SanitizeFileName(const aRawName: string;
+                            const aReplacement: Char = '_'): string;
+                                    aReplaceInvalidCharsWith: Char): string;
+
 
 /// <summary>
 /// This function checks the provided filename to determine if it exceeds the Windows path length limit. It then appropriately prefixes the filename to support extended-length paths. The function also distinguishes between local and network paths, applying a different prefix based on the path type. Note that for network paths, the initial double backslashes (`\\`) are replaced with the `\\?\UNC\` prefix, while local paths simply receive the `\\?\` prefix.
@@ -481,18 +525,38 @@ begin
     Result := IncludeTrailingPathDelimiter(Result);
 end;
 
-function ConvertToValidDirectoryName(const aText: string; aReplaceInvalidCharsWith: Char = '_'): string;
-var
-  i: Integer;
+function SanitizeFileName(const aRawName: String; const aReplacement: Char): string;
+const
+  cUntitled = 'untitled';
 begin
-  Result := aText;
-  for i := Low(Result) to High(Result) do
-  begin
+  if aRawName.IsEmpty then
+    Exit(cUntitled);
+
+  Result:= aRawName;
+  for var i := 1 to length(Result) do
     if not TPath.IsValidFileNameChar(Result[i]) then
-      Result[i] := aReplaceInvalidCharsWith;
-  end;
-  Result := Trim(Result);
+      Result[i] := aReplacement;
+
+{$IFDEF MSWINDOWS}
+  while (Result.EndsWith(' ')) or (Result.EndsWith('.')) do
+    Delete(Resukt, Length(Result), 1);
+
+  if MatchText(Result.ToUpper,
+    ['CON','PRN','AUX','NUL','COM1','COM2','COM3','COM4','COM5','COM6','COM7','COM8','COM9',
+     'LPT1','LPT2','LPT3','LPT4','LPT5','LPT6','LPT7','LPT8','LPT9']) then
+    Result := '_' + Result;
+{$ENDIF}
+
+  if Result.IsEmpty then
+    Result := cUntitled;
 end;
+
+function ConvertToValidDirectoryName(const aText: String;                                      aReplaceInvalidCharsWith: Char): string;
+begin
+  // Simple alias for backward compatibility
+  Result := SanitizeFileName(aText, aReplaceInvalidCharsWith);
+end;
+
 
 function LongFileNameFix(const aFileName: String): String;
 const
