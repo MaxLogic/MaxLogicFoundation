@@ -183,10 +183,12 @@ type
       aCloseRowWithDelimiter: Boolean = False); overload;
 
     class function WriteAllToString(const aRows: TArray<TRow>;
+      aDelimiter: Char = #0;
       const aLineBreak: RawByteString = sLineBreak;
       aCloseRowWithDelimiter: Boolean = False): string; overload;
 
     class function WriteAllToString(const aRows: TList<TRow>;
+      aDelimiter: Char = #0;
       const aLineBreak: RawByteString = sLineBreak;
       aCloseRowWithDelimiter: Boolean = False): string; overload;
 
