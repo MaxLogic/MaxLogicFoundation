@@ -161,6 +161,35 @@ type
     // flushes the internal buffer to the file stream. will be called automatically when the buffer exceeds the defined buffer size and on destroy
     procedure Flush;
 
+
+    class procedure WriteAll(const aRows: TArray<TRow>;
+      aStream: TStream; aEncoding: TEncoding = nil; aDelimiter: Char = ',';
+      const aLineBreak: RawByteString = sLineBreak;
+      aCloseRowWithDelimiter: Boolean = False); overload;
+
+    class procedure WriteAll(const aRows: TList<TRow>;
+      aStream: TStream; aEncoding: TEncoding = nil; aDelimiter: Char = ',';
+      const aLineBreak: RawByteString = sLineBreak;
+      aCloseRowWithDelimiter: Boolean = False); overload;
+
+    class procedure WriteAllToFile(const aRows: TArray<TRow>;
+      const aFilename: string; aEncoding: TEncoding = nil; aDelimiter: Char = ',';
+      const aLineBreak: RawByteString = sLineBreak;
+      aCloseRowWithDelimiter: Boolean = False); overload;
+
+    class procedure WriteAllToFile(const aRows: TList<TRow>;
+      const aFilename: string; aEncoding: TEncoding = nil; aDelimiter: Char = ',';
+      const aLineBreak: RawByteString = sLineBreak;
+      aCloseRowWithDelimiter: Boolean = False); overload;
+
+    class function WriteAllToString(const aRows: TArray<TRow>;
+      const aLineBreak: RawByteString = sLineBreak;
+      aCloseRowWithDelimiter: Boolean = False): string; overload;
+
+    class function WriteAllToString(const aRows: TList<TRow>;
+      const aLineBreak: RawByteString = sLineBreak;
+      aCloseRowWithDelimiter: Boolean = False): string; overload;
+
     property LineBreak: rawByteString read FLineBreak write SetLineBreak;
     property CloseRowWithDelimiter: boolean read FCloseRowWithDelimiter write SetCloseRowWithDelimiter;
   end;
@@ -353,6 +382,83 @@ begin
   fBuffer.Write(self.FLineBreak[1], length(self.FLineBreak));
   if fBuffer.Size > fBufferSize then
     Flush;
+end;
+
+
+class procedure TCsvWriter.WriteAll(const aRows: TArray<TRow>; aStream: TStream;
+  aEncoding: TEncoding; aDelimiter: Char; const aLineBreak: RawByteString;
+  aCloseRowWithDelimiter: Boolean);
+var
+  lWriter: TCsvWriter;
+begin
+  gc(lWriter, TCsvWriter.Create(aStream, aEncoding));
+  lWriter.Delimiter := ansiChar(aDelimiter);
+  lWriter.LineBreak := aLineBreak;
+  lWriter.CloseRowWithDelimiter := aCloseRowWithDelimiter;
+
+  for var lRow in aRows do
+    lWriter.WriteRow(lRow);
+end;
+
+class procedure TCsvWriter.WriteAll(const aRows: TList<TRow>; aStream: TStream;
+  aEncoding: TEncoding; aDelimiter: Char; const aLineBreak: RawByteString;
+  aCloseRowWithDelimiter: Boolean);
+var
+  lWriter: TCsvWriter;
+begin
+  gc(lWriter, TCsvWriter.Create(aStream, aEncoding));
+  lWriter.Delimiter := ansiChar(aDelimiter);
+  lWriter.LineBreak := aLineBreak;
+  lWriter.CloseRowWithDelimiter := aCloseRowWithDelimiter;
+
+  for var lRow in aRows do
+    lWriter.WriteRow(lRow);
+end;
+
+class procedure TCsvWriter.WriteAllToFile(const aRows: TArray<TRow>;
+  const aFilename: string; aEncoding: TEncoding; aDelimiter: Char;
+  const aLineBreak: RawByteString; aCloseRowWithDelimiter: Boolean);
+var
+  lStream: TFileStream;
+begin
+  gc(lStream, TFileStream.Create(aFilename, fmCreate));
+  WriteAll(aRows, lStream, aEncoding, aDelimiter, aLineBreak,
+    aCloseRowWithDelimiter);
+end;
+
+class procedure TCsvWriter.WriteAllToFile(const aRows: TList<TRow>;
+  const aFilename: string; aEncoding: TEncoding; aDelimiter: Char;
+  const aLineBreak: RawByteString; aCloseRowWithDelimiter: Boolean);
+var
+  lStream: TFileStream;
+begin
+  gc(lStream, TFileStream.Create(aFilename, fmCreate));
+  WriteAll(aRows, lStream, aEncoding, aDelimiter, aLineBreak,
+    aCloseRowWithDelimiter);
+end;
+
+class function TCsvWriter.WriteAllToString(const aRows: TArray<TRow>;
+  aDelimiter: Char; const aLineBreak: RawByteString;
+  aCloseRowWithDelimiter: Boolean): string;
+var
+  lStream: TStringStream;
+begin
+  gc(lStream, TStringStream.Create('', TEncoding.UTF8));
+  WriteAll(aRows, lStream, TEncoding.UTF8, aDelimiter, aLineBreak,
+    aCloseRowWithDelimiter);
+  Result := lStream.DataString;
+end;
+
+class function TCsvWriter.WriteAllToString(const aRows: TList<TRow>;
+  aDelimiter: Char; const aLineBreak: RawByteString;
+  aCloseRowWithDelimiter: Boolean): string;
+var
+  lStream: TStringStream;
+begin
+  gc(lStream, TStringStream.Create('', TEncoding.UTF8));
+  WriteAll(aRows, lStream, TEncoding.UTF8, aDelimiter, aLineBreak,
+    aCloseRowWithDelimiter);
+  Result := lStream.DataString;
 end;
 
 procedure TCsvWriter.Flush;
