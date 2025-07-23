@@ -5,6 +5,14 @@ interface
 uses
   classes, sysUtils, NetEncoding,
   FireDAC.Comp.Client;
+
+
+type
+  TFDQueryHelper = class helper for TFDQuery
+  public
+    function ExecSQLScalar: Integer;
+  end;
+
 {
   Formats: FIREDAC,BINARY,PLAIN,CSV,JSON
   plain and csv are similar, but plain is without the header, and also has a different ContextType
@@ -102,4 +110,17 @@ begin
   end;
 end;
 
+{ TFDQueryHelper }
+
+function TFDQueryHelper.ExecSQLScalar: Integer;
+begin
+  Self.Open;
+  try
+    Result:= Fields[0].AsInteger;
+  finally
+    Self.Close;
+  end;
+end;
+
 end.
+
