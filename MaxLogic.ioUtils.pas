@@ -16,7 +16,7 @@ Interface
 Uses
   {$IFDEF MadExcept}MadExcept, {$ENDIF}
   {$IF DEFINED( MsWINDOWS)}
-  winApi.windows, System.Win.ComObj, Winapi.WinInet, Winapi.ShLwApi,
+  winApi.windows, System.Win.ComObj, Winapi.WinInet, Winapi.ShLwApi, Winapi.ShlObj,
   maxConsoleRunner,
   {$ELSEIF DEFINED(POSIX)}
   Posix.Stdlib,
@@ -179,6 +179,17 @@ function QuoteUnixShellArgument(const aValue: String): String;
 /// <param name="aValue">The string to be quoted for Windows shell use</param>
 /// <returns>A properly quoted string safe to use in Windows command lines</returns>
 function QuoteWindowsShellArgument(const aValue: String): String;
+
+function GetLocalAppDataPath: String;
+
+{
+  lProgramFiles := GetSpecialWindowsFolder(CSIDL_PROGRAM_FILES);
+  lProgramFilesX86 := GetSpecialWindowsFolder(CSIDL_PROGRAM_FILESX86);
+  lAppData:= GetSpecialWindowsFolder(CSIDL_APPDATA);
+}
+{$IFDEF MsWindows}
+function GetSpecialWindowsFolder(aFolder: integer): String;
+{$ENDIF}
 
 Implementation
 
@@ -814,6 +825,34 @@ begin
   Result := lBuilder.ToString;
 end;
 
+function GetLocalAppDataPath: string;
+begin
+  {$IF Defined(MSWINDOWS)}
+    Result := GetEnvironmentVariable('AppData');
+  {$ELSEIF Defined(MACOS)}
+    Result := TPath.Combine(TPath.GetHomePath, 'Library/Application Support');
+  {$ELSEIF Defined(LINUX)}
+    Result := GetEnvironmentVariable('XDG_CONFIG_HOME');
+    if Result.IsEmpty then
+      Result := TPath.Combine(TPath.GetHomePath, '.config');
+  {$ELSEIF Defined(ANDROID)}
+    Result := TPath.GetDocumentsPath; // or use GetSharedDownloadsPath for shared app data
+  {$ELSE}
+    raise Exception.Create('Unsupported platform for GetLocalAppDataPath');
+  {$ENDIF}
+end;
+
+{$IFDEF MsWindows}
+function GetSpecialWindowsFolder(aFolder: integer): string;
+var
+  lPath: array[0..MAX_PATH] of char;
+begin
+  if SHGetFolderPath(0, aFolder, 0, 0, @lPath[0]) = S_OK then
+    Result := lPath
+  else
+    Result := '';
+end;
+{$ENDIF}
 
 
 End.
