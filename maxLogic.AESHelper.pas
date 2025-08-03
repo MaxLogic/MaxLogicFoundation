@@ -326,7 +326,7 @@ begin
   end;
 end;
 
-function EncryptStream(const aSrcStream, aDstStream: TStream; const aPassword: string; const aSalt: rawByteString;
+function EncryptStream(const aSrcStream, aDstStream: TStream; const aPassword: string; const aSalt: TBytes;
   aRounds: integer; const aSize: Int64; aBufferSize: integer): Boolean;
 begin
   Result:= EncryptStream(aSrcStream, aDstStream, aPassword, BytesTorawStr(aSalt), aRounds);
