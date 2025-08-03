@@ -199,7 +199,7 @@ end;
 
 function EncryptBytes(const SrcBuff: TBytes; const Password: string; const aSalt: TBytes; aRounds: integer = 600000): TBytes;
 begin
-  Result:= EncryptBytes(SrcBuff, Password, BytesTorawStr(aSalt), aRounds, aSize, aBufferSize);
+  Result:= EncryptBytes(SrcBuff, Password, BytesTorawStr(aSalt), aRounds);
 end;
 
 function EncryptBytes(const SrcBuff: TBytes; const Password: string; const aSalt: rawByteString; aRounds: integer = 600000): TBytes;
@@ -219,7 +219,7 @@ end;
 
 function DecryptBytes(const SrcBuff: TBytes; const Password: string; const aSalt: TBytes; aRounds: integer = 600000): TBytes;
 begin
-  Result:= DecryptBytes(SrcBuff, Password, BytesTorawStr(aSalt), aRounds, aSize, aBufferSize);
+  Result:= DecryptBytes(SrcBuff, Password, BytesTorawStr(aSalt), aRounds);
 end;
 
 function DecryptBytes(const SrcBuff: TBytes; const Password: string; const aSalt: rawByteString; aRounds: integer = 600000): TBytes;
