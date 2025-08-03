@@ -53,7 +53,7 @@ function EncryptStream(const aSrcStream, aDstStream: TStream; const aPassword: s
 function EncryptStream(const aSrcStream, aDstStream: TStream; const aPassword: string; const aSalt: rawByteString;
   aRounds: integer = C_PBKDF2_ROUNDS; const aSize: Int64 = 0; aBufferSize: integer = cDefaultBufferSize): boolean; overload;
 function EncryptStream(const aSrcStream, aDstStream: TStream; const aPassword: string; const aSalt: TBytes;
-  aRounds: integer; const aSize: Int64; aBufferSize: integer): Boolean; overload;
+  aRounds: integer = C_PBKDF2_ROUNDS; const aSize: Int64 = 0; aBufferSize: integer = cDefaultBufferSize): boolean; overload;
 
 // if size is <= 0 then the entire stream will be processed
 // The buffer size will be automatically adjusted to be a multiple of 16.
@@ -64,7 +64,7 @@ function DecryptStream(const aSrcStream, aDstStream: TStream; const aPassword: s
 function DecryptStream(const aSrcStream, aDstStream: TStream; const aPassword: string; const aSalt: rawByteString;
   aRounds: integer = C_PBKDF2_ROUNDS; const aSize: Int64 = 0; aBufferSize: integer = cDefaultBufferSize): boolean; overload;
 function DecryptStream(const aSrcStream, aDstStream: TStream; const aPassword: string; const aSalt: TBytes;
-  aRounds: integer; const aSize: Int64; aBufferSize: integer): Boolean; overload;
+  aRounds: integer = C_PBKDF2_ROUNDS; const aSize: Int64 = 0; aBufferSize: integer = cDefaultBufferSize): boolean; overload;
 
 function EncryptUtf8Str(const s: string; const Password: string): TBytes;
 function DecryptUtf8Str(const bytes: TBytes; const Password: string): string;
