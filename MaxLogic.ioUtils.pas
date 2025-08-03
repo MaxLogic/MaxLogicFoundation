@@ -1,4 +1,4 @@
-Unit MaxLogic.ioUtils;
+﻿Unit MaxLogic.ioUtils;
 
 {
   work in progress: for now only some methods exported from old big the pawel1.pas
@@ -16,7 +16,7 @@ Interface
 Uses
   {$IFDEF MadExcept}MadExcept, {$ENDIF}
   {$IF DEFINED( MsWINDOWS)}
-  winApi.windows, System.Win.ComObj, Winapi.WinInet, Winapi.ShLwApi,
+  winApi.windows, System.Win.ComObj, Winapi.WinInet, Winapi.ShLwApi, Winapi.ShlObj,
   maxConsoleRunner,
   {$ELSEIF DEFINED(POSIX)}
   Posix.Stdlib,
@@ -80,7 +80,50 @@ function RecycleItem(CONST ItemName: string; CONST DeleteToRecycle: Boolean = Tr
 {$ENDIF}
 
 Function CombinePath(const aParts: array of String; aAddFinalTrailingPathDelimiter: Boolean = False): String;
-function ConvertToValidDirectoryName(const aText: string; aReplaceInvalidCharsWith: Char = '_'): string;
+
+  /// <summary>
+  /// <b>OBSOLETE.</b>  Alias for <see cref="SanitizeFileName" />.
+  /// </summary>
+  /// <remarks>
+  /// *Kept for backward compatibility only.*  New code should call
+  /// <see cref="SanitizeFileName" /> directly.  The implementation
+  /// simply forwards to the new helper, so behaviour is identical.
+  /// </remarks>
+  {$WARN SYMBOL_DEPRECATED ON}
+  function ConvertToValidDirectoryName(const aText: string;
+                                       aReplaceInvalidCharsWith: Char = '_'): string;
+  deprecated 'ConvertToValidDirectoryName is obsolete. Use SanitizeFileName instead.';
+
+  /// <summary>
+  /// Sanitises a single *path segment* (file name **or** directory name)
+  /// so that it becomes legal on all Delphi-supported platforms.
+  /// </summary>
+  /// <param name="aRawName">
+  ///   The untrusted input.  It should be a *single* component —
+  ///   **not** a full path containing separators (`\`, `/`, `:` …).
+  ///   Examples:
+  ///   <list type="bullet">
+  ///     <item><description><c>'my report (draft).pdf'</c></description></item>
+  ///     <item><description><c>'data\2025\Q3'</c> &larr; <i>WRONG</i> – pass each part separately</description></item>
+  ///   </list>
+  /// </param>
+  /// <param name="aReplacement">
+  ///   Character used to replace every invalid character.  Defaults
+  ///   to an underscore.
+  /// </param>
+  /// <returns>
+  ///   A safe file/directory name that
+  ///   <list type="bullet">
+  ///     <item><description>contains only <c>TPath.IsValidFileNameChar</c> characters,</description></item>
+  ///     <item><description>is never empty (falls back to <c>'untitled'</c>),</description></item>
+  ///     <item><description>avoids Windows-reserved names (<c>CON</c>, <c>PRN</c> …),</description></item>
+  ///     <item><description>and has no trailing dot or space on Windows.</description></item>
+  ///   </list>
+  ///   The function performs <i>no filesystem I/O</i>; it merely returns the cleaned string.
+  /// </returns>
+  function SanitizeFileName(const aRawName: string;
+                            const aReplacement: Char = '_'): string;
+
 
 /// <summary>
 /// This function checks the provided filename to determine if it exceeds the Windows path length limit. It then appropriately prefixes the filename to support extended-length paths. The function also distinguishes between local and network paths, applying a different prefix based on the path type. Note that for network paths, the initial double backslashes (`\\`) are replaced with the `\\?\UNC\` prefix, while local paths simply receive the `\\?\` prefix.
@@ -136,6 +179,17 @@ function QuoteUnixShellArgument(const aValue: String): String;
 /// <param name="aValue">The string to be quoted for Windows shell use</param>
 /// <returns>A properly quoted string safe to use in Windows command lines</returns>
 function QuoteWindowsShellArgument(const aValue: String): String;
+
+function GetLocalAppDataPath: String;
+
+{
+  lProgramFiles := GetSpecialWindowsFolder(CSIDL_PROGRAM_FILES);
+  lProgramFilesX86 := GetSpecialWindowsFolder(CSIDL_PROGRAM_FILESX86);
+  lAppData:= GetSpecialWindowsFolder(CSIDL_APPDATA);
+}
+{$IFDEF MsWindows}
+function GetSpecialWindowsFolder(aFolder: integer): String;
+{$ENDIF}
 
 Implementation
 
@@ -481,18 +535,38 @@ begin
     Result := IncludeTrailingPathDelimiter(Result);
 end;
 
-function ConvertToValidDirectoryName(const aText: string; aReplaceInvalidCharsWith: Char = '_'): string;
-var
-  i: Integer;
+function SanitizeFileName(const aRawName: String; const aReplacement: Char): string;
+const
+  cUntitled = 'untitled';
 begin
-  Result := aText;
-  for i := Low(Result) to High(Result) do
-  begin
+  if aRawName.IsEmpty then
+    Exit(cUntitled);
+
+  Result:= aRawName;
+  for var i := 1 to length(Result) do
     if not TPath.IsValidFileNameChar(Result[i]) then
-      Result[i] := aReplaceInvalidCharsWith;
-  end;
-  Result := Trim(Result);
+      Result[i] := aReplacement;
+
+{$IFDEF MSWINDOWS}
+  while (Result.EndsWith(' ')) or (Result.EndsWith('.')) do
+    Delete(Result, Length(Result), 1);
+
+  if MatchText(Result.ToUpper,
+    ['CON','PRN','AUX','NUL','COM1','COM2','COM3','COM4','COM5','COM6','COM7','COM8','COM9',
+     'LPT1','LPT2','LPT3','LPT4','LPT5','LPT6','LPT7','LPT8','LPT9']) then
+    Result := '_' + Result;
+{$ENDIF}
+
+  if Result.IsEmpty then
+    Result := cUntitled;
 end;
+
+function ConvertToValidDirectoryName(const aText: String;                                      aReplaceInvalidCharsWith: Char): string;
+begin
+  // Simple alias for backward compatibility
+  Result := SanitizeFileName(aText, aReplaceInvalidCharsWith);
+end;
+
 
 function LongFileNameFix(const aFileName: String): String;
 const
@@ -751,6 +825,34 @@ begin
   Result := lBuilder.ToString;
 end;
 
+function GetLocalAppDataPath: string;
+begin
+  {$IF Defined(MSWINDOWS)}
+    Result := GetEnvironmentVariable('AppData');
+  {$ELSEIF Defined(MACOS)}
+    Result := TPath.Combine(TPath.GetHomePath, 'Library/Application Support');
+  {$ELSEIF Defined(LINUX)}
+    Result := GetEnvironmentVariable('XDG_CONFIG_HOME');
+    if Result.IsEmpty then
+      Result := TPath.Combine(TPath.GetHomePath, '.config');
+  {$ELSEIF Defined(ANDROID)}
+    Result := TPath.GetDocumentsPath; // or use GetSharedDownloadsPath for shared app data
+  {$ELSE}
+    raise Exception.Create('Unsupported platform for GetLocalAppDataPath');
+  {$ENDIF}
+end;
+
+{$IFDEF MsWindows}
+function GetSpecialWindowsFolder(aFolder: integer): string;
+var
+  lPath: array[0..MAX_PATH] of char;
+begin
+  if SHGetFolderPath(0, aFolder, 0, 0, @lPath[0]) = S_OK then
+    Result := lPath
+  else
+    Result := '';
+end;
+{$ENDIF}
 
 
 End.

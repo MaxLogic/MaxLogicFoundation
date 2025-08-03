@@ -1,4 +1,4 @@
-Unit MaxLogic.SQLite;
+unit maxLogic.SQLite;
 
 { Version: 2.1
   Description
@@ -7,97 +7,101 @@ Unit MaxLogic.SQLite;
   NOTE: might be interesting to add pooling as described here:
   http://docwiki.embarcadero.com/CodeExamples/Tokyo/en/FireDAC.Pooling_Sample }
 
-Interface
+interface
 
-Uses
-  sysUtils, classes, Data.DB,
+uses
+  SysUtils, Classes, Data.DB,
 
   // firedac
   FireDAC.Phys.SQLiteWrapper.Stat,
   FireDAC.Stan.Intf, FireDAC.Stan.Option, FireDAC.Stan.Error, FireDAC.UI.Intf, FireDAC.Phys.Intf,
-  FireDAC.DApt, FireDAC.Stan.Def, FireDAC.Stan.Pool, FireDAC.Stan.Async, FireDAC.Phys,
+  FireDAC.DApt, FireDAC.Stan.def, FireDAC.Stan.Pool, FireDAC.Stan.Async, FireDAC.Phys,
   // FireDAC.VCLUI.Wait,
   FireDAC.Stan.ExprFuncs,
-  FireDAC.Phys.SQLiteDef, FireDAC.Phys.SQLite, FireDAC.Comp.Client;
+  FireDAC.Phys.SQLiteDef, FireDAC.Phys.SQLite, FireDAC.Comp.Client,
+  AutoFree;
 
-Type
+type
 
-  TSqlLitePack = Class
-  Private
-    fDbFileName: String;
+  TSqlLitePack = class
+  private
+    fDbFileName: string;
     fConnection: TFDConnection;
     fDriverLink: TFDPhysSQLiteDriverLink;
     fquery: TfdQuery;
     FDSQLiteSecurity1: TFDSQLiteSecurity;
     fConnectionparams: TStringList;
     // for parameters see: http://docwiki.embarcadero.com/RADStudio/Tokyo/en/Connect_to_SQLite_database_(FireDAC)
-    Procedure DoConnectionOpen;
-  Public
-    Constructor Create;
-    Destructor Destroy; Override;
+    procedure DoConnectionOpen;
+  public
+    constructor Create;
+    destructor Destroy; override;
 
-    Procedure OpenDatabase(Const aDbFileName: String);
+    procedure OpenDatabase(const aDbFileName: string);
 
-    Function ExecSql(Const sql: String): integer;
-    Procedure open(Const sql: String);
+    function ExecSQL(const sql: string): integer;
+    procedure Open(const sql: string);
 
     // remember, you have to close any open connections first
-    Procedure decryptDatabase(Const DBFilename, oldPassword: String);
-    Procedure EncryptDatabase(Const DBFilename, NewPassword: String);
-    Function DbIsEncrypted(Const DBFilename: String): boolean;
+    procedure DecryptDatabase(const DBFilename, oldPassword: string);
+    procedure EncryptDatabase(const DBFilename, NewPassword: string);
+    function DbIsEncrypted(const DBFilename: string): boolean;
+    // creates a fresh independant query instance. REMARK: you need to free this query
+    function CreateQuery: TFDQuery; overload;
+    // as the above, but uses autoFree.pas to handle the destruction of that query automatically
+    function CreateQuery(out Q: TFDQuery): iGarbo; overload;
 
-    Property Connection: TFDConnection Read fConnection;
-    Property query: TfdQuery Read fquery;
+    property Connection: TFDConnection read fConnection;
+    property Query: TfdQuery read fquery;
 
-    Class Function Quote(Const value: String; Const qChar: char = ''''): String;
-    Property connectionParams: TStringList Read fConnectionparams;
-  End;
+    class function Quote(const Value: string; const qChar: char = ''''): string;
+    property connectionParams: TStringList read fConnectionparams;
+  end;
 
-Implementation
+implementation
 
-Uses
-{$IFDEF madExcept}madExcept, {$ENDIF}
-  // vcl.clipBrd,
-  autoFree;
+uses
+  {$IFDEF madExcept}madExcept{$ENDIF};
 
 { TSqlLitePack }
 
-Constructor TSqlLitePack.Create;
-Begin
-  Inherited Create;
+constructor TSqlLitePack.Create;
+begin
+  inherited Create;
   // SEE
   // http://docwiki.embarcadero.com/RADStudio/XE6/en/Connect_to_SQLite_database_(FireDAC)
   fConnectionparams := TStringList.Create;
-  fConnectionparams.add('LockingMode=Normal');
-  fConnectionparams.add('Synchronous=Normal');
-  fConnectionparams.add('StringFormat=Unicode');
-  fConnectionparams.add('Pooled=false');
-  fConnectionparams.add('SharedCache=False');
-  fConnectionparams.add('LockWait=True');
-  fConnectionparams.add('BusyTimeout=30000');
+  fConnectionparams.Add('LockingMode=Normal');
+  fConnectionparams.Add('Synchronous=Normal');
+  fConnectionparams.Add('StringFormat=Unicode');
+  fConnectionparams.Add('Pooled=false');
+  fConnectionparams.Add('SharedCache=False');
+  fConnectionparams.Add('LockWait=True');
+  fConnectionparams.Add('BusyTimeout=30000');
 
-  fDriverLink := TFDPhysSQLiteDriverLink.Create(Nil);
+  fDriverLink := TFDPhysSQLiteDriverLink.Create(nil);
   // fDriverLink.EngineLinkage:= slStatic;
-  fConnection := TFDConnection.Create(Nil);
+  fConnection := TFDConnection.Create(nil);
 
-  fConnection.LoginPrompt := false;
+  fConnection.LoginPrompt := False;
   fConnection.UpdateOptions.LockWait := True;
+  fConnection.ResourceOptions.MacroExpand := False;
 
-  fquery := TfdQuery.Create(Nil);
+  fquery := TfdQuery.Create(nil);
   fquery.Connection := fConnection;
-End;
+end;
 
-Procedure TSqlLitePack.OpenDatabase(Const aDbFileName: String);
-Begin
+procedure TSqlLitePack.OpenDatabase(const aDbFileName: string);
+begin
   fDbFileName := aDbFileName;
 
-  fConnection.Connected := false;
+  fConnection.Connected := False;
 
-  fConnection.params.clear;
-  fConnection.params.assign(fConnectionparams);
+  fConnection.params.Clear;
+  fConnection.params.Assign(fConnectionparams);
 
-  fConnection.params.values['DriverID'] := 'SQLite';
-  fConnection.params.values['Database'] := fDbFileName;
+  fConnection.params.Values['DriverID'] := 'SQLite';
+  fConnection.params.Values['Database'] := fDbFileName;
 
   // fConnection.params.add()('NewPassword=');
 
@@ -111,71 +115,71 @@ Begin
   // Auto-vacuuming is only possible if the database stores some additional information that allows each database page to be traced backwards to its referrer.
   // Therefore, auto-vacuuming must be turned on before any tables are created. It is not possible to enable or disable auto-vacuum after a table has been created.
   // ExecSql('PRAGMA auto_vacuum = 1;');
-End;
+end;
 
-Destructor TSqlLitePack.Destroy;
-Begin
+destructor TSqlLitePack.Destroy;
+begin
 
-  fConnection.Connected := false;
-  fConnectionparams.free;
-  fquery.free;
-  fConnection.free;
-  fDriverLink.free;
+  fConnection.Connected := False;
+  fConnectionparams.Free;
+  fquery.Free;
+  fConnection.Free;
+  fDriverLink.Free;
 
-  Inherited;
-End;
+  inherited;
+end;
 
-Procedure TSqlLitePack.DoConnectionOpen;
-Begin
+procedure TSqlLitePack.DoConnectionOpen;
+begin
   // hide via call stack
   // FileDac is initializing some global critical sections and does not release them..., ensure we do not cluster our leak report with them
-{$IFDEF madExcept}
+  {$IFDEF madExcept}
   HideLeak('TSqlLitePack.DoConnectionOpen');
-{$ENDIF}
+  {$ENDIF}
   fConnection.Connected := True;
-End;
+end;
 
-Function TSqlLitePack.ExecSql(Const sql: String): integer;
-Begin
-  fquery.sql.text := sql;
-  fquery.ExecSql;
-  result := fquery.RowsAffected;
-End;
+function TSqlLitePack.ExecSQL(const sql: string): integer;
+begin
+  fquery.sql.Text := sql;
+  fquery.ExecSQL;
+  Result := fquery.RowsAffected;
+end;
 
-Procedure TSqlLitePack.open(Const sql: String);
-Begin
-  If fquery.Active Then
-    fquery.close;
+procedure TSqlLitePack.Open(const sql: string);
+begin
+  if fquery.Active then
+    fquery.Close;
 
-  fquery.sql.text := sql;
+  fquery.sql.Text := sql;
 
-  fquery.open();
-End;
+  fquery.Open();
+end;
 
-Class Function TSqlLitePack.Quote(Const value: String; Const qChar: char = ''''): String;
-Begin
-  If value = '' Then
-    result := qChar + qChar
-  Else
-  Begin
-      result := value;
-    If (result[1] = qChar) And (result[length(result)] = qChar) Then
-    Begin
-        Delete(result, 1, 1);
-      Delete(result, length(result), 1);
-    End;
+class function TSqlLitePack.Quote(const Value: string; const qChar: char = ''''): string;
+begin
+  if Value = '' then
+    Result := qChar + qChar
+  else
+  begin
+    Result := Value;
+    if (Result[1] = qChar) and (Result[length(Result)] = qChar) then
+    begin
+      delete(Result, 1, 1);
+      delete(Result, length(Result), 1);
+    end;
 
-    result := StringReplace(result, qChar, qChar + qChar, [rfReplaceAll]);
-    result := qChar + result + qChar;
-  End;
-End;
+    Result := Stringreplace(Result, qChar, qChar + qChar, [rfReplaceAll]);
+    Result := qChar + Result + qChar;
+  end;
+end;
 
-Procedure TSqlLitePack.decryptDatabase(Const DBFilename, oldPassword: String);
-Var
+procedure TSqlLitePack.decryptDatabase(const DBFilename, oldPassword: string);
+var
   FDSQLiteSecurity1: TFDSQLiteSecurity;
   garbos: TGarbos;
-Begin
-  FDSQLiteSecurity1 := TFDSQLiteSecurity.Create(Nil);
+begin
+  FDSQLiteSecurity1 := TFDSQLiteSecurity.Create(nil);
   gc(FDSQLiteSecurity1, garbos);
   FDSQLiteSecurity1.DriverLink := fDriverLink;
 
@@ -183,15 +187,15 @@ Begin
   FDSQLiteSecurity1.Database := DBFilename;
   FDSQLiteSecurity1.Password := oldPassword;
   FDSQLiteSecurity1.RemovePassword;
-End;
+end;
 
-Procedure TSqlLitePack.EncryptDatabase(Const DBFilename,
-  NewPassword: String);
-Var
+procedure TSqlLitePack.EncryptDatabase(const DBFilename,
+  NewPassword: string);
+var
   FDSQLiteSecurity1: TFDSQLiteSecurity;
   garbos: TGarbos;
-Begin
-  FDSQLiteSecurity1 := TFDSQLiteSecurity.Create(Nil);
+begin
+  FDSQLiteSecurity1 := TFDSQLiteSecurity.Create(nil);
   gc(FDSQLiteSecurity1, garbos);
   FDSQLiteSecurity1.DriverLink := fDriverLink;
 
@@ -200,15 +204,27 @@ Begin
   FDSQLiteSecurity1.Database := DBFilename;
   FDSQLiteSecurity1.Password := NewPassword;
   FDSQLiteSecurity1.SetPassword;
-End;
+end;
 
-Function TSqlLitePack.DbIsEncrypted(Const DBFilename: String): boolean;
-Var
-  State: String;
+function TSqlLitePack.CreateQuery(out Q: TFDQuery): iGarbo;
+begin
+  Q:= CreateQuery;
+  Result:= gc(Q);
+end;
+
+function TSqlLitePack.CreateQuery: TFDQuery;
+begin
+  Result:= TfdQuery.Create(nil);
+  Result.Connection := fConnection;
+end;
+
+function TSqlLitePack.DbIsEncrypted(const DBFilename: string): boolean;
+var
+  State: string;
   FDSQLiteSecurity1: TFDSQLiteSecurity;
   garbos: TGarbos;
-Begin
-  FDSQLiteSecurity1 := TFDSQLiteSecurity.Create(Nil);
+begin
+  FDSQLiteSecurity1 := TFDSQLiteSecurity.Create(nil);
   gc(FDSQLiteSecurity1, garbos);
   FDSQLiteSecurity1.DriverLink := fDriverLink;
 
@@ -221,7 +237,8 @@ Begin
   // FDSQLiteSecurity1.Password := password;
   State := FDSQLiteSecurity1.CheckEncryption;
 
-  result := Not sameText(State, '<unencrypted>');
-End;
+  Result := not sameText(State, '<unencrypted>');
+end;
 
-End.
+end.
+

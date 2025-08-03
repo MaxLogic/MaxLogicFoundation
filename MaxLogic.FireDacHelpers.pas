@@ -3,8 +3,17 @@ unit MaxLogic.FireDacHelpers;
 interface
 
 uses
-  classes, sysUtils, NetEncoding,
+  system.classes, system.sysUtils, system.NetEncoding, Data.DB,
   FireDAC.Comp.Client;
+
+
+type
+  TFDQueryHelper = class helper for TFDQuery
+  public
+    function ExecSQLScalar: Variant; overload;
+    function ExecSQLScalar(const aSql: String; const aParams: TArray<Variant>): Variant; overload;
+  end;
+
 {
   Formats: FIREDAC,BINARY,PLAIN,CSV,JSON
   plain and csv are similar, but plain is without the header, and also has a different ContextType
@@ -102,4 +111,82 @@ begin
   end;
 end;
 
+{ TFDQueryHelper }
+
+function TFDQueryHelper.ExecSQLScalar: Variant;
+begin
+  Result:= null;
+  Self.Close;
+  Self.Open;
+  try
+    if not self.EoF then
+      Result:= Fields[0].AsVariant;
+  finally
+    Self.Close;
+  end;
+end;
+
+function TFDQueryHelper.ExecSQLScalar(const aSql: String;
+  const aParams: TArray<Variant>): Variant;
+
+  function VarTypeToFieldType(const V: Variant): TFieldType;
+  begin
+    case VarType(V) and varTypeMask of
+      varSmallint, varInteger, varShortInt, varByte, varWord, varLongWord, varInt64:
+        Result := ftLargeint;
+      varSingle, varDouble, varCurrency:
+        Result := ftFloat;
+      varDate:
+        Result := ftDateTime;
+      varBoolean:
+        Result := ftBoolean;
+      varString, varUString, varOleStr:
+        Result := ftWideString;
+    else
+      Result := ftVariant;
+    end;
+  end;
+
+var
+  i: Integer;
+  v: Variant;
+begin
+  Close;
+  SQL.Text := aSql;
+
+  if Length(aParams) > 0 then
+  begin
+    if Params.Count <> Length(aParams) then
+      raise EArgumentException.CreateFmt('Parameter count mismatch. Expected %d, got %d.',
+        [Params.Count, Length(aParams)]);
+
+    for i := 0 to High(aParams) do
+    begin
+      v := aParams[i];
+      if VarIsNull(v) or VarIsEmpty(v) then
+        Params[i].Clear
+      else
+      begin
+        Params[i].Value := v; // Variant assignment
+        if Params[i].DataType = ftUnknown then
+          Params[i].DataType := VarTypeToFieldType(v);
+      end;
+    end;
+  end;
+
+  Prepare;
+  try
+    Open;
+    try
+      Result := Fields[0].Value; // returns Variant
+    finally
+      Close;
+    end;
+  finally
+    Unprepare;
+  end;
+end;
+
+
 end.
+
