@@ -246,6 +246,9 @@ function TryStrToFloatWCC(const Text: string; out Value: double): boolean;
 function StrToFLoatWccDef(const Text: string; const default: double): double;
 procedure PrepareTextForStrToFloatWcc(var s: string);
 
+function BytesToRawStr(const b: TBytes): RawByteString;
+function RawStrToBytes(const s: RawByteString): TBytes;
+
 implementation
 
 uses
@@ -1082,6 +1085,22 @@ begin
       end;
   end;
 end;
+
+
+function BytesToRawStr(const b: TBytes): RawByteString;
+begin
+  setLength(Result, Length(b));
+  if length(b) > 0 then
+    move(b[0], Result[1], length(b));
+end;
+
+function RawStrToBytes(const s: RawByteString): TBytes;
+begin
+  SetLength(Result, Length(s));
+  if length(s)<>0 then
+    move(s[1], Result[0], length(s));
+end;
+
 
 end.
 
