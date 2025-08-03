@@ -199,8 +199,7 @@ end;
 
 function EncryptBytes(const SrcBuff: TBytes; const Password: string; const aSalt: TBytes; aRounds: integer = 600000): TBytes;
 begin
-  Result:= EncryptBytes(
-    SrcBuff, Password, BytesTorawStr(aSalt), aRounds);
+  Result:= EncryptBytes(SrcBuff, Password, BytesTorawStr(aSalt), aRounds, aSize, aBufferSize);
 end;
 
 function EncryptBytes(const SrcBuff: TBytes; const Password: string; const aSalt: rawByteString; aRounds: integer = 600000): TBytes;
@@ -220,7 +219,7 @@ end;
 
 function DecryptBytes(const SrcBuff: TBytes; const Password: string; const aSalt: TBytes; aRounds: integer = 600000): TBytes;
 begin
-  Result:= DecryptBytes(SrcBuff, Password, BytesTorawStr(aSalt), aRounds);
+  Result:= DecryptBytes(SrcBuff, Password, BytesTorawStr(aSalt), aRounds, aSize, aBufferSize);
 end;
 
 function DecryptBytes(const SrcBuff: TBytes; const Password: string; const aSalt: rawByteString; aRounds: integer = 600000): TBytes;
@@ -329,7 +328,7 @@ end;
 function EncryptStream(const aSrcStream, aDstStream: TStream; const aPassword: string; const aSalt: TBytes;
   aRounds: integer; const aSize: Int64; aBufferSize: integer): Boolean;
 begin
-  Result:= EncryptStream(aSrcStream, aDstStream, aPassword, BytesTorawStr(aSalt), aRounds);
+  Result:= EncryptStream(aSrcStream, aDstStream, aPassword, BytesTorawStr(aSalt), aRounds, aSize, aBufferSize);
 end;
 
 function EncryptStream(const aSrcStream, aDstStream: TStream; const aPassword: string; const aSalt: rawByteString;
@@ -365,7 +364,7 @@ end;
 function DecryptStream(const aSrcStream, aDstStream: TStream; const aPassword: string; const aSalt: TBytes;
   aRounds: integer; const aSize: Int64; aBufferSize: integer): Boolean;
 begin
-  Result:= DecryptStream(aSrcStream, aDstStream, aPassword, BytesTorawStr(aSalt), aRounds);
+  Result:= DecryptStream(aSrcStream, aDstStream, aPassword, BytesTorawStr(aSalt), aRounds, aSize, aBufferSize);
 end;
 function DecryptStream(const aSrcStream, aDstStream: TStream; const aPassword: string; const aSalt: rawByteString;
   aRounds: integer; const aSize: Int64; aBufferSize: integer): boolean;
