@@ -14,7 +14,8 @@ uses
   winApi.Windows, System.Classes, System.SysUtils, Soap.InvokeRegistry,
   System.win.ComObj, xml.XMLIntf, xml.XMLDoc, Soap.OPToSOAPDomConv, Soap.SOAPHTTPTrans,
   Soap.OpConvertOptions, Soap.SOAPHTTPClient,
-  generics.collections, System.Net.HttpClient;
+  generics.collections, System.Net.HttpClient, MaxLogic.ComGuard;
+
 
 type
   TOnSoapMessage = procedure(Sender: TObject; Stream: TStream;
@@ -25,6 +26,7 @@ type
     fOnSoapMessage: TOnSoapMessage;
     procedure SetOnSoapmessage(const Value: TOnSoapMessage);
   public
+    constructor Create(Owner: TComponent); override;
     procedure Execute(const Request: TStream; Response: TStream);
       overload; override;
 
@@ -169,11 +171,18 @@ end;
 
 { THTTPReqRespWithMonitor }
 
+constructor THTTPReqRespWithMonitor.Create;
+begin
+  inherited;
+  TComGuard.Ensure;
+end;
+
 procedure THTTPReqRespWithMonitor.Execute(const Request: TStream;
   Response: TStream);
 var
   d: TDateTime;
 begin
+  TComGuard.Ensure;
   d := now;
 
   if assigned(fOnSoapMessage) then
@@ -244,6 +253,7 @@ function TSoapWithLog.GetHttp(ConnectTimeout: integer = 30000; SendTimeout: inte
 var
   mr: THTTPReqRespWithMonitor;
 begin
+  TComGuard.Ensure;
   Result := THTTPRIO.Create(nil);
   Result.OnBeforeExecute := LogBeforeExecute;
   Result.OnAfterExecute := LogAfterExecute;
@@ -352,6 +362,7 @@ var
   X: integer;
   n, v: string;
 begin
+  TComGuard.Ensure;
   fLastUrl := AHTTPReqResp.URL;
 
 

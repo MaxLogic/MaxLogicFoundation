@@ -140,6 +140,9 @@ Type
     Procedure Warn(aMsg: iLogEntry); Overload;
     /// <summary>Logs an error message (string).</summary>
     Procedure Error(Const aMsg: String); Overload;
+    // Best source: crash-time stack (must be called inside the same `except` block)
+    // lTrace := madExcept.GetCrashStackTrace;
+    Procedure Error(Const aMsg, aCallStackTrace: String); overload;
     /// <summary>Logs an error message (log entry).</summary>
     Procedure Error(aMsg: iLogEntry); Overload;
     /// <summary>Logs a debug message (string).</summary>
@@ -278,6 +281,9 @@ Type
     Procedure Warn(Const aMsg: String); Overload;
     Procedure Warn(aMsg: iLogEntry); Overload;
     Procedure Error(Const aMsg: String); Overload;
+    // Best source: crash-time stack (must be called inside the same `except` block)
+    // lTrace := madExcept.GetCrashStackTrace;
+    Procedure Error(Const aMsg, aCallStackTrace: String); overload;
     Procedure Error(aMsg: iLogEntry); Overload;
     Procedure Debug(Const aMsg: String); Overload;
     Procedure Debug(aMsg: iLogEntry); Overload;
@@ -802,6 +808,15 @@ destructor TMaxLog.Destroy;
 begin
   ShutDown;
   inherited;
+end;
+
+procedure TMaxLog.Error(const aMsg, aCallStackTrace: String);
+var
+  lMsg: iLogEntry;
+begin
+  lMsg:= LogENtry(aMsg);
+  lMsg.CallStack := aCallStackTrace;
+  Add(lMsg, TLogType.Error);
 end;
 
 // iMaxLog Interface Method Implementations
