@@ -1,4 +1,4 @@
-unit maxLogic.BitOperations;
+ï»¿unit maxLogic.BitOperations;
 
 interface
 
@@ -10,9 +10,9 @@ type
 
 function Significance(DigitNr: Byte; Base: Byte): integer; overload;            //DigitNr: Index der Stelle von rechts, angefangen mit 0
 function Significance(BitNr: Byte): integer; overload;                          //BitNr: Index des Bits von rechts, angefangen mit 0
-procedure SetBit(var Value: longint; BitNr: Byte; NewBit: TBit);                //BitNr: Index des Bits von rechts, angefangen mit 0; NewBit: Neuer Wert des Bits, das verändert werden soll 
+procedure SetBit(var Value: longint; BitNr: Byte; NewBit: TBit);                //BitNr: Index des Bits von rechts, angefangen mit 0; NewBit: Neuer Wert des Bits, das verÃ¤ndert werden soll 
 function GetBit(Value: longint; BitNr: Byte): TBit;                             //BitNr: Index des Bits von rechts, angefangen mit 0
-function Max(nBits: Byte): LongInt;                                             //Gibt den maximalen Wert zurück, der mit nBits dargestellt werden kann
+function Max(nBits: Byte): LongInt;                                             //Gibt den maximalen Wert zurÃ¼ck, der mit nBits dargestellt werden kann
 function CharToBit(chr: Char): TBit;
 function BitToChar(Bit: TBit): Char;
 function BitToBool(Bit: TBit): Boolean;

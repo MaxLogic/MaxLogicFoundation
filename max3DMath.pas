@@ -1,4 +1,4 @@
-unit max3DMath;
+ï»¿unit max3DMath;
 { *******************************************************
 
   Digital Omerta 3D Engine
@@ -1476,13 +1476,13 @@ function GetBillboardMatrixNEOS(BillboardPosition, CameraPosition: TD3DXVector3)
 { a little faster were:
 
   FROM : http://www.team-kropf.de/neobrothers/cgi-bin/ikonboard.cgi?s=3e4cde5e36a1ffff;act=ST;f=1;t=659;hl=new
-  Da man das Objekt immer zur Kamera ausrichten will, muss man so tuen, als hätte sich die Kamera nie verändert (also Nullpunkt und Richtung Z Schauen) --> IdentityMatrix. Da sich die Kamera natürlich woanders befindet, muss man die Position des Objektes noch mit der aktuellen Viewmatrix transformieren. Pseudocode würde so aussehen:
+  Da man das Objekt immer zur Kamera ausrichten will, muss man so tuen, als hÃ¤tte sich die Kamera nie verÃ¤ndert (also Nullpunkt und Richtung Z Schauen) --> IdentityMatrix. Da sich die Kamera natÃ¼rlich woanders befindet, muss man die Position des Objektes noch mit der aktuellen Viewmatrix transformieren. Pseudocode wÃ¼rde so aussehen:
 
   1. Vor dem Rendern ALLER Partikel/Billboards:
   D3DDevice.SetTransform( D3DTS_VIEW, IdentityMatrix );
 
-  2. Nun in einer Schleife für jedes Objekt:
-  D3DXVec3TransformCoord( EndgültigePosition, OrginalPosition, Viewmatrix );
+  2. Nun in einer Schleife fÃ¼r jedes Objekt:
+  D3DXVec3TransformCoord( EndgÃ¼ltigePosition, OrginalPosition, Viewmatrix );
 
   3. Rendern mit Identity Worldmatrix.
 
@@ -1554,10 +1554,10 @@ end;
   Result:    None
   DESCRIPTION:
   Der Algorithmus errechnet anhand des Normalenvektors des Dreieckes und ein
-  wenig Ebenenberechnung die Höhe des Dreieckes über dem Punkt.
+  wenig Ebenenberechnung die HÃ¶he des Dreieckes Ã¼ber dem Punkt.
 
-  A, B, C, D und Hoehe sind Gleitkommazahlen, z.B. single. DreieckNormal ist der Normalenvektor des Dreieckes. Dieses bekommt man über das Kreuzprodukt heraus. Vertices[1] ist EIN beliebiger Punkt des Dreieckes. Welcher es ist, spielt bei dem Algorithmus keine Rolle.
-  Point.x und Point.y sind die Koordinaten, über dem die Höhe ermittelt werden soll.
+  A, B, C, D und Hoehe sind Gleitkommazahlen, z.B. single. DreieckNormal ist der Normalenvektor des Dreieckes. Dieses bekommt man Ã¼ber das Kreuzprodukt heraus. Vertices[1] ist EIN beliebiger Punkt des Dreieckes. Welcher es ist, spielt bei dem Algorithmus keine Rolle.
+  Point.x und Point.y sind die Koordinaten, Ã¼ber dem die HÃ¶he ermittelt werden soll.
 
 
   EXAMPLE:

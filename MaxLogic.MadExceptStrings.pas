@@ -1,4 +1,4 @@
-Unit MaxLogic.MadExceptStrings;
+ÔªøUnit MaxLogic.MadExceptStrings;
 // see:
 // http://help.madshi.net/madExceptSettings10.htm
 
@@ -34,7 +34,7 @@ Resourcestring
   cMStr_ShowBtnCaption = 'Fehlerbericht anzeigen';
   cMStr_ContinueBtnCaption = 'Anwendung fortfahren';
   cMStr_RestartBtnCaption = 'Anwendung neu starten';
-  cMStr_CloseBtnCaption = 'Anwendung schlieﬂen';
+  cMStr_CloseBtnCaption = 'Anwendung schlie√üen';
   cMStr_OkBtnCaption = '&OK';
   cMStr_DetailsBtnCaption = '&Details';
   cMStr_PleaseWaitTitle = 'Information';
@@ -49,12 +49,12 @@ Resourcestring
     'ErrorDetails: %errorDetails%';
 
   cMStr_SendBoxTitle = 'Sende Fehlerbericht...';
-  cMStr_PrepareAttachMsg = 'Anh‰nge werden vorbereitet...';
+  cMStr_PrepareAttachMsg = 'Anh√§nge werden vorbereitet...';
   cMStr_MxLookupMsg = 'Suche Mail Server...';
   cMStr_ConnectMsg = 'Verbinde mit Server...';
   cMStr_SendMailMsg = 'Sende Mail...';
   cMStr_FieldsMsg = 'Setze Felder...';
-  cMStr_SendAttachMsg = 'Sende Anh‰nge...';
+  cMStr_SendAttachMsg = 'Sende Anh√§nge...';
   cMStr_SendFinalizeMsg = 'Beenden...';
   cMStr_SendFailureMsg = 'Entschuldigung, das Senden des Fehlerberichts schlug fehl.';
 

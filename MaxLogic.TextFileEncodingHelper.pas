@@ -1,12 +1,12 @@
-unit MaxLogic.TextFileEncodingHelper;
+ï»¿unit MaxLogic.TextFileEncodingHelper;
 
 {
   we have often the problem that a file is encoded using multiple encodings so you have utf8 in one line... then ansi win 1250 in an other... and maybe something else in an other line
   this unit helps to load and process those files
 
   remember utf8 has those properties:
-  If the code point is < 128, it’s represented by the corresponding byte value.
-  If the code point is >= 128, it’s turned into a sequence of two, three, or four bytes, where each byte of the sequence is between 128 and 255.
+  If the code point is < 128, itâ€™s represented by the corresponding byte value.
+  If the code point is >= 128, itâ€™s turned into a sequence of two, three, or four bytes, where each byte of the sequence is between 128 and 255.
 }
 
 Interface

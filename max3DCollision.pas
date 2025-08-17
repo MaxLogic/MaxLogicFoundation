@@ -1,4 +1,4 @@
-unit max3DCollision;
+ï»¿unit max3DCollision;
 
 { *******************************************************
 
@@ -147,7 +147,7 @@ function D3DPointInCircle(CONST p: TD3DXVector3; CONST M: TD3DXVector3;
 function D2DPointInCircle(CONST p: TD3DXVector2; CONST M: TD3DXVector2;
   r: single): boolean;
 
-// berührt die Kugel die Kugel ?
+// berÃ¼hrt die Kugel die Kugel ?
 function D3DKugelinKugel(CONST M1, M2: TD3DVector; r1, r2: single): boolean;
 
 // Ist der Punkt in der Ellipse (x,y,z=radien der Elips)
@@ -170,7 +170,7 @@ function D3DBoxinBox(CONST box1, box2: TD3DBox12): boolean; overload;
 function D3DBoxinBox(CONST Min1, Max1, Min2, Max2: TD3DVector)
   : boolean; overload;
 
-// Min-Max-Werte einer Box in TD3DBox8 umwandeln wie von den anderen Routinen benötigt
+// Min-Max-Werte einer Box in TD3DBox8 umwandeln wie von den anderen Routinen benÃ¶tigt
 function MinMaxToBox8(CONST Min, Max: TD3DVector): TD3DBox8; overload;
 function MinMaxToBox8(CONST Min, Max: TD3DVector; CONST M: TD3DXMatrix)
   : TD3DBox8; overload;
@@ -379,7 +379,7 @@ function D3DPunktinBox(CONST p: TD3DVector; CONST Box: TD3DBox8): boolean;
 var
   Normal: TD3DVector;
 begin
-  // Sobald der Punkt auch nur bei einer Ebene außerhalb ist findet
+  // Sobald der Punkt auch nur bei einer Ebene auÃŸerhalb ist findet
   // KEINE Kollision statt
   Result := False;
 
@@ -426,7 +426,7 @@ function D3DPunktinBox(CONST p: TD3DVector; CONST Box: TD3DBox12): boolean;
 var
   Normal: TD3DVector;
 begin
-  // Sobald der Punkt auch nur bei einer Ebene außerhalb ist findet
+  // Sobald der Punkt auch nur bei einer Ebene auÃŸerhalb ist findet
   // KEINE Kollision statt
   Result := False;
 
@@ -2212,9 +2212,9 @@ END;
 /// /////////////////////////////////////////////////\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\*
 /// //
 /// // Testet, ob der Strahl von vOrig in Richtung vDir mit der OBB kollidiert
-/// // ist. Strahl und OBB müssen im Weltkoordinatenraum angegeben sein. Bei
+/// // ist. Strahl und OBB mÃ¼ssen im Weltkoordinatenraum angegeben sein. Bei
 /// // einer Kollision wird die Entfernung zum Kollisionspunkt im letzten
-/// // Parameter gespeichert, falls gewünscht.[Slapmethode, s.Möller, Haines]
+/// // Parameter gespeichert, falls gewÃ¼nscht.[Slapmethode, s.MÃ¶ller, Haines]
 /// //
 /// /////////////////////////////////////////////////\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\*
 function IntersectBoundingBox(CONST RayPos, RayDir: TD3DXVector3;
@@ -2268,7 +2268,7 @@ var
   vDxD, vHL, vLM, vDiff: TD3DXVector3;
 begin
   Result := False;
-  // Halbe Länge und Mittelpunkt der Box
+  // Halbe LÃ¤nge und Mittelpunkt der Box
   vHL := VectorMuls(RayDir, 0.5 * fLaenge);
   vLM := VectorAdd(RayPos, vHL);
   vDiff := VectorSub(vLM, Box.Center);
@@ -2764,7 +2764,7 @@ Begin
 end;
 
 // ##############################################################################
-// Erstellen einer Ebene (wird für Viewing Frustrum detecting benötigt)
+// Erstellen einer Ebene (wird fÃ¼r Viewing Frustrum detecting benÃ¶tigt)
 // ##############################################################################
 procedure TPlane.Construct(Const p0, p1, p2: TD3DXVector3);
 begin
@@ -2779,7 +2779,7 @@ begin
 end;
 
 // ##############################################################################
-// Ebene normalisieren (wird für Viewing Frustrum detecting benötigt)
+// Ebene normalisieren (wird fÃ¼r Viewing Frustrum detecting benÃ¶tigt)
 // ##############################################################################
 procedure TPlane.Normalize;
 var
@@ -2793,7 +2793,7 @@ begin
 end;
 
 // ##############################################################################
-// Gibt Entfernung zu Punkt an (wird für Viewing Frustrum detecting benötigt)
+// Gibt Entfernung zu Punkt an (wird fÃ¼r Viewing Frustrum detecting benÃ¶tigt)
 // ##############################################################################
 function TPlane.DistanceToPoint(pt: TD3DXVector3): single;
 begin

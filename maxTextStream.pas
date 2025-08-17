@@ -1,7 +1,7 @@
-Unit maxTextStream;
+﻿Unit maxTextStream;
 
 {$DEFINE USE_INLINE }
-{ Copyright Pawe� Piotrowski
+{ Copyright Paweł Piotrowski
   Version: 1.11
   History:
   2021-06-24: linux compatible

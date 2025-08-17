@@ -1,4 +1,4 @@
-unit maxInMemoryFile;
+﻿unit maxInMemoryFile;
 
 {$IFNDEF MSWINDOWS}
   {$FATAL 'Unit maxInMemoryFile is only compatible with the MSWINDOWS platform.'}
@@ -6,7 +6,7 @@ unit maxInMemoryFile;
 {$WARN SYMBOL_PLATFORM OFF}
 
 { Author: pawel Piotrowski
-  Copyright 2010 MaxLogic, Pawe� Piotrowski
+  Copyright 2010 MaxLogic, Paweł Piotrowski
   Version: 1.8
   History:
   2019-06-18: added the option to create auto delete temp files for the TMMFStream class

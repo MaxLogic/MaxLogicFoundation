@@ -1,4 +1,4 @@
-unit AdvancedShapes;
+﻿unit AdvancedShapes;
 { *******************************************************
 
   Digital Omerta 3D Engine
@@ -610,7 +610,7 @@ begin
 
 
   // calculate now c
-  // a2 � c2 = b2 or
+  // a2 – c2 = b2 or
   // b2 + c2 = a2 or
   // c2 = a2 - b2
 

@@ -1,4 +1,4 @@
-unit MaxLogic.RestClientHelper;
+ï»¿unit MaxLogic.RestClientHelper;
 
 { Version: 1.5
 }
@@ -202,7 +202,7 @@ begin
     OnAfterExecute := RESTRequestAfterExecute;
     /// <summary>
     /// Specifies if Events (such as OnAfterExecute) should run in the context of the main
-    /// thread (true) or in the context of an arbitrary thread - which was created by the developer or by using
+    /// thread (true)Â or in the context ofÂ an arbitrary thread - which was created by the developer or by using
     /// ExecuteAsync.
     SynchronizedEvents := False;
     OnHTTPProtocolError := RESTRequestHTTPProtocolError;
