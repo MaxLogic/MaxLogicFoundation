@@ -182,7 +182,7 @@ Implementation
 Uses
   // mmSystem,
   AppWideStopWatch, pawel1,
-  maxCryptoHelper.Decryptor, ioUtils, bsutils, zlib, SynLZ, syncObjs;
+  maxCryptoHelper.Decryptor, ioUtils, bsutils, zlib, SynLZ, syncObjs, system.math;
 
 { TmaxLogAsyncWriter }
 
