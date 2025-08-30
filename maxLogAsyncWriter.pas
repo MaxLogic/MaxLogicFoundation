@@ -182,7 +182,7 @@ Implementation
 Uses
   // mmSystem,
   AppWideStopWatch, pawel1,
-  maxCryptoHelper.Decryptor, ioUtils, bsutils, zlib, SynLZ;
+  maxCryptoHelper.Decryptor, ioUtils, bsutils, zlib, SynLZ, syncObjs;
 
 { TmaxLogAsyncWriter }
 
@@ -728,22 +728,22 @@ End;
 
 Procedure TBinaryLogWriter.MoveAndZipBLog;
 Var
-  f1, f2: String;
+  fn1, fn2: String;
   lKey: TSHA256Digest;
 Begin
-  f1 := fParent.fBLogDir + '.all.bLog';
-  f2 := fParent.fBLogDir + '.all(' + formatDateTime('yyyy"-"mm"-"dd"_"hh";"nn";"ss"."zzz', now) + ').bLog';
-  TFile.move(f1, f2);
+  fn1 := fParent.fBLogDir + '.all.bLog';
+  fn2 := fParent.fBLogDir + '.all(' + formatDateTime('yyyy"-"mm"-"dd"_"hh";"nn";"ss"."zzz', now) + ').bLog';
+  TFile.move(fn1, fn2);
 
-  fOlderLogFiles.add(f2);
+  fOlderLogFiles.add(fn2);
   If Not DisableOldLogPurging Then
-    While fOlderLogFiles.Count > cMaxOldFileCount Do
+    While fOlderLogFiles.Count > max(2, cMaxOldFileCount) Do
     Begin
       // actually we will not delete the first log file, as it mostly contains some special start up informations.
-      f1 := fOlderLogFiles[1];
+      fn1 := fOlderLogFiles[1];
       Try
-        If TFile.Exists(f1) Then
-          TFile.Delete(f1);
+        If TFile.Exists(fn1) Then
+          TFile.Delete(fn1);
       Except
         // do nothing
       End;
@@ -756,15 +756,14 @@ Begin
     Var
       repacker: TBlogArchiveRepacker;
     Begin
-      repacker := TBlogArchiveRepacker.Create(f2, lKey, fLogPart);
-      inc(fLogPart);
+      repacker := TBlogArchiveRepacker.Create(fn2, lKey, fLogPart);
+      TInterlocked.increment(fLogPart);
       Try
         repacker.execute;
       Finally
         repacker.free;
       End;
     End, 'repackOldArchive');
-
 End;
 
 { TLogItem }
@@ -870,7 +869,7 @@ Begin
     fOld.ReadBuffer(size, 4);
     // make sure we do not go out of the file...
     If fOld.position + size > fOld.size Then
-      break;
+      Exit; // something went wrong... let the orginal file be as it was...
 
     If size <> 0 Then
     Begin
@@ -879,7 +878,12 @@ Begin
 
       // decrypt the chunk
       c := TAESCFB.Create(fKey);
-      s1 := c.DecryptPKCS7(s2, true);
+      try
+        s1 := c.DecryptPKCS7(s2, true);
+      Except
+        c.Free;
+        Exit; // something went wrong... leave the orginal file as it were. no repacking this time.
+      end;
       c.free;
 
       // decompress the chunk
@@ -912,6 +916,7 @@ Begin
   flushChunk;
 
   fNew.size := fNew.position; // truncate
+  // if the orginal was better compressed... then no need to overwrite it
   If fNew.size < fOld.size Then
     fNew.SaveToFile(fFileName);
 End;
