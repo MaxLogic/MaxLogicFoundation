@@ -94,36 +94,31 @@ Function CombinePath(const aParts: array of String; aAddFinalTrailingPathDelimit
                                        aReplaceInvalidCharsWith: Char = '_'): string;
   deprecated 'ConvertToValidDirectoryName is obsolete. Use SanitizeFileName instead.';
 
-  /// <summary>
-  /// Sanitises a single *path segment* (file name **or** directory name)
-  /// so that it becomes legal on all Delphi-supported platforms.
-  /// </summary>
-  /// <param name="aRawName">
-  ///   The untrusted input.  It should be a *single* component —
-  ///   **not** a full path containing separators (`\`, `/`, `:` …).
-  ///   Examples:
-  ///   <list type="bullet">
-  ///     <item><description><c>'my report (draft).pdf'</c></description></item>
-  ///     <item><description><c>'data\2025\Q3'</c> &larr; <i>WRONG</i> – pass each part separately</description></item>
-  ///   </list>
-  /// </param>
-  /// <param name="aReplacement">
-  ///   Character used to replace every invalid character.  Defaults
-  ///   to an underscore.
-  /// </param>
-  /// <returns>
-  ///   A safe file/directory name that
-  ///   <list type="bullet">
-  ///     <item><description>contains only <c>TPath.IsValidFileNameChar</c> characters,</description></item>
-  ///     <item><description>is never empty (falls back to <c>'untitled'</c>),</description></item>
-  ///     <item><description>avoids Windows-reserved names (<c>CON</c>, <c>PRN</c> …),</description></item>
-  ///     <item><description>and has no trailing dot or space on Windows.</description></item>
-  ///   </list>
-  ///   The function performs <i>no filesystem I/O</i>; it merely returns the cleaned string.
-  /// </returns>
-  function SanitizeFileName(const aRawName: string;
-                            const aReplacement: Char = '_'): string;
 
+/// <summary>
+/// Makes a file or directory *name* safe for all supported platforms.
+/// Optionally processes a full path while preserving path separators.
+/// </summary>
+/// <param name="aRawName">
+///   Untrusted input: either a single name (default mode) or a full path.
+/// </param>
+/// <param name="aReplacement">
+///   Replacement for each invalid character (defaults to '_').
+///   If set to #0, invalid characters are removed.
+/// </param>
+/// <param name="aHonorSeparators">
+///   When *true*, treats directory separators as boundaries and sanitizes each segment;
+///  when *false* (default), sanitizes the whole string as a single name (no separators allowed).
+/// </param>
+/// <returns>
+///   A safe name/path; never empty (falls back to 'untitled').
+///   On Windows, segments are also stripped of trailing dot/space and
+///   avoid reserved device names.
+/// </returns>
+
+function SanitizeFileName(const aRawName: string;
+const aReplacement: Char = '_';
+const aHonorSeparators: Boolean = False): string;
 
 /// <summary>
 /// This function checks the provided filename to determine if it exceeds the Windows path length limit. It then appropriately prefixes the filename to support extended-length paths. The function also distinguishes between local and network paths, applying a different prefix based on the path type. Note that for network paths, the initial double backslashes (`\\`) are replaced with the `\\?\UNC\` prefix, while local paths simply receive the `\\?\` prefix.
@@ -535,31 +530,150 @@ begin
     Result := IncludeTrailingPathDelimiter(Result);
 end;
 
-function SanitizeFileName(const aRawName: String; const aReplacement: Char): string;
+function SanitizeFileName(const aRawName: string;
+  const aReplacement: Char;
+  const aHonorSeparators: Boolean): string;
+
+function ReplaceOrRemoveInvalid(const s: string; const repl: Char): string;
+var
+  i: Integer;
+begin
+  Result := s;
+  for i := 1 to Length(Result) do
+    if not TPath.IsValidFileNameChar(Result[i]) then // cross-platform invalid-char check
+    begin
+      if repl = #0 then
+        Result[i] := #0 // mark for deletion, compact later
+      else
+        Result[i] := repl;
+    end;
+
+  if repl = #0 then
+  begin
+    // compact string by removing #0 markers
+    Result := Result.Replace(#0, '');
+  end;
+end;
+
+{$IFDEF MSWINDOWS}
+function WindowsFixups(const seg: string): string;
+const
+  // Windows reserved device names (case-insensitive)
+  CReserved: array[0..21] of string = (
+    'CON','PRN','AUX','NUL',
+    'COM1','COM2','COM3','COM4','COM5','COM6','COM7','COM8','COM9',
+    'LPT1','LPT2','LPT3','LPT4','LPT5','LPT6','LPT7','LPT8','LPT9'
+  );
+var
+  u: string;
+begin
+  Result := seg;
+
+  // strip trailing space or dot (Windows UI/Win32 rules)
+  while (Result <> '') and ((Result[High(Result)] = ' ') or (Result[High(Result)] = '.')) do
+    Delete(Result, Length(Result), 1);
+
+  // avoid reserved DOS device names
+  u := UpperCase(Result);
+  if MatchText(u, CReserved) then
+    Result := '_' + Result;
+end;
+{$ELSE}
+function WindowsFixups(const seg: string): string;
+begin
+  // no-op on non-Windows
+  Result := seg;
+end;
+{$ENDIF}
+
+function FixEmptyToUntitled(const s: string): string;
 const
   cUntitled = 'untitled';
 begin
-  if aRawName.IsEmpty then
-    Exit(cUntitled);
-
-  Result:= aRawName;
-  for var i := 1 to length(Result) do
-    if not TPath.IsValidFileNameChar(Result[i]) then
-      Result[i] := aReplacement;
-
-{$IFDEF MSWINDOWS}
-  while (Result.EndsWith(' ')) or (Result.EndsWith('.')) do
-    Delete(Result, Length(Result), 1);
-
-  if MatchText(Result.ToUpper,
-    ['CON','PRN','AUX','NUL','COM1','COM2','COM3','COM4','COM5','COM6','COM7','COM8','COM9',
-     'LPT1','LPT2','LPT3','LPT4','LPT5','LPT6','LPT7','LPT8','LPT9']) then
-    Result := '_' + Result;
-{$ENDIF}
-
-  if Result.IsEmpty then
-    Result := cUntitled;
+  if s.IsEmpty then
+    Result := cUntitled
+  else
+    Result := s;
 end;
+
+function SanitizeSegment(const raw: string; const repl: Char): string;
+begin
+  Result := ReplaceOrRemoveInvalid(raw, repl);
+  Result := WindowsFixups(Result);
+  Result := FixEmptyToUntitled(Result);
+end;
+
+function IsDirSep(const ch: Char): Boolean;
+begin
+  // Accept both primary and alternate separators on all platforms
+  Result := (ch = TPath.DirectorySeparatorChar) or (ch = TPath.AltDirectorySeparatorChar);
+end;
+
+function SanitizeFullPath(const raw: string; const repl: Char): string;
+var
+  i, segStart: Integer;
+  seg, sep: string;
+  c: Char;
+  // helper to flush the current segment to output
+  procedure FlushSegment;
+  begin
+    seg := Copy(raw, segStart, i - segStart);
+    Result := Result + SanitizeSegment(seg, repl) + sep;
+    sep := '';
+    segStart := i + 1;
+  end;
+  function IsVolumeSepHere: Boolean;
+  begin
+    // treat "C:" drive as a boundary on Windows only
+    {$IFDEF MSWINDOWS}
+    Result := (i = 2) and (raw[i] = TPath.VolumeSeparatorChar) and
+              (Length(raw) >= 2) and CharInSet(String(raw[1]).ToUpper[1],  ['A'..'Z']);
+    {$ELSE}
+    Result := False;
+    {$ENDIF}
+  end;
+begin
+  Result := '';
+  if raw = '' then
+    Exit(FixEmptyToUntitled(raw));
+
+  segStart := 1;
+  sep := '';
+  i := 1;
+  while i <= Length(raw) do
+  begin
+    c := raw[i];
+
+    if IsDirSep(c) then
+    begin
+      sep := c;          // keep the exact separator as in input
+      FlushSegment;      // sanitize segment before the separator
+    end
+    else if IsVolumeSepHere then
+    begin
+      // keep "<drive>:"
+      Result := Result + Copy(raw, segStart, i - segStart + 1);
+      segStart := i + 1;
+    end;
+
+    Inc(i);
+  end;
+
+  // tail segment (no trailing separator)
+  seg := Copy(raw, segStart, Length(raw) - segStart + 1);
+  Result := Result + SanitizeSegment(seg, repl);
+end;
+
+
+begin
+  if not aHonorSeparators then
+    Result := SanitizeSegment(aRawName, aReplacement)
+  else
+    Result := SanitizeFullPath(aRawName, aReplacement);
+end;
+
+
+
 
 function ConvertToValidDirectoryName(const aText: String;                                      aReplaceInvalidCharsWith: Char): string;
 begin
