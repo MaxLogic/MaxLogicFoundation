@@ -186,7 +186,9 @@ function GetLocalAppDataPath: String;
 function GetSpecialWindowsFolder(aFolder: integer): String;
 {$ENDIF}
 
-Implementation
+function IsInPath(const aPath, aFileName: string): Boolean;
+
+implementation
 
 Uses
   {$IFDEF MSWINDOWS}
@@ -968,5 +970,15 @@ begin
 end;
 {$ENDIF}
 
+
+
+function IsInPath(const aPath, aFileName: string): boolean;
+var
+  fn, lPath: string;
+begin
+  lPath := IncludeTrailingPathDelimiter(ExpandUNCFileName(NormalizePath(aPath)));
+  fn := ExpandUNCFileName(NormalizePath(aFileName));
+  Result := sameText(copy(fn, 1, length(lPath)), lPath)
+end;
 
 End.
