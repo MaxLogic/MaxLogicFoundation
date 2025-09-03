@@ -61,7 +61,8 @@ type
 implementation
 
 uses
-  {$IFDEF madExcept}madExcept{$ENDIF};
+  {$IFDEF madExcept}madExcept,{$ENDIF}
+  system.ioUtils, system.strUtils;
 
 { TSqlLitePack }
 
