@@ -1,4 +1,4 @@
-unit MaxLogic.Utils;
+﻿unit MaxLogic.Utils;
 
 // Scope: tiny, dependency-free, pure helpers that don’t clearly belong elsewhere.
 
@@ -17,14 +17,16 @@ function b2s(const aValue: Boolean; const aTrueText: string; const aFalseText: s
 begin
   if aValue then
     Result := aTrueText
-  end else begin
+  else
     Result := aFalseText;
-  end;
 end;
 
 function b2i(const aValue: Boolean): Integer;
 begin
-  Result := Ord(aValue);
+  if aValue then
+    Result := 1
+  else
+    Result:= 0;
 end;
 
 end.
