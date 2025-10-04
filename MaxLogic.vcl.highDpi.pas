@@ -414,70 +414,89 @@ end;
 function THighDpiAdjuster.AdjustTImageList(aImageList: TImageList): TVirtualImageList;
 var
   lMarker: THighDpiMarker;
-  i: integer;
+  lIsNew: Boolean;
   lBitmap: TBitmap;
-  lIsNew: boolean;
-  vl: TVirtualImageList;
+  lGlyphBitmap: TBitmap;
+  lSrcQP: TQuickPixel;
+  lDstQP: TQuickPixel;
+  lImagesPerRow, lImagesPerColumn: Integer;
+  lSrcRect: TRect;
+  lPt: TPoint;
   lImageName: string;
-  lImages: TGlyphCollection;
-  b: TBitmap;
-  qp, qpItem: TQuickPixel;
-  IMagesPerRow, ImagesperColumn: integer;
-  srcRect: TRect;
-  p: TPoint;
+  lVL: TVirtualImageList;
 begin
   Result := nil;
-  if aImageList.Count = 0 then
-    exit;
+
+  // Basic sanity checks
+  if (aImageList = nil) or (aImageList.Count = 0) then
+    Exit;
+
+  if (aImageList.Width <= 0) or (aImageList.Height <= 0) then
+    Exit; // prevents division by zero and invalid bitmap sizing
 
   lMarker := GetOrAddMarker(aImageList, lIsNew);
-  if (not lIsNew) and assigned(lMarker.VirtualImageList) then
-    exit(lMarker.VirtualImageList); // we already processed this
+  if (not lIsNew) and Assigned(lMarker.VirtualImageList) then
+    Exit(lMarker.VirtualImageList); // already processed
 
+  // Source sheet copy
   gc(lBitmap, TBitmap.Create);
   if not maxLogic.QuickPixel.CopyBmp(aImageList.GetImageBitmap, lBitmap) then
-    exit;
+    Exit;
+
+  if (lBitmap.Width <= 0) or (lBitmap.Height <= 0) then
+    Exit; // prevents division by zero and invalid rects
 
   Log('THighDpiAdjuster.AdjustTImageList: %s', aImageList);
-  vl := CreateVirtualImgList(aImageList.Owner, lMarker, aImageList.Width, aImageList.Height);
+
+  lVL := CreateVirtualImgList(aImageList.Owner, lMarker, aImageList.Width, aImageList.Height);
   Result := lMarker.VirtualImageList;
 
-  qpItem := nil;
-  b := TBitmap.Create;
-  qp := TQuickPixel.Create(lBitmap);
-  try
-    aImageList.BkColor := clFuchsia;
-    if aImageList.BkColor <> clNone then
-      qp.TransparencyToAlphaChannel(aImageList.BkColor);
+  // Prepare quick-pixel helpers and a per-glyph work bitmap
+  gc(lSrcQP, TQuickPixel.Create(lBitmap));
 
-    IMagesPerRow := lBitmap.Width div aImageList.Width;
-    ImagesperColumn := lBitmap.Height div aImageList.Height;
+  // Ensure transparency before slicing, if a bg color is set
+  aImageList.BkColor := clFuchsia;
+  if aImageList.BkColor <> clNone then
+    lSrcQP.TransparencyToAlphaChannel(aImageList.BkColor);
 
-    b.Assign(lBitmap);
-    b.FreeImage; // creates an independant copy
-    b.SetSize(aImageList.Width, aImageList.Height);
-    qpItem := TQuickPixel.Create(b);
+  // Safe, non-zero values (Max(1, …)) to avoid div-by-zero in mod/div
+  lImagesPerRow := System.Math.Max(1, lBitmap.Width div aImageList.Width);
+  lImagesPerColumn := System.Math.Max(1, lBitmap.Height div aImageList.Height);
 
-    srcRect := Rect(0, 0, aImageList.Width, aImageList.Height);
+  // Independent per-glyph bitmap
+  gc(lGlyphBitmap, TBitmap.Create);
+  lGlyphBitmap.Assign(lBitmap);
+  lGlyphBitmap.FreeImage; // detach from source
+  lGlyphBitmap.SetSize(aImageList.Width, aImageList.Height);
 
-    for var lGlyphIndex := 0 to aImageList.Count - 1 do
+  gc(lDstQP, TQuickPixel.Create(lGlyphBitmap));
+
+  lSrcRect := Rect(0, 0, aImageList.Width, aImageList.Height);
+
+  for var lGlyphIndex := 0 to aImageList.Count - 1 do
+  begin
+    if lGlyphIndex <> 0 then
     begin
-      if lGlyphIndex <> 0 then
-      begin
-        // Calculate the offset of the glyph
-        p.X := (lGlyphIndex mod IMagesPerRow) * b.Width;
-        p.y := (lGlyphIndex div IMagesPerRow) * b.Height;
-        srcRect.Location := p;
-      end;
-      qpItem.copyRect(point(0, 0), qp, srcRect);
+      // Calculate the offset of the glyph on the sheet
+      lPt.X := (lGlyphIndex mod lImagesPerRow) * lGlyphBitmap.Width;
+      lPt.Y := (lGlyphIndex div lImagesPerRow) * lGlyphBitmap.Height;
 
-      if AddToImageCol(b, lImageName) then
-        vl.add(lImageName, lImageName, False);
+      // Optional: clamp to source bounds to be extra safe
+      if (lPt.X + lSrcRect.Width > lBitmap.Width) or
+         (lPt.Y + lSrcRect.Height > lBitmap.Height) then
+      begin
+        // Out-of-bounds slice -> stop or continue; here we stop silently
+        Break;
+      end;
+
+      lSrcRect.Location := lPt;
     end;
-  finally
-    FreeAndNil(qp);
-    FreeAndNil(qpItem);
-    FreeAndNil(b);
+
+    // Copy from sheet to per-glyph bitmap
+    lDstQP.CopyRect(Point(0, 0), lSrcQP, lSrcRect);
+
+    if AddToImageCol(lGlyphBitmap, lImageName) then
+      lVL.Add(lImageName, lImageName, False);
   end;
 end;
 

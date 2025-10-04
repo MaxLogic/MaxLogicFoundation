@@ -1,19 +1,22 @@
 unit maxCallMeLater;
 
-{ This allows you to prepare special Callback that are just called after some time
-  the current implementation works on timers, but the next step will be to implement asyncCalls as well
+{ Prepare a callback that runs after some time.
+  Current impl: VCL TTimer on the main thread.
 
-  Version: 1.4
+  Version: 1.6
   History:
-  2018-05-17: fix: if the timer was destroyed by its owner it will not be destroyed again...
-  2016-11-15: TTimer needs a owner to prevent execution of "dead" code
-  2015-01-19: is now thread safe
-
+  2025-09-22: use CancelToken
+  2018-05-17: avoid double-destroy when owner frees us
+  2016-11-15: TTimer needs an owner to prevent execution of "dead" code
+  2015-01-19: thread-safe
   Attention: After the TCallMeLaterData is executed it will be freed automatically }
+
 interface
 
 uses
-  windows, classes, sysUtils, forms, controls, stdctrls, extCtrls, messages, ComCtrls, generics.collections, maxAsync;
+  Windows, Classes, SysUtils, Forms, Controls, ExtCtrls, // trimmed: removed unused units
+  maxAsync,
+  CancelToken;
 
 type
   TCallMeProc = reference to procedure;
@@ -21,121 +24,131 @@ type
   TCallMeLaterData = class(TComponent)
   private
     fTimer: TTimer;
-    FProc: TCallMeProc;
-    FCallMeAfterMiliseconds: dword;
-    fWasDestroyedInfo: ^boolean;
-    procedure SetaProc(const Value: TCallMeProc);
-    procedure SetCallMeAfterMiliseconds(const Value: dword);
+    fProc: TCallMeProc;
+    fCallMeAfterMiliseconds: DWORD; // keep original public API spelling
+    fWasDestroyedInfo: iCancelToken;
 
-    procedure TimerOnTimer(sender: Tobject);
-    Procedure RunInTimerMode;
+    procedure SetAProc(const aValue: TCallMeProc);
+    procedure SetCallMeAfterMiliseconds(const aValue: DWORD);
+
+    procedure TimerOnTimer(Sender: TObject);
+    procedure RunInTimerMode;
   public
     constructor Create(aOwner: TComponent); override;
-    Destructor Destroy; override;
+    destructor Destroy; override;
 
-    Procedure run;
+    procedure Run;
 
-    property CallMeAfterMiliseconds: dword read FCallMeAfterMiliseconds write SetCallMeAfterMiliseconds;
-    property Proc: TCallMeProc read FProc write SetaProc;
+    property CallMeAfterMiliseconds: DWORD read fCallMeAfterMiliseconds write SetCallMeAfterMiliseconds;
+    property Proc: TCallMeProc read fProc write SetAProc;
   end;
 
-  // a owner is required to kill the execution in case the parent is destroyed!
-Procedure CallmeLater(aProc: TCallMeProc; Miliseconds: dword; aOwner: TComponent);
+{ aOwner is recommended so that if the owner is destroyed before the timer fires,
+  we won't execute "dead" code. }
+procedure CallmeLater(aProc: TCallMeProc; Miliseconds: DWORD; aOwner: TComponent);
 
 implementation
 
+uses
+  system.math;
 
-Procedure CallmeLater(aProc: TCallMeProc; Miliseconds: dword; aOwner: TComponent);
+procedure CallmeLater(aProc: TCallMeProc; Miliseconds: DWORD; aOwner: TComponent);
 var
-  cd: TCallMeLaterData;
+  lData: TCallMeLaterData;
 begin
-  cd := TCallMeLaterData.Create(aOwner);
-  cd.CallMeAfterMiliseconds := Miliseconds;
-  cd.Proc := aProc;
-  cd.run;
+  lData := TCallMeLaterData.Create(aOwner);
+  lData.CallMeAfterMiliseconds := Miliseconds;
+  lData.Proc := aProc;
+  lData.Run;
 end;
 
 { TCallMeLaterData }
 
-constructor TCallMeLaterData.Create;
+constructor TCallMeLaterData.Create(aOwner: TComponent);
 begin
   inherited Create(aOwner);
-
+  fWasDestroyedInfo := TCancelToken.Create;
 end;
 
 destructor TCallMeLaterData.Destroy;
 begin
-  if fWasDestroyedInfo <> nil then
-    fWasDestroyedInfo^ := true;
+  if Assigned(fTimer) then
+  begin
+    fTimer.OnTimer := nil;
+    fTimer.Enabled := False;
+  end;
+  if (fWasDestroyedInfo <> nil) and not fWasDestroyedInfo.Canceled then
+    fWasDestroyedInfo.Cancel;
   inherited;
 end;
 
-procedure TCallMeLaterData.run;
+procedure TCallMeLaterData.Run;
+var
+  lWasDestroyed: iCancelToken;
 begin
   if maxAsync.InsideMainThread then
     RunInTimerMode
   else
   begin
+    lWasDestroyed:= fWasDestroyedInfo;
     maxAsync.SyncVCLCall(
       procedure
       begin
-        RunInTimerMode
-      end, true);
+        if not lWasDestroyed.Canceled then
+          RunInTimerMode;
+      end,
+      True);
   end;
 end;
 
 procedure TCallMeLaterData.RunInTimerMode;
-begin
-  if not Assigned(fTimer) then
-    fTimer := TTimer.Create(self);
-
-  fTimer.interval := CallMeAfterMiliseconds;
-  fTimer.OnTimer := TimerOnTimer;
-  fTimer.enabled := true;
-
-end;
-
-procedure TCallMeLaterData.SetaProc(
-
-  const
-  Value:
-  TCallMeProc);
-begin
-  FProc := Value;
-end;
-
-procedure TCallMeLaterData.SetCallMeAfterMiliseconds(
-
-  const
-  Value:
-  dword);
-begin
-  FCallMeAfterMiliseconds := Value;
-end;
-
-procedure TCallMeLaterData.TimerOnTimer(sender: Tobject);
 var
-  WasDestroyedInfo: boolean;
+  lInterval: Cardinal;
 begin
-  { NOTE:
-    it can happen that the calling of the timer will destroy the owner of this object...
-    in that case it is bad to destroy it again right?
-    But to know if it was destroyed or not, we need some kind of notification.
-    So I use a private pointer to a boolean, that will be set to true in the destructor (only if it points to something of course
-    and in this method we will test if it was actually set or not, if not, then we can free this object here }
-  WasDestroyedInfo := false;
-  fWasDestroyedInfo := @WasDestroyedInfo;
+  // already destroyed?
+  if (fWasDestroyedInfo <> nil) and fWasDestroyedInfo.Canceled then
+    Exit;
+
+  if fTimer = nil then
+    fTimer := TTimer.Create(Self);
+
+  // Clamp 0 to 1 to avoid aggressive WM_TIMER behavior.
+  lInterval := Max(1, fCallMeAfterMiliseconds);
+
+  fTimer.Enabled := False;
+  fTimer.Interval := lInterval;
+  fTimer.OnTimer := TimerOnTimer;
+  fTimer.Enabled := True;
+end;
+
+procedure TCallMeLaterData.SetAProc(const aValue: TCallMeProc);
+begin
+  fProc := aValue;
+end;
+
+procedure TCallMeLaterData.SetCallMeAfterMiliseconds(const aValue: DWORD);
+begin
+  fCallMeAfterMiliseconds := aValue;
+end;
+
+procedure TCallMeLaterData.TimerOnTimer(Sender: TObject);
+var
+  lWasDestroyedInfo: iCancelToken;
+begin
+  // It can happen that invoking Proc destroys this object via the owner.
+  // Use a cancel token snapshot to detect that scenario.
+  lWasDestroyedInfo := fWasDestroyedInfo;
 
   try
-    fTimer.enabled := false;
-    if Assigned(FProc) then
-      FProc();
+    if Assigned(fTimer) then
+      fTimer.Enabled := False;
+
+    if Assigned(fProc) then
+      fProc();
   finally
-    if not WasDestroyedInfo then
-    begin
-      fWasDestroyedInfo := nil;
-      self.free;
-    end;
+    // If we weren't destroyed during Proc(), self-destroy now (one-shot).
+    if (lWasDestroyedInfo <> nil) and not lWasDestroyedInfo.Canceled then
+      Self.Free;
   end;
 end;
 
