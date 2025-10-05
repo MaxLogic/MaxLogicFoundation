@@ -1,0 +1,1 @@
+build-delphi.bat MaxLogic.Tests.dproj
