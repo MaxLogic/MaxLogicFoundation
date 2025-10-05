@@ -7,7 +7,8 @@ interface
 uses
   System.SysUtils,
   System.Classes,
-  System.Generics.Collections;
+  System.Generics.Collections,
+  System.Generics.Defaults;
 
 const
   MAX_DOTENV_FILE_SIZE = 1024 * 1024; // 1 MB cap
@@ -347,7 +348,7 @@ end;
 
 class function TDotEnv.TExprValue.FromBoolean(const B: Boolean): TExprValue;
 begin
-  Result.Kind := evBoolean;
+  Result.Kind := TExprValueKind.evBoolean;
   Result.BoolValue := B;
   Result.NumValue := Ord(B);
   if B then
@@ -358,7 +359,7 @@ end;
 
 class function TDotEnv.TExprValue.FromNumber(const N: Double): TExprValue;
 begin
-  Result.Kind := evNumber;
+  Result.Kind := TExprValueKind.evNumber;
   Result.NumValue := N;
   Result.BoolValue := not SameValue(N, 0);
   Result.StrValue := FloatToStr(N, TFormatSettings.Invariant);
@@ -366,7 +367,7 @@ end;
 
 class function TDotEnv.TExprValue.FromString(const S: string): TExprValue;
 begin
-  Result.Kind := evString;
+  Result.Kind := TExprValueKind.evString;
   Result.StrValue := S;
   Result.BoolValue := not S.IsEmpty;
   Result.NumValue := 0;
@@ -377,11 +378,11 @@ var
   LValue: string;
 begin
   case Kind of
-    evBoolean:
+    TExprValueKind.evBoolean:
       Exit(BoolValue);
-    evNumber:
+    TExprValueKind.evNumber:
       Exit(not SameValue(NumValue, 0));
-    evString:
+    TExprValueKind.evString:
       begin
         LValue := StrValue.ToLower;
         if (LValue = 'true') or (LValue = '1') then
@@ -400,14 +401,14 @@ var
   Value: Double;
 begin
   case Kind of
-    evNumber:
+    TExprValueKind.evNumber:
       Exit(NumValue);
-    evBoolean:
+    TExprValueKind.evBoolean:
       if BoolValue then
         Exit(1)
       else
         Exit(0);
-    evString:
+    TExprValueKind.evString:
       begin
         if TryStrToFloat(StrValue, Value, TFormatSettings.Invariant) then
           Exit(Value)
@@ -421,14 +422,14 @@ end;
 function TDotEnv.TExprValue.ToStringValue: string;
 begin
   case Kind of
-    evString:
+    TExprValueKind.evString:
       Result := StrValue;
-    evBoolean:
+    TExprValueKind.evBoolean:
       if BoolValue then
         Result := 'true'
       else
         Result := 'false';
-    evNumber:
+    TExprValueKind.evNumber:
       Result := FloatToStr(NumValue, TFormatSettings.Invariant);
   else
     Result := '';
@@ -746,7 +747,7 @@ begin
           Right := ParseMul;
           if Op = '+' then
           begin
-            if (Left.Kind = evString) or (Right.Kind = evString) then
+            if (Left.Kind = TExprValueKind.evString) or (Right.Kind = TExprValueKind.evString) then
               Left := TExprValue.FromString(Left.ToStringValue + Right.ToStringValue)
             else
               Left := TExprValue.FromNumber(Left.ToNumber + Right.ToNumber);
@@ -1692,20 +1693,28 @@ begin
   try
     Delim := QuoteToken;
     Current := Copy(Fragment, Length(Delim) + 1, MaxInt);
+    if (Current <> '') and (Current[1] = #10) then
+      Delete(Current, 1, 1);
     Found := False;
     while True do
     begin
       PosClose := Pos(Delim, Current);
       if PosClose > 0 then
       begin
-        Buffer.Append(Copy(Current, 1, PosClose - 1));
+        if PosClose > 1 then
+        begin
+          if Buffer.Length > 0 then
+            Buffer.Append(#10);
+          Buffer.Append(Copy(Current, 1, PosClose - 1));
+        end;
         Found := True;
         Break;
       end;
+      if Buffer.Length > 0 then
+        Buffer.Append(#10);
       Buffer.Append(Current);
       if LineIndex >= High(Lines) then
         Break;
-      Buffer.Append(#10);
       Inc(LineIndex);
       Current := Lines[LineIndex];
     end;
@@ -1865,15 +1874,22 @@ begin
     Exit(False);
   end;
   Delim := Line[I];
-  if not (Delim in ['=', ':']) then
+  if (Delim = '<') and (I < Len) and (Line[I + 1] = '<') then
   begin
-    AddError(FilePath, LineNumber, 1, TDotEnvErrorKind.DekParse, 'Expected = or :', True);
-    Exit(False);
-  end;
-  Inc(I);
-  while (I <= Len) and (Line[I] in [' ', #9]) do
+    Remainder := Copy(Line, I, MaxInt);
+  end
+  else
+  begin
+    if not (Delim in ['=', ':']) then
+    begin
+      AddError(FilePath, LineNumber, 1, TDotEnvErrorKind.DekParse, 'Expected = or :', True);
+      Exit(False);
+    end;
     Inc(I);
-  Remainder := Copy(Line, I, MaxInt);
+    while (I <= Len) and (Line[I] in [' ', #9]) do
+      Inc(I);
+    Remainder := Copy(Line, I, MaxInt);
+  end;
 
   Assignment.Key := Copy(Line, KeyStart, KeyEnd - KeyStart + 1);
   Assignment.RawValue := Remainder;
@@ -2008,7 +2024,7 @@ begin
     if BasePath = '' then
       BasePath := TDirectory.GetCurrentDirectory;
     BasePath := TPath.GetFullPath(BasePath);
-    AddRoot(srCWD, BasePath, 0);
+    AddRoot(TSearchRootKind.srCWD, BasePath, 0);
 
     if TDotEnvOption.SearchParents in AOptions then
     begin
@@ -2018,7 +2034,7 @@ begin
         ParentPath := TPath.GetDirectoryName(Current);
         if (ParentPath = '') or SameFileName(ParentPath, Current) then
           Break;
-        AddRoot(srParents, ParentPath, Depth);
+        AddRoot(TSearchRootKind.srParents, ParentPath, Depth);
         Current := ParentPath;
       end;
     end;
@@ -2031,14 +2047,14 @@ begin
       if (XdgHome = '') and (HomeDir <> '') then
         XdgHome := TPath.Combine(HomeDir, '.config');
       if XdgHome <> '' then
-        AddRoot(srXDG, TPath.Combine(XdgHome, 'maxlogic'));
+        AddRoot(TSearchRootKind.srXDG, TPath.Combine(XdgHome, 'maxlogic'));
       XdgDirs := GetEnvironmentVariable('XDG_CONFIG_DIRS');
       if XdgDirs = '' then
         XdgDirs := '/etc/xdg';
       Parts := XdgDirs.Split([':']);
       for DirItem in Parts do
         if DirItem.Trim <> '' then
-          AddRoot(srXDG, TPath.Combine(DirItem.Trim, 'maxlogic'));
+          AddRoot(TSearchRootKind.srXDG, TPath.Combine(DirItem.Trim, 'maxlogic'));
     end;
 {$ENDIF}
 
@@ -2047,8 +2063,8 @@ begin
       HomeDir := TPath.GetHomePath;
       if HomeDir <> '' then
       begin
-        AddRoot(srHome, HomeDir, 0);
-        AddRoot(srHome, TPath.Combine(TPath.Combine(HomeDir, '.config'), 'maxlogic'), 0);
+        AddRoot(TSearchRootKind.srHome, HomeDir, 0);
+        AddRoot(TSearchRootKind.srHome, TPath.Combine(TPath.Combine(HomeDir, '.config'), 'maxlogic'), 0);
       end;
     end;
 
@@ -2057,7 +2073,7 @@ begin
     begin
       ParentPath := GetEnvironmentVariable('APPDATA');
       if ParentPath <> '' then
-        AddRoot(srWinProfile, TPath.Combine(ParentPath, 'MaxLogic'), 0);
+        AddRoot(TSearchRootKind.srWinProfile, TPath.Combine(ParentPath, 'MaxLogic'), 0);
     end;
 {$ENDIF}
 

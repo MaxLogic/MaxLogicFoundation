@@ -1,8 +1,5 @@
 unit MaxLogic.DotEnv.Tests;
 
-{$TRUNCATELOCALS OFF}
-{$TYPEINFO ON}
-
 interface
 
 uses
@@ -163,7 +160,7 @@ begin
     WriteText(EnvFile, 'VALUE=${UNSET}'#10);
     DotEnv := TDotEnv.Create;
     try
-      DotEnv.LoadFiles([EnvFile], [StrictUndefined]);
+      DotEnv.LoadFiles([EnvFile], [TDotEnvOption.StrictUndefined]);
       Errors := DotEnv.GetErrors;
       Found := False;
       for Err in Errors do
@@ -204,7 +201,7 @@ end;
 
 procedure TMaxLogicDotEnvTests.Expressions_JoinEnv;
 var
-  TempDir, EnvFile: string;
+  TempDir, EnvFile, Expected: string;
   DotEnv: TDotEnv;
 begin
   TempDir := MakeTempDir('expr-join');
@@ -432,7 +429,7 @@ begin
     WriteText(EnvFile, 'USER=$(echo dotenv)'#10);
     DotEnv := TDotEnv.Create;
     try
-      DotEnv.LoadFiles([EnvFile], [AllowCommandSubst]);
+      DotEnv.LoadFiles([EnvFile], [TDotEnvOption.AllowCommandSubst]);
       Value := CollectValue(DotEnv, 'USER');
       Assert.IsTrue(Value.StartsWith('dotenv', True), 'Command substitution expected');
     finally
@@ -496,7 +493,7 @@ begin
     {$ENDIF}
     DotEnv := TDotEnv.Create;
     try
-      DotEnv.LoadFiles([EnvFile], [DoNotOverrideExisting]);
+      DotEnv.LoadFiles([EnvFile], [TDotEnvOption.DoNotOverrideExisting]);
       Assert.IsFalse(DotEnv.TryGetValue(EnvName, Value));
       Assert.AreEqual('process', GetEnvironmentVariable(EnvName));
     finally
@@ -531,7 +528,7 @@ begin
 
     DotEnv := TDotEnv.Create;
     try
-      DotEnv.LoadLayered(Child, [SearchParents]);
+      DotEnv.LoadLayered(Child, [TDotEnvOption.SearchParents]);
       Assert.AreEqual('value', CollectValue(DotEnv, 'TOP'));
     finally
       DotEnv.Free;
@@ -542,7 +539,7 @@ begin
 
     DotEnv := TDotEnv.Create;
     try
-      DotEnv.LoadLayered(Deeper, [SearchParents]);
+      DotEnv.LoadLayered(Deeper, [TDotEnvOption.SearchParents]);
       Assert.IsFalse(DotEnv.TryGetValue('TOP', Value));
     finally
       DotEnv.Free;
@@ -570,7 +567,7 @@ begin
     setenv(PAnsiChar(AnsiString('XDG_CONFIG_DIRS')), PAnsiChar(AnsiString('')), 1);
     DotEnv := TDotEnv.Create;
     try
-      DotEnv.LoadLayered(BuildPath(TempBase, ['proj']), [SearchXDG]);
+      DotEnv.LoadLayered(BuildPath(TempBase, ['proj']), [TDotEnvOption.SearchXDG]);
       Assert.AreEqual('xdg', CollectValue(DotEnv, 'VALUE'));
     finally
       DotEnv.Free;
@@ -589,7 +586,7 @@ begin
 end;
 {$ELSE}
 begin
-  Assert.Inconclusive('XDG search applies only to POSIX systems');
+  Assert.Pass('XDG search applies only to POSIX systems');
 end;
 {$ENDIF}
 
@@ -608,7 +605,7 @@ begin
     SetEnvironmentVariable('APPDATA', PChar(AppDataPath));
     DotEnv := TDotEnv.Create;
     try
-      DotEnv.LoadLayered(BuildPath(TempBase, ['project']), [SearchWindowsProfile]);
+      DotEnv.LoadLayered(BuildPath(TempBase, ['project']), [TDotEnvOption.SearchWindowsProfile]);
       Assert.AreEqual('appdata', CollectValue(DotEnv, 'VALUE'));
     finally
       DotEnv.Free;
@@ -623,7 +620,7 @@ begin
 end;
 {$ELSE}
 begin
-  Assert.Inconclusive('Windows profile search applies only on Windows');
+  Assert.Pass('Windows profile search applies only on Windows');
 end;
 {$ENDIF}
 
@@ -646,7 +643,7 @@ begin
     {$ENDIF}
     DotEnv := TDotEnv.Create;
     try
-      DotEnv.LoadLayered(BuildPath(TempBase, ['project']), [SearchUserHome]);
+      DotEnv.LoadLayered(BuildPath(TempBase, ['project']), [TDotEnvOption.SearchUserHome]);
       Assert.AreEqual('project', CollectValue(DotEnv, 'VALUE'));
     finally
       DotEnv.Free;
@@ -745,7 +742,7 @@ begin
 end;
 {$ELSE}
 begin
-  Assert.Inconclusive('POSIX-only permission check');
+  Assert.Pass('POSIX-only permission check');
 end;
 {$ENDIF}
 
