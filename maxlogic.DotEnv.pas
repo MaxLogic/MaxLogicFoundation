@@ -204,6 +204,7 @@ const
       RootIndex, FileOrder: Integer; Entries: TList<TRawAssignment>): Boolean;
     function ResolveIncludePath(const BaseFile, Target: string): string;
     function IsPathOnStack(const Path: string): Boolean;
+    function CheckSecretPermissions(const FilePath: string): Boolean;
   public
     constructor Create;
     destructor Destroy; override;
@@ -233,6 +234,9 @@ uses
 {$ELSE}
   Posix.Stdlib,
   Posix.Stdio,
+  Posix.SysStat,
+  Posix.Unistd,
+  Posix.Errno,
 {$ENDIF}
   System.StrUtils,
   System.Character,
@@ -1572,6 +1576,8 @@ begin
       Format('Include cycle detected involving %s', [NormalPath]), True);
     Exit;
   end;
+  if not CheckSecretPermissions(NormalPath) then
+    Exit;
   FIncludeStack.Push(NormalPath);
   try
     try
@@ -2196,6 +2202,34 @@ begin
     if SameFileName(Item, Path) then
       Exit(True);
 end;
+
+function TDotEnv.CheckSecretPermissions(const FilePath: string): Boolean;
+{$IFDEF MSWINDOWS}
+begin
+  Result := True;
+end;
+{$ELSE}
+var
+  StatBuf: _stat;
+begin
+  Result := True;
+  if not FilePath.EndsWith('.secret', True) then
+    Exit(True);
+
+  if fpstat(PAnsiChar(AnsiString(FilePath)), StatBuf) <> 0 then
+  begin
+    AddError(FilePath, 0, 0, TDotEnvErrorKind.DekIO,
+      SysErrorMessage(errno), True);
+    Exit(False);
+  end;
+  if (StatBuf.st_mode and (S_IRWXG or S_IRWXO)) <> 0 then
+  begin
+    AddError(FilePath, 0, 0, TDotEnvErrorKind.DekSecurity,
+      'Secret files must be 0600 (owner read/write only)', True);
+    Exit(False);
+  end;
+end;
+{$ENDIF}
 
 procedure TDotEnv.LoadLayered(const ABaseDir: string; const AOptions: TDotEnvOptions);
 var
