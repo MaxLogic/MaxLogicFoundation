@@ -22,6 +22,7 @@ type
   public
     [Test] procedure Interpolation_Simple;
     [Test] procedure Interpolation_Default;
+    [Test] procedure InlineComment_Ignored;
     [Test] procedure StrictUndefined_Raises;
     [Test] procedure Expressions_Arithmetic;
     [Test] procedure Expressions_JoinEnv;
@@ -138,6 +139,28 @@ begin
     try
       DotEnv.LoadFiles([EnvFile], []);
       Assert.AreEqual('fallback', CollectValue(DotEnv, 'VALUE'));
+    finally
+      DotEnv.Free;
+    end;
+  finally
+    RemoveDirRecursive(TempDir);
+  end;
+end;
+
+procedure TMaxLogicDotEnvTests.InlineComment_Ignored;
+var
+  TempDir, EnvFile: string;
+  DotEnv: TDotEnv;
+begin
+  TempDir := MakeTempDir('inline');
+  try
+    EnvFile := BuildPath(TempDir, ['.env']);
+    WriteText(EnvFile, 'PORT=8080 # dev server'#10'# trailing comment'#10);
+    DotEnv := TDotEnv.Create;
+    try
+      DotEnv.LoadFiles([EnvFile], []);
+      Assert.AreEqual('8080', CollectValue(DotEnv, 'PORT'));
+      Assert.IsFalse(DotEnv.TryGetValue('#', EnvFile), 'Inline comment should not produce a key');
     finally
       DotEnv.Free;
     end;
