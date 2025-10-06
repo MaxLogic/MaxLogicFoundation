@@ -5,11 +5,15 @@
 interface
 
 uses
-  System.SysUtils;
+  System.SysUtils, system.classes;
 
 { ===== Boolean ===== }
 function b2s(const aValue: Boolean; const aTrueText: string = 'True'; const aFalseText: string = 'False'): string; inline;
 function b2i(const aValue: Boolean): Integer; inline;
+
+{$IFNDEF FPC}
+function GetTickCount64: uInt64; inline;
+{$ENDIF}
 
 implementation
 
@@ -28,5 +32,12 @@ begin
   else
     Result:= 0;
 end;
+
+{$IFNDEF FPC}
+function GetTickCount64: uInt64; inline;
+begin
+  Result:= TThread.GetTickCount64;
+end;
+{$ENDIF}
 
 end.

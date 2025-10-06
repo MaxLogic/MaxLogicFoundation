@@ -8,8 +8,9 @@ uses
   DUnitX.TestFramework,
   DUnitX.Loggers.Console,
   DUnitX.Loggers.Xml.NUnit,
-  MaxLogic.DotEnv.Tests in 'unit/MaxLogic.DotEnv.Tests.pas',
-  maxlogic.DotEnv in '..\maxlogic.DotEnv.pas';
+  MaxLogic.DotEnv.Tests in 'unit\MaxLogic.DotEnv.Tests.pas',
+  maxlogic.DotEnv in '..\maxlogic.DotEnv.pas',
+  MaxLogic.PortableTimer.Tests in 'unit\MaxLogic.PortableTimer.Tests.pas';
 
 var
   Runner: ITestRunner;
