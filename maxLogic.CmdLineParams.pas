@@ -86,14 +86,28 @@ type
     property Params: TStringList read GetParamList;
   end;
 
-var
-  maxCmdLineParams: iCmdLineparams = nil;
+function maxCmdLineParams: iCmdLineparams;
 
 implementation
 
 uses
   maxLogic.StrUtils, // Assuming SplitInHalfBy is here
   System.Character;
+
+var
+  GlobalMaxCmdLineParams: iCmdLineparams = nil;
+
+function maxCmdLineParams: iCmdLineparams;
+begin
+  if GlobalMaxCmdLineParams <> nil then
+    Exit(GlobalMaxCmdLineParams);
+  Result:= TCmdLineparams.Create;
+
+  // simple test agains thread races
+  if GlobalMaxCmdLineParams <> nil then
+    Exit(GlobalMaxCmdLineParams);
+  GlobalMaxCmdLineParams := Result;
+end;
 
 { TCmdLineParams }
 
@@ -257,6 +271,11 @@ begin
   fOrgCaseDic.TrimExcess;
   fLowerCaseDic.TrimExcess;
 end;
+
+initialization
+
+finalization
+  GlobalMaxCmdLineParams:= nil;
 
 end.
 
