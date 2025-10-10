@@ -4,7 +4,12 @@ program MaxLogicTests;
 {$STRONGLINKTYPES ON}
 
 uses
-  System.SysUtils,
+   madExcept,
+  madLinkDisAsm,
+  madListHardware,
+  madListProcesses,
+  madListModules,
+ System.SysUtils,
   DUnitX.TestFramework,
   DUnitX.Loggers.Console,
   DUnitX.Loggers.Xml.NUnit,
