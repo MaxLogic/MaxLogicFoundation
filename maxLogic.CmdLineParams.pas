@@ -53,6 +53,10 @@ type
     /// <param name="aIgnoreCase">True to ignore case during comparison (default True).</param>
     /// <returns>True if the switch is found (regardless of value), False otherwise. aValue is only guaranteed to be valid if Result is True and a value could be extracted.</returns>
     function find(const aSwitch: string; var aValue: string; aIgnoreCase: boolean = True): boolean; overload;
+    function find(const aSwitchAndAliases: TArray<string>; var aValue: string; aIgnoreCase: boolean = True): boolean; overload;
+        
+    function has(const aSwitchNames: array of string; aIgnoreCase: boolean = True): boolean; 
+    
 
     property Count: integer read GetCount;
     property Params: TStringList read GetParamList;
@@ -81,6 +85,10 @@ type
     function find(const aSwitch: string; aIgnoreCase: boolean): boolean; overload;
     function find(const aSwitch: string): boolean; overload;
     function find(const aSwitch: string; var aValue: string; aIgnoreCase: boolean = True): boolean; overload;
+    function find(const aSwitchAndAliases: TArray<string>; var aValue: string; aIgnoreCase: boolean = True): boolean; overload;
+    
+    function has(const aSwitchNames: array of string; aIgnoreCase: boolean = True): boolean; overload;
+    
 
     property Count: integer read GetCount;
     property Params: TStringList read GetParamList;
@@ -146,6 +154,15 @@ begin
   fOrgCaseDic.Free;
   fLowerCaseDic.Free;
   inherited;
+end;
+
+function TCmdLineParams.find(const aSwitchAndAliases: TArray<string>; var aValue: string; aIgnoreCase: boolean = True): boolean; 
+begin
+  for var n in aSwitchAndAliases do
+    if find(n, aValue, aIgnoreCase) then
+      Exit(True);
+  aValue:= '';
+  Result:= False;
 end;
 
 function TCmdLineParams.find(const aSwitch: string; aIgnoreCase: boolean): boolean;
@@ -225,6 +242,14 @@ begin
     exit(True);
 
   // Switch not found by any means
+  Result := False;
+end;
+
+function TCmdLineParams.has(const aSwitchNames: array of string; aIgnoreCase: boolean): boolean;
+begin
+  for var n in aSwitchNames do
+    if find(n, aIgnoreCase)
+      Exit(True);
   Result := False;
 end;
 

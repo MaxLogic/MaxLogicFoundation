@@ -7,7 +7,7 @@ unit maxLogic.StrUtils;
 interface
 
 uses
-  System.Classes, System.SysUtils, System.Types, generics.collections, System.StrUtils;
+  System.Classes, System.SysUtils, System.Types, System.Generics.Collections, System.StrUtils;
 
 const
   CR = sLineBreak;
@@ -137,8 +137,8 @@ type
 /// 3. Based on `aAction`:
 ///    - `raReplace`: The text before the placeholder and the `aReplaceValue` are appended to the result. The search continues after the replaced section.
 ///    - `raSkip`: The original placeholder text (including markers) is treated as the replacement value. The search continues after the skipped section.
-///    - `raStop`: The loop terminates immediately. The text before the current placeholder is appended, but the placeholder itself and the rest of the original text are *not* included in the result.
-///    - `raReplaceAndStop`: The text before the placeholder and `aReplaceValue` are appended. The loop terminates. The rest of the original text is *not* included.
+////    - `raStop`: The loop terminates immediately. No additional text is appended within this iteration. After the loop finishes, the function appends the remainder of the original text starting from the current search offset (`aStartoffset`), which includes the placeholder and everything after it.
+///    - `raReplaceAndStop`: The text before the placeholder and `aReplaceValue` are appended, then the loop terminates. After the loop finishes, the remainder of the original text starting from the updated search offset (past the replaced placeholder) is appended.
 ///    - `raReplaceAndResumeAtSamePosition`: This handles nested or overlapping replacements. The text before the placeholder is appended. The original text buffer (`lOrgCasedText`) and its search version (`lTextForCaseSensitiveSearch`) are *modified in-place* by substituting the placeholder with `aReplaceValue`. The search offset (`aStartoffset`) is reset to 1, and the loop continues, effectively rescanning the modified text from the beginning. This can be less performant due to string manipulation but allows for complex replacement scenarios.
 /// The function uses `TStringBuilder` internally for efficient construction of the final result string.
 /// After the loop finishes (either by reaching the end of the text or via a `raStop`/`raReplaceAndStop` action), any remaining portion of the text after the last processed position (`aStartoffset`) is appended to the result.
@@ -305,7 +305,7 @@ begin
   begin
     // --- Case-Insensitive Matching ---
     // Goal: Make the comparison ignore case on ALL platforms.
-    {$IFDEF MsWindows}
+    {$IFDEF MSWINDOWS}
       // On Windows, MatchesMask is already case-insensitive. Use it directly.
       Result := System.Masks.MatchesMask(aValue, aPattern);
     {$ELSE}
@@ -316,7 +316,7 @@ begin
   end else begin
     // --- Case-Sensitive Matching ---
     // Goal: Make the comparison respect case on ALL platforms.
-    {$IFDEF MsWindows}
+    {$IFDEF MSWINDOWS}
       // On Windows, MatchesMask is case-insensitive, so we *must* use a fallback.
       // Use our RegEx helper function for guaranteed case-sensitivity.
       Result := MatchesMaskCaseSensitive_RegEx(aValue, aPattern);
@@ -404,7 +404,7 @@ begin
     if CharPosEx(aOrgCasedText,
       aInvalidChars,
       aInvalidCharsAreSorted,
-      i1, i2,
+      i1, i2 - 1,
       lInvalidCharOffset, lIndexOfInvalidChar) then
     begin
       aStartoffset := i1;
@@ -518,7 +518,7 @@ begin
   until (not lFound) or (lAction in [raStop, raReplaceAndStop]);
 
   // append the rest of the Text
-  if aStartoffset < length(lOrgCasedText) then
+  if aStartoffset <= length(lOrgCasedText) then
     sb.Append(copy(lOrgCasedText, aStartoffset, length(lOrgCasedText)));
   Result := sb.ToString;
 end;
@@ -866,58 +866,43 @@ end;
 
 function Utf8TruncateByCodePoint(const AInput: string; aMaxBytesLength: integer): TBytes;
 var
-  i, lCharLen: integer;
-  lPartial: string;
-  lEncBytes: TBytes;
-  lOutBuf: TBytes;
-  lSize: integer;
+  src: TBytes;
+  i, nextLen, total: Integer;
+  b: Byte;
 begin
-  // If aMaxBytesLength <= 0, trivially return empty
   if aMaxBytesLength <= 0 then
-    exit(nil);
+    Exit(nil);
 
-  // get some more memory just in case
-  lSize := 0;
-  SetLength(lOutBuf, aMaxBytesLength);
+  src := TEncoding.UTF8.GetBytes(AInput);
+  if Length(src) <= aMaxBytesLength then
+    Exit(src);
 
-  i := 1;
-  while i <= length(AInput) do
+  i := 0;
+  total := 0;
+  while i < Length(src) do
   begin
-    // For a single codepoint, we might need 1 or 2 UTF-16 chars:
-    // In most cases, TEncoding.UTF8 can handle surrogates if we pass them together.
-    // So check if AInput[i] is a high surrogate and there's a low surrogate next.
-    if (i < length(AInput)) and
-      (AInput[i] >= #$D800) and (AInput[i] <= #$DBFF) and
-      (AInput[i + 1] >= #$DC00) and (AInput[i + 1] <= #$DFFF) then
-    begin
-      // This is a surrogate pair
-      lPartial := copy(AInput, i, 2);
-      lCharLen := 2;
-    end
+    b := src[i];
+    if b < $80 then
+      nextLen := 1
+    else if (b and $E0) = $C0 then
+      nextLen := 2
+    else if (b and $F0) = $E0 then
+      nextLen := 3
+    else if (b and $F8) = $F0 then
+      nextLen := 4
     else
-    begin
-      // single UTF-16 code unit
-      lPartial := AInput[i];
-      lCharLen := 1;
-    end;
+      Break;
 
-    // Convert that code point (or pair) to UTF-8 bytes
-    lEncBytes := TEncoding.UTF8.GetBytes(lPartial);
+    if total + nextLen > aMaxBytesLength then
+      Break;
 
-    // If adding these bytes would exceed aMaxBytesLength, stop.
-    if (lSize + length(lEncBytes)) > aMaxBytesLength then
-      break;
-
-    // Otherwise, append them
-    Move(lEncBytes[0], lOutBuf[lSize], length(lEncBytes));
-    Inc(lSize, length(lEncBytes));
-
-    // Advance i by the # of UTF-16 code units consumed
-    Inc(i, lCharLen);
+    Inc(total, nextLen);
+    Inc(i, nextLen);
   end;
 
-  SetLength(lOutBuf, lSize);
-  Result := lOutBuf;
+  SetLength(Result, total);
+  if total > 0 then
+    Move(src[0], Result[0], total);
 end;
 
 function CharPosEx(
@@ -928,7 +913,7 @@ function CharPosEx(
   out aFoundAtOffset, aIndexOfCharFound: integer): boolean;
 var
   c: char;
-  i: NativeInt;
+  i: Integer;
 begin
   Result := False;
   if length(aChars) = 0 then
@@ -1007,6 +992,7 @@ var
   decimalSeparatorIndex, FirstDotIndex, firstCommaIndex, DotCount,
     CommaCount: integer;
   delComma, delDot: boolean;
+  LastDotIndex, LastCommaIndex: integer;
 begin
   for X := length(s) downto 1 do
     // some idiot introduced 0 indexed strings in system.character... so remember to account for that....
@@ -1020,6 +1006,8 @@ begin
   firstCommaIndex := 0;
   DotCount := 0;
   CommaCount := 0;
+  LastDotIndex := 0;
+  LastCommaIndex := 0;
 
   for X := 1 to length(s) do
   begin
@@ -1031,30 +1019,66 @@ begin
       if DotCount = 0 then
         FirstDotIndex := X;
       Inc(DotCount);
+      LastDotIndex := X;
     end
     else if s[X] = ',' then
     begin
       if CommaCount = 0 then
         firstCommaIndex := X;
       Inc(CommaCount);
+      LastCommaIndex := X;
     end;
   end;
 
   delComma := True;
   delDot := True;
   decimalSeparatorIndex := -1;
-  if (DotCount = 1) and (CommaCount = 1) then
+
+  if (DotCount > 0) and (CommaCount > 0) then
   begin
-    // if both were found use the most right of them
-    if FirstDotIndex > firstCommaIndex then
+    // Heuristic:
+    // - one dot & multiple commas -> first comma is decimal (e.g. '1.234,567,89' -> 1234.56789)
+    // - multiple dots & one comma -> last dot is decimal (e.g. '1,234.567.89' -> 1234567.89)
+    // - otherwise -> rightmost of '.' or ',' is decimal
+    if (DotCount = 1) and (CommaCount >= 2) then
+      decimalSeparatorIndex := firstCommaIndex
+    else if (DotCount >= 2) and (CommaCount = 1) then
+      decimalSeparatorIndex := LastDotIndex
+    else
+    begin
+      if LastDotIndex > LastCommaIndex then
+        decimalSeparatorIndex := LastDotIndex
+      else
+        decimalSeparatorIndex := LastCommaIndex;
+    end;
+  end
+  else if (DotCount + CommaCount = 1) then
+  begin
+    // one separator total: decide decimal vs grouping-only
+    var lSepIndex: Integer := IfThen(DotCount = 1, FirstDotIndex, firstCommaIndex);
+    var lDigitsRight: Integer := 0;
+    var lJ: Integer := lSepIndex + 1;
+
+    while (lJ <= Length(s)) and System.SysUtils.CharInSet(s[lJ], ['0'..'9']) do
+    begin
+      Inc(lDigitsRight);
+      Inc(lJ);
+    end;
+
+    if (lJ > Length(s)) and (lDigitsRight = 3) then
+    begin
+      // treat as thousands grouping: keep decimalSeparatorIndex = -1 so the separator is removed
+      // delDot/delComma remain True to delete the single separator
+    end
+    else if DotCount = 1 then
     begin
       decimalSeparatorIndex := FirstDotIndex;
-      delDot := False;
+      delDot := False;    // keep the single dot as decimal
     end
     else
     begin
-      delComma := False;
       decimalSeparatorIndex := firstCommaIndex;
+      delComma := False;  // keep the single comma as decimal
     end;
   end
   else if DotCount = 1 then
@@ -1100,6 +1124,7 @@ begin
   if length(s)<>0 then
     move(s[1], Result[0], length(s));
 end;
+
 
 
 end.

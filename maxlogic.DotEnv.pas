@@ -13,7 +13,7 @@ uses
 const
   MAX_DOTENV_FILE_SIZE = 1024 * 1024; // 1 MB cap
 
-  DEFAULT_PARENT_DEPTH = 4;
+  DEFAULT_PARENT_DEPTH = 30;
 
  type
   TDotEnvOption = (
@@ -21,10 +21,10 @@ const
     CaseSensitiveKeys,
     StrictUndefined,
     AllowCommandSubst,
-    SearchParents,
     SearchUserHome,
     SearchXDG,
-    SearchWindowsProfile
+    SearchWindowsProfile,
+    StreamingEvaluation
   );
 
   TDotEnvOptions = set of TDotEnvOption;
@@ -34,10 +34,9 @@ const
   TSearchRoot = record
     Kind: TSearchRootKind;
     Path: string;
-    MaxDepth: Integer;
   end;
 
-  TOnResolveSymbol = reference to function(const AName, AFilePath: string): string;
+  TOnResolveSymbol = reference to function(const aName, aFilePath: string): string;
 
   TDotEnvErrorKind = (
     DekParse,
@@ -58,7 +57,7 @@ const
     Fatal: Boolean;
   end;
 
-  TDotEnv = class sealed
+  TDotEnv = class
   private
     type
       TStoredValue = record
@@ -81,11 +80,12 @@ const
 
       TKeyComparer = class(TInterfacedObject, IEqualityComparer<string>)
       private
+        FComparer: IEqualityComparer<string>;
         FCaseSensitive: Boolean;
       public
-        constructor Create(ACaseSensitive: Boolean);
-        function Equals(const Left, Right: string): Boolean;
-        function GetHashCode(const Value: string): Integer;
+        constructor Create(aCaseSensitive: Boolean);
+        function Equals(const aLeft, aRight: string): Boolean;
+        function GetHashCode(const aValue: string): Integer;
       end;
 
       TLayeredFile = record
@@ -118,7 +118,7 @@ const
         function PeekChar: Char;
         function ConsumeChar: Char;
         procedure SkipWhitespace;
-        function MatchToken(const Token: string): Boolean;
+        function MatchToken(const aToken: string): Boolean;
         function ParseExpression: TExprValue;
         function ParseOr: TExprValue;
         function ParseAnd: TExprValue;
@@ -130,10 +130,10 @@ const
         function ParseIdentifier: string;
         function ParseStringLiteral: TExprValue;
         function ParseNumber: TExprValue;
-        function EvaluateFunction(const Name: string): TExprValue;
-        function ResolveIdentifier(const Name: string): TExprValue;
+        function EvaluateFunction(const aName: string): TExprValue;
+        function ResolveIdentifier(const aName: string): TExprValue;
       public
-        constructor Create(AOwner: TDotEnv; const Text, SourceFile: string; Line: Integer);
+        constructor Create(aOwner: TDotEnv; const aText, aSourceFile: string; aLine: Integer);
         function Evaluate: TExprValue;
       end;
 
@@ -149,76 +149,85 @@ const
       FOnResolveSymbol: TOnResolveSymbol;
       FCaseSensitiveCache: Boolean;
       FIncludeStack: TStack<string>;
+      FMaxFileSize: Int64;
+      FParentDepth: Integer;
+      FDeferred: TDictionary<string, TRawAssignment>;
+      FEvalStack: THashSet<string>;
+      FDeferredActive: Boolean;
 
+    procedure InitDefaults;
     procedure ResetState;
     function DetermineCaseSensitive: Boolean;
     procedure EnsureValuesDictionary;
-    function NormalizeKey(const Key: string): string;
+    function NormalizeKey(const aKey: string): string;
 
-    procedure AddError(const FilePath: string; Line, Column: Integer; Kind: TDotEnvErrorKind;
-      const Msg: string; Fatal: Boolean);
-    procedure AddTrace(const Msg: string);
+    procedure AddError(const aFilePath: string; aLine, aColumn: Integer; aKind: TDotEnvErrorKind;
+      const aMsg: string; aFatal: Boolean);
+    procedure AddTrace(const aMsg: string);
 
     procedure EnsureInitialEnv;
     procedure CaptureInitialEnv;
-    function ProcessEnvHasKey(const Key: string): Boolean;
+    function ProcessEnvHasKey(const aKey: string): Boolean;
 
-    function ParseFile(const FilePath: string; RootIndex, FileOrder: Integer;
-      Entries: TList<TRawAssignment>): Boolean;
-    procedure ParseContent(const FilePath: string; RootIndex, FileOrder: Integer;
-      const Content: string; Entries: TList<TRawAssignment>);
-    function ParseKeyValue(const FilePath: string; const Line: string; LineNumber: Integer;
-      RootIndex, FileOrder: Integer; out Assignment: TRawAssignment): Boolean;
-    function ParseValue(const FilePath: string; var LineIndex: Integer;
-      const Lines: TArray<string>; const InitialRemainder: string; LineNumber: Integer): string;
-    function ParseDoubleQuoted(const FilePath: string; const Fragment: string;
-      LineNumber: Integer): string;
-    function ParseSingleQuoted(const FilePath: string; const Fragment: string;
-      LineNumber: Integer): string;
-    function ParseTripleQuoted(const FilePath: string; var LineIndex: Integer;
-      const Lines: TArray<string>; const Fragment: string; const QuoteToken: string;
-      LineNumber: Integer): string;
-    function ParseHeredoc(const FilePath: string; var LineIndex: Integer;
-      const Lines: TArray<string>; const Marker: string; LineNumber: Integer): string;
-    function ParseUnquoted(const FilePath: string; var LineIndex: Integer;
-      const Lines: TArray<string>; const Fragment: string; LineNumber: Integer): string;
+    function ParseFile(const aFilePath: string; aRootIndex, aFileOrder: Integer;
+      aEntries: TList<TRawAssignment>): Boolean;
+    procedure ParseContent(const aFilePath: string; aRootIndex, aFileOrder: Integer;
+      const aContent: string; aEntries: TList<TRawAssignment>);
+    function ParseKeyValue(const aFilePath: string; const aLine: string; aLineNumber: Integer;
+      aRootIndex, aFileOrder: Integer; out aAssignment: TRawAssignment): Boolean;
+    function ParseValue(const aFilePath: string; var aLineIndex: Integer;
+      const aLines: TArray<string>; const aInitialRemainder: string; aLineNumber: Integer): string;
+    function ParseDoubleQuoted(const aFilePath: string; const aFragment: string;
+      aLineNumber: Integer): string;
+    function ParseSingleQuoted(const aFilePath: string; const aFragment: string;
+      aLineNumber: Integer): string;
+    function ParseTripleQuoted(const aFilePath: string; var aLineIndex: Integer;
+      const aLines: TArray<string>; const aFragment: string; const aQuoteToken: string;
+      aLineNumber: Integer): string;
+    function ParseHeredoc(const aFilePath: string; var aLineIndex: Integer;
+      const aLines: TArray<string>; const aMarker: string; aLineNumber: Integer): string;
+    function ParseUnquoted(const aFilePath: string; var aLineIndex: Integer;
+      const aLines: TArray<string>; const aFragment: string; aLineNumber: Integer): string;
 
-    function ExpandValue(const RawValue, SourceFile: string; Line: Integer): string;
-    function ExpandVariable(const Source, SourceFile: string; Line: Integer; var Index: Integer): string;
-    function ExpandExpression(const Source, SourceFile: string; Line: Integer; var Index: Integer): string;
-    function ExpandCommand(const Source, SourceFile: string; Line: Integer; var Index: Integer): string;
-    function ResolveVariable(const Name, SourceFile: string; Line: Integer;
-      const DefaultValue: string; HasDefault: Boolean; out Failed: Boolean): string;
-    function ResolveSymbol(const Name, SourceFile: string; out Value: string): Boolean;
-    function ResolveBuiltIn(const Name, SourceFile: string; out Value: string): Boolean;
+    function ExpandValue(const aRawValue, aSourceFile: string; aLine: Integer): string;
+    function ExpandVariable(const aSource, aSourceFile: string; aLine: Integer; var aIndex: Integer): string;
+    function ExpandExpression(const aSource, aSourceFile: string; aLine: Integer; var aIndex: Integer): string;
+    function ExpandCommand(const aSource, aSourceFile: string; aLine: Integer; var aIndex: Integer): string;
+    function ResolveVariable(const aName, aSourceFile: string; aLine: Integer;
+      const aDefaultValue: string; aHasDefault: Boolean; out aFailed: Boolean): string;
+    function ResolveSymbol(const aName, aSourceFile: string; out aValue: string): Boolean;
+    function ResolveBuiltIn(const aName, aSourceFile: string; out aValue: string): Boolean;
 
-    procedure StoreValue(const Assignment: TRawAssignment; const ExpandedValue: string);
-    procedure ApplyToProcessEnv(const Key, Value: string);
-    function ExecuteCommand(const Cmd: string; out Output: string; out ErrMsg: string): Boolean;
+    procedure StoreValue(const aAssignment: TRawAssignment; const aExpandedValue: string);
+    procedure ApplyToProcessEnv(const aKey, aValue: string);
+    function ExecuteCommand(const aCmd: string; out aOutput: string; out aErrMsg: string): Boolean;
 
-    procedure CollectFile(const FilePath: string; RootIndex, FileOrder: Integer;
-      Entries: TList<TRawAssignment>);
-    function CollectLayeredFiles(const ABaseDir: string; const AOptions: TDotEnvOptions): TArray<TLayeredFile>;
-    function ExpandRoots(const BaseDir: string; const AOptions: TDotEnvOptions): TArray<TSearchRoot>;
-    function HandleIncludeLine(const CurrentLine, FilePath: string; LineNumber: Integer;
-      RootIndex, FileOrder: Integer; Entries: TList<TRawAssignment>): Boolean;
-    function ResolveIncludePath(const BaseFile, Target: string): string;
-    function IsPathOnStack(const Path: string): Boolean;
-    function CheckSecretPermissions(const FilePath: string): Boolean;
+    procedure CollectFile(const aFilePath: string; aRootIndex, aFileOrder: Integer;
+      aEntries: TList<TRawAssignment>);
+    function CollectLayeredFiles(const aBaseDir: string; const aOptions: TDotEnvOptions): TArray<TLayeredFile>;
+    function ExpandRoots(const aBaseDir: string; const aOptions: TDotEnvOptions): TArray<TSearchRoot>;
+    function HandleIncludeLine(const aCurrentLine, aFilePath: string; aLineNumber: Integer;
+      aRootIndex, aFileOrder: Integer; aEntries: TList<TRawAssignment>): Boolean;
+    function ResolveIncludePath(const aBaseFile, aTarget: string): string;
+    function IsPathOnStack(const aPath: string): Boolean;
+    function CheckSecretPermissions(const aFilePath: string): Boolean;
+    procedure EvaluateAfterMergeEntries(const aEntries: TList<TRawAssignment>);
+    procedure EvaluateDeferredKey(const aNormalizedKey: string);
   public
-    constructor Create;
+    constructor Create; overload;
+    constructor Create(aMaxFileSize: Int64; aParentDepth: Integer); overload;
     destructor Destroy; override;
 
-    procedure LoadLayered(const ABaseDir: string; const AOptions: TDotEnvOptions = []);
-    procedure LoadFiles(const AFiles: array of string; const AOptions: TDotEnvOptions = []);
+    procedure LoadLayered(const aBaseDir: string; const aOptions: TDotEnvOptions = []);
+    procedure LoadFiles(const aFiles: array of string; const aOptions: TDotEnvOptions = []);
 
-    procedure SetSearchRoots(const ARoots: TArray<TSearchRoot>);
-    class function DefaultSearchRoots(const ABaseDir: string; AOptions: TDotEnvOptions): TArray<TSearchRoot>;
+    procedure SetSearchRoots(const aRoots: TArray<TSearchRoot>);
+    class function DefaultSearchRoots(const aBaseDir: string; aOptions: TDotEnvOptions): TArray<TSearchRoot>;
 
-    function TryGetValue(const Key: string; out Value: string): Boolean;
-    function GetValue(const Key: string; const DefaultValue: string = ''): string;
+    function TryGetValue(const aKey: string; out aValue: string): Boolean;
+    function GetValue(const aKey: string; const aDefaultValue: string = ''): string;
     function AsDictionary: TDictionary<string, string>;
-    function Expand(const S: string; const SourceFilePath: string = ''): string;
+    function Expand(const aText: string; const aSourceFilePath: string = ''): string;
 
     function GetErrors: TArray<TDotEnvError>;
     function GetTrace: TArray<string>;
@@ -237,105 +246,123 @@ uses
   Posix.SysStat,
   Posix.Unistd,
   Posix.Errno,
+  Posix.SysWait,
 {$ENDIF}
   System.StrUtils,
   System.Character,
-  System.Hash,
   System.IOUtils,
   System.Math;
 
 const
   LAYER_FILES: array[0..2] of string = ('.env', '.env.local', '.env.secret');
 
-function StripTrailingWhitespaceWithEscape(var S: string): Boolean;
+function StripTrailingWhitespaceWithEscape(var aText: string): Boolean;
 var
   I: Integer;
-  Keep: Boolean;
-  Removed: Boolean;
+  lKeep: Boolean;
+  lRemoved: Boolean;
 begin
-  Removed := False;
-  I := Length(S);
+  lRemoved := False;
+  I := Length(aText);
   while I > 0 do
   begin
-    if not CharInSet(S[I], [' ', #9]) then
+    if not CharInSet(aText[I], [' ', #9]) then
       Break;
-    Keep := (I > 1) and (S[I - 1] = '\');
-    if Keep then
+    lKeep := (I > 1) and (aText[I - 1] = '\');
+    if lKeep then
     begin
-      Delete(S, I - 1, 1);
+      Delete(aText, I - 1, 1);
       Dec(I);
     end
     else
     begin
-      Delete(S, I, 1);
-      Removed := True;
+      Delete(aText, I, 1);
+      lRemoved := True;
     end;
     Dec(I);
   end;
-  Result := Removed;
+  Result := lRemoved;
 end;
 
-function StripCommentPreservingEscape(const S: string): string;
+function StripCommentPreservingEscape(const aText: string): string;
 var
   I: Integer;
-  Escape: Boolean;
-  Ch: Char;
-  Builder: TStringBuilder;
+  Ch, lNextCh: Char;
+  lBuilder: TStringBuilder;
 begin
-  Builder := TStringBuilder.Create;
+  lBuilder := TStringBuilder.Create;
   try
-    Escape := False;
-    for I := 1 to Length(S) do
+    I := 1;
+    while I <= Length(aText) do
     begin
-      Ch := S[I];
-      if Escape then
+      Ch := aText[I];
+      if (Ch = '\') and (I < Length(aText)) then
       begin
-        Builder.Append(Ch);
-        Escape := False;
-        Continue;
+        lNextCh := aText[I + 1];
+        // Only consume backslash when escaping comment characters
+        if (lNextCh = '#') or (lNextCh = ';') then
+        begin
+          lBuilder.Append(lNextCh);
+          Inc(I, 2);
+          Continue;
+        end
+        else
+        begin
+          lBuilder.Append('\');
+          Inc(I);
+          Continue;
+        end;
       end;
-      if Ch = '\' then
-      begin
-        Escape := True;
-        Continue;
-      end;
+
       if (Ch = '#') or (Ch = ';') then
       begin
-        if (I = 1) or CharInSet(S[I - 1], [' ', #9]) then
+        if (I = 1) or CharInSet(aText[I - 1], [' ', #9]) then
           Break;
       end;
-      Builder.Append(Ch);
+
+      lBuilder.Append(Ch);
+      Inc(I);
     end;
-    Result := Builder.ToString;
+    Result := lBuilder.ToString;
   finally
-    Builder.Free;
+    lBuilder.Free;
   end;
 end;
 
-function DecodeEscapes(const S: string): string;
+function DecodeEscapes(const aText: string): string;
 var
   I: Integer;
   Ch: Char;
-  Builder: TStringBuilder;
+  lBuilder: TStringBuilder;
 begin
-  Builder := TStringBuilder.Create;
+  lBuilder := TStringBuilder.Create;
   try
     I := 1;
-    while I <= Length(S) do
+    while I <= Length(aText) do
     begin
-      Ch := S[I];
-      if (Ch = '\') and (I < Length(S)) then
+      Ch := aText[I];
+      if (Ch = '\') and (I < Length(aText)) then
       begin
         Inc(I);
-        Builder.Append(S[I]);
+        case aText[I] of
+          'n': lBuilder.Append(#10);
+          'r': lBuilder.Append(#13);
+          't': lBuilder.Append(#9);
+          '$': lBuilder.Append('$$'); // ensure literal $ survives expansion
+          '\': lBuilder.Append('\');
+        else
+          // Unknown escape: preserve backslash and char
+          lBuilder.Append('\');
+          lBuilder.Append(aText[I]);
+        end;
       end
       else
-        Builder.Append(Ch);
+        lBuilder.Append(Ch);
       Inc(I);
     end;
-    Result := Builder.ToString;
+    Result := lBuilder.ToString;
   finally
-    Builder.Free;
+    lBuilder.Free;
   end;
 end;
 
@@ -379,7 +406,7 @@ end;
 
 function TDotEnv.TExprValue.ToBoolean: Boolean;
 var
-  LValue: string;
+  lValue: string;
 begin
   case Kind of
     TExprValueKind.evBoolean:
@@ -388,10 +415,10 @@ begin
       Exit(not SameValue(NumValue, 0));
     TExprValueKind.evString:
       begin
-        LValue := StrValue.ToLower;
-        if (LValue = 'true') or (LValue = '1') then
+        lValue := StrValue.ToLower;
+        if (lValue = 'true') or (lValue = '1') then
           Exit(True)
-        else if (LValue = 'false') or (LValue = '0') or (LValue = '') then
+        else if (lValue = 'false') or (lValue = '0') or (lValue = '') then
           Exit(False)
         else
           raise Exception.CreateFmt('Cannot convert "%s" to boolean', [StrValue]);
@@ -402,7 +429,7 @@ end;
 
 function TDotEnv.TExprValue.ToNumber: Double;
 var
-  Value: Double;
+  lValue: Double;
 begin
   case Kind of
     TExprValueKind.evNumber:
@@ -414,8 +441,8 @@ begin
         Exit(0);
     TExprValueKind.evString:
       begin
-        if TryStrToFloat(StrValue, Value, TFormatSettings.Invariant) then
-          Exit(Value)
+        if TryStrToFloat(StrValue, lValue, TFormatSettings.Invariant) then
+          Exit(lValue)
         else
           raise Exception.CreateFmt('Cannot convert "%s" to number', [StrValue]);
       end;
@@ -442,13 +469,13 @@ end;
 
 { TDotEnv.TExprParser }
 
-constructor TDotEnv.TExprParser.Create(AOwner: TDotEnv; const Text, SourceFile: string; Line: Integer);
+constructor TDotEnv.TExprParser.Create(aOwner: TDotEnv; const aText, aSourceFile: string; aLine: Integer);
 begin
   inherited Create;
-  FOwner := AOwner;
-  FText := Text;
-  FSourceFile := SourceFile;
-  FLine := Line;
+  FOwner := aOwner;
+  FText := aText;
+  FSourceFile := aSourceFile;
+  FLine := aLine;
   FPos := 1;
 end;
 
@@ -472,13 +499,13 @@ begin
     Inc(FPos);
 end;
 
-function TDotEnv.TExprParser.MatchToken(const Token: string): Boolean;
+function TDotEnv.TExprParser.MatchToken(const aToken: string): Boolean;
 begin
-  if (Token = '') or (FPos + Length(Token) - 1 > Length(FText)) then
+  if (aToken = '') or (FPos + Length(aToken) - 1 > Length(FText)) then
     Exit(False);
-  if Copy(FText, FPos, Length(Token)) = Token then
+  if Copy(FText, FPos, Length(aToken)) = aToken then
   begin
-    Inc(FPos, Length(Token));
+    Inc(FPos, Length(aToken));
     Exit(True);
   end;
   Result := False;
@@ -486,30 +513,30 @@ end;
 
 function TDotEnv.TExprParser.ParseIdentifier: string;
 var
-  StartPos: Integer;
+  lStartPos: Integer;
 begin
   SkipWhitespace;
-  StartPos := FPos;
+  lStartPos := FPos;
   if (FPos <= Length(FText)) and (FText[FPos].IsLetter or (FText[FPos] = '_')) then
   begin
     Inc(FPos);
     while (FPos <= Length(FText)) and (FText[FPos].IsLetterOrDigit or (FText[FPos] = '_')) do
       Inc(FPos);
   end;
-  Result := Copy(FText, StartPos, FPos - StartPos);
+  Result := Copy(FText, lStartPos, FPos - lStartPos);
   if Result = '' then
     raise Exception.Create('Identifier expected');
 end;
 
 function TDotEnv.TExprParser.ParseStringLiteral: TExprValue;
 var
-  Buffer: TStringBuilder;
+  lBuffer: TStringBuilder;
   Ch: Char;
 begin
   SkipWhitespace;
   if ConsumeChar <> '''' then
     raise Exception.Create('String literal expected');
-  Buffer := TStringBuilder.Create;
+  lBuffer := TStringBuilder.Create;
   try
     while FPos <= Length(FText) do
     begin
@@ -519,28 +546,28 @@ begin
         if (FPos <= Length(FText)) and (FText[FPos] = '''') then
         begin
           ConsumeChar;
-          Buffer.Append('''');
+          lBuffer.Append('''');
         end
         else
           Break;
       end
       else
-        Buffer.Append(Ch);
+        lBuffer.Append(Ch);
     end;
-    Result := TExprValue.FromString(Buffer.ToString);
+    Result := TExprValue.FromString(lBuffer.ToString);
   finally
-    Buffer.Free;
+    lBuffer.Free;
   end;
 end;
 
 function TDotEnv.TExprParser.ParseNumber: TExprValue;
 var
-  StartPos: Integer;
-  Token: string;
-  Value: Double;
+  lStartPos: Integer;
+  lToken: string;
+  lValue: Double;
 begin
   SkipWhitespace;
-  StartPos := FPos;
+  lStartPos := FPos;
   while (FPos <= Length(FText)) and FText[FPos].IsDigit do
     Inc(FPos);
   if (FPos <= Length(FText)) and (FText[FPos] = '.') then
@@ -549,118 +576,124 @@ begin
     while (FPos <= Length(FText)) and FText[FPos].IsDigit do
       Inc(FPos);
   end;
-  Token := Copy(FText, StartPos, FPos - StartPos);
-  if Token = '' then
+  lToken := Copy(FText, lStartPos, FPos - lStartPos);
+  if lToken = '' then
     raise Exception.Create('Number expected');
-  if not TryStrToFloat(Token, Value, TFormatSettings.Invariant) then
-    raise Exception.CreateFmt('Invalid number %s', [Token]);
-  Result := TExprValue.FromNumber(Value);
+  if not TryStrToFloat(lToken, lValue, TFormatSettings.Invariant) then
+    raise Exception.CreateFmt('Invalid number %s', [lToken]);
+  Result := TExprValue.FromNumber(lValue);
 end;
 
-function TDotEnv.TExprParser.ResolveIdentifier(const Name: string): TExprValue;
+function TDotEnv.TExprParser.ResolveIdentifier(const aName: string): TExprValue;
 var
-  Value: string;
+  lValue: string;
 begin
-  if SameText(Name, 'true') then
+  if SameText(aName, 'true') then
     Exit(TExprValue.FromBoolean(True));
-  if SameText(Name, 'false') then
+  if SameText(aName, 'false') then
     Exit(TExprValue.FromBoolean(False));
-  if SameText(Name, 'null') then
+  if SameText(aName, 'null') then
     Exit(TExprValue.FromString(''));
-  if FOwner.ResolveSymbol(Name, FSourceFile, Value) then
-    Exit(TExprValue.FromString(Value));
+  if FOwner.ResolveSymbol(aName, FSourceFile, lValue) then
+    Exit(TExprValue.FromString(lValue));
   if TDotEnvOption.StrictUndefined in FOwner.FCurrentOptions then
     FOwner.AddError(FSourceFile, FLine, 1, TDotEnvErrorKind.DekStrict,
-      Format('Undefined identifier %s', [Name]), True);
+      Format('Undefined identifier %s', [aName]), True);
   Result := TExprValue.FromString('');
 end;
 
-function TDotEnv.TExprParser.EvaluateFunction(const Name: string): TExprValue;
+function TDotEnv.TExprParser.EvaluateFunction(const aName: string): TExprValue;
 var
-  Args: TArray<TExprValue>;
-  ArgIndex: Integer;
-  PathValue: string;
+  lArgs: TArray<TExprValue>;
+  lArgIndex: Integer;
+  lPathValue: string;
+  lArgList: TList<TExprValue>;
 begin
   if not MatchToken('(') then
     raise Exception.Create('Expected (');
-  Args := [];
-  SkipWhitespace;
-  if PeekChar <> ')' then
-  begin
-    repeat
-      Args := Args + [ParseExpression];
-      SkipWhitespace;
-    until not MatchToken(',');
+  lArgList := TList<TExprValue>.Create;
+  try
+    SkipWhitespace;
+    if PeekChar <> ')' then
+    begin
+      repeat
+        lArgList.Add(ParseExpression);
+        SkipWhitespace;
+      until not MatchToken(',');
+    end;
+    if not MatchToken(')') then
+      raise Exception.Create('Expected )');
+    lArgs := lArgList.ToArray;
+  finally
+    lArgList.Free;
   end;
-  if not MatchToken(')') then
-    raise Exception.Create('Expected )');
 
-  if SameText(Name, 'env') then
+  if SameText(aName, 'env') then
   begin
-    if Length(Args) <> 1 then
+    if Length(lArgs) <> 1 then
       raise Exception.Create('env(name) expects one argument');
-    Exit(ResolveIdentifier(Args[0].ToStringValue));
+    Exit(ResolveIdentifier(lArgs[0].ToStringValue));
   end;
 
-  if SameText(Name, 'join') then
+  if SameText(aName, 'join') then
   begin
-    if Length(Args) = 0 then
+    if Length(lArgs) = 0 then
       raise Exception.Create('join requires arguments');
-    PathValue := Args[0].ToStringValue;
-    for ArgIndex := 1 to High(Args) do
-      PathValue := TPath.Combine(PathValue, Args[ArgIndex].ToStringValue);
-    PathValue := TPath.GetFullPath(PathValue);
-    Exit(TExprValue.FromString(PathValue));
+    lPathValue := lArgs[0].ToStringValue;
+    for lArgIndex := 1 to High(lArgs) do
+      lPathValue := TPath.Combine(lPathValue, lArgs[lArgIndex].ToStringValue);
+    lPathValue := TPath.GetFullPath(lPathValue);
+    Exit(TExprValue.FromString(lPathValue));
   end;
 
-  if SameText(Name, 'dirname') then
+  if SameText(aName, 'dirname') then
   begin
-    if Length(Args) <> 1 then
+    if Length(lArgs) <> 1 then
       raise Exception.Create('dirname expects one argument');
-    Exit(TExprValue.FromString(TPath.GetDirectoryName(Args[0].ToStringValue)));
+    Exit(TExprValue.FromString(TPath.GetDirectoryName(lArgs[0].ToStringValue)));
   end;
 
-  if SameText(Name, 'basename') then
+  if SameText(aName, 'basename') then
   begin
-    if Length(Args) <> 1 then
+    if Length(lArgs) <> 1 then
       raise Exception.Create('basename expects one argument');
-    Exit(TExprValue.FromString(TPath.GetFileName(Args[0].ToStringValue)));
+    Exit(TExprValue.FromString(TPath.GetFileName(lArgs[0].ToStringValue)));
   end;
 
-  if SameText(Name, 'abspath') then
+  if SameText(aName, 'abspath') then
   begin
-    if Length(Args) <> 1 then
+    if Length(lArgs) <> 1 then
       raise Exception.Create('abspath expects one argument');
-    Exit(TExprValue.FromString(TPath.GetFullPath(Args[0].ToStringValue)));
+    Exit(TExprValue.FromString(TPath.GetFullPath(lArgs[0].ToStringValue)));
   end;
 
-  if SameText(Name, 'upper') then
+  if SameText(aName, 'upper') then
   begin
-    if Length(Args) <> 1 then
+    if Length(lArgs) <> 1 then
       raise Exception.Create('upper expects one argument');
-    Exit(TExprValue.FromString(Args[0].ToStringValue.ToUpper));
+    Exit(TExprValue.FromString(lArgs[0].ToStringValue.ToUpper));
   end;
 
-  if SameText(Name, 'lower') then
+  if SameText(aName, 'lower') then
   begin
-    if Length(Args) <> 1 then
+    if Length(lArgs) <> 1 then
       raise Exception.Create('lower expects one argument');
-    Exit(TExprValue.FromString(Args[0].ToStringValue.ToLower));
+    Exit(TExprValue.FromString(lArgs[0].ToStringValue.ToLower));
   end;
 
-  if SameText(Name, 'trim') then
+  if SameText(aName, 'trim') then
   begin
-    if Length(Args) <> 1 then
+    if Length(lArgs) <> 1 then
       raise Exception.Create('trim expects one argument');
-    Exit(TExprValue.FromString(Args[0].ToStringValue.Trim));
+    Exit(TExprValue.FromString(lArgs[0].ToStringValue.Trim));
   end;
 
-  raise Exception.CreateFmt('Unknown function %s', [Name]);
+  raise Exception.CreateFmt('Unknown function %s', [aName]);
 end;
 
 function TDotEnv.TExprParser.ParsePrimary: TExprValue;
 var
-  Ident: string;
+  lIdent: string;
   Ch: Char;
 begin
   SkipWhitespace;
@@ -687,12 +720,12 @@ begin
       end;
   else
     begin
-      Ident := ParseIdentifier;
+      lIdent := ParseIdentifier;
       SkipWhitespace;
       if PeekChar = '(' then
-        Result := EvaluateFunction(Ident)
+        Result := EvaluateFunction(lIdent)
       else
-        Result := ResolveIdentifier(Ident);
+        Result := ResolveIdentifier(lIdent);
     end;
   end;
 end;
@@ -709,10 +742,10 @@ end;
 
 function TDotEnv.TExprParser.ParseMul: TExprValue;
 var
-  Left, Right: TExprValue;
+  lLeft, lRight: TExprValue;
   Op: Char;
 begin
-  Left := ParseUnary;
+  lLeft := ParseUnary;
   while True do
   begin
     SkipWhitespace;
@@ -721,25 +754,37 @@ begin
       '*', '/', '%':
         begin
           ConsumeChar;
-          Right := ParseUnary;
+          lRight := ParseUnary;
           case Op of
-            '*': Left := TExprValue.FromNumber(Left.ToNumber * Right.ToNumber);
-            '/': Left := TExprValue.FromNumber(Left.ToNumber / Right.ToNumber);
-            '%': Left := TExprValue.FromNumber(System.Math.FMod(Left.ToNumber, Right.ToNumber));
+            '*': lLeft := TExprValue.FromNumber(lLeft.ToNumber * lRight.ToNumber);
+            '/':
+              begin
+                if SameValue(lRight.ToNumber, 0) then
+                  raise Exception.Create('Division by zero');
+                lLeft := TExprValue.FromNumber(lLeft.ToNumber / lRight.ToNumber);
+              end;
+            '%':
+              begin
+                if SameValue(lRight.ToNumber, 0) then
+                  raise Exception.Create('Modulo by zero');
+                lLeft := TExprValue.FromNumber(
+                  lLeft.ToNumber - Trunc(lLeft.ToNumber / lRight.ToNumber) * lRight.ToNumber
+                );
+              end;
           end;
         end;
     else
-      Exit(Left);
+      Exit(lLeft);
     end;
   end;
 end;
 
 function TDotEnv.TExprParser.ParseAdd: TExprValue;
 var
-  Left, Right: TExprValue;
+  lLeft, lRight: TExprValue;
   Op: Char;
 begin
-  Left := ParseMul;
+  lLeft := ParseMul;
   while True do
   begin
     SkipWhitespace;
@@ -748,81 +793,81 @@ begin
       '+', '-':
         begin
           ConsumeChar;
-          Right := ParseMul;
+          lRight := ParseMul;
           if Op = '+' then
           begin
-            if (Left.Kind = TExprValueKind.evString) or (Right.Kind = TExprValueKind.evString) then
-              Left := TExprValue.FromString(Left.ToStringValue + Right.ToStringValue)
+            if (lLeft.Kind = TExprValueKind.evString) or (lRight.Kind = TExprValueKind.evString) then
+              lLeft := TExprValue.FromString(lLeft.ToStringValue + lRight.ToStringValue)
             else
-              Left := TExprValue.FromNumber(Left.ToNumber + Right.ToNumber);
+              lLeft := TExprValue.FromNumber(lLeft.ToNumber + lRight.ToNumber);
           end
           else
-            Left := TExprValue.FromNumber(Left.ToNumber - Right.ToNumber);
+            lLeft := TExprValue.FromNumber(lLeft.ToNumber - lRight.ToNumber);
         end;
     else
-      Exit(Left);
+      Exit(lLeft);
     end;
   end;
 end;
 
 function TDotEnv.TExprParser.ParseCompare: TExprValue;
 var
-  Left, Right: TExprValue;
+  lLeft: TExprValue;
 begin
-  Left := ParseAdd;
+  lLeft := ParseAdd;
   while True do
   begin
     SkipWhitespace;
     if MatchToken('==') then
-      Left := TExprValue.FromBoolean(Left.ToStringValue = ParseAdd.ToStringValue)
+      lLeft := TExprValue.FromBoolean(lLeft.ToStringValue = ParseAdd.ToStringValue)
     else if MatchToken('!=') then
-      Left := TExprValue.FromBoolean(Left.ToStringValue <> ParseAdd.ToStringValue)
+      lLeft := TExprValue.FromBoolean(lLeft.ToStringValue <> ParseAdd.ToStringValue)
     else if MatchToken('<=') then
-      Left := TExprValue.FromBoolean(Left.ToNumber <= ParseAdd.ToNumber)
+      lLeft := TExprValue.FromBoolean(lLeft.ToNumber <= ParseAdd.ToNumber)
     else if MatchToken('>=') then
-      Left := TExprValue.FromBoolean(Left.ToNumber >= ParseAdd.ToNumber)
+      lLeft := TExprValue.FromBoolean(lLeft.ToNumber >= ParseAdd.ToNumber)
     else if MatchToken('<') then
-      Left := TExprValue.FromBoolean(Left.ToNumber < ParseAdd.ToNumber)
+      lLeft := TExprValue.FromBoolean(lLeft.ToNumber < ParseAdd.ToNumber)
     else if MatchToken('>') then
-      Left := TExprValue.FromBoolean(Left.ToNumber > ParseAdd.ToNumber)
+      lLeft := TExprValue.FromBoolean(lLeft.ToNumber > ParseAdd.ToNumber)
     else
-      Exit(Left);
+      Exit(lLeft);
   end;
 end;
 
 function TDotEnv.TExprParser.ParseAnd: TExprValue;
 var
-  Left, Right: TExprValue;
+  lLeft, lRight: TExprValue;
 begin
-  Left := ParseCompare;
+  lLeft := ParseCompare;
   while True do
   begin
     SkipWhitespace;
     if MatchToken('&&') then
     begin
-      Right := ParseCompare;
-      Left := TExprValue.FromBoolean(Left.ToBoolean and Right.ToBoolean);
+      lRight := ParseCompare;
+      lLeft := TExprValue.FromBoolean(lLeft.ToBoolean and lRight.ToBoolean);
     end
     else
-      Exit(Left);
+      Exit(lLeft);
   end;
 end;
 
 function TDotEnv.TExprParser.ParseOr: TExprValue;
 var
-  Left, Right: TExprValue;
+  lLeft, lRight: TExprValue;
 begin
-  Left := ParseAnd;
+  lLeft := ParseAnd;
   while True do
   begin
     SkipWhitespace;
     if MatchToken('||') then
     begin
-      Right := ParseAnd;
-      Left := TExprValue.FromBoolean(Left.ToBoolean or Right.ToBoolean);
+      lRight := ParseAnd;
+      lLeft := TExprValue.FromBoolean(lLeft.ToBoolean or lRight.ToBoolean);
     end
     else
-      Exit(Left);
+      Exit(lLeft);
   end;
 end;
 
@@ -834,33 +879,36 @@ end;
 function TDotEnv.TExprParser.Evaluate: TExprValue;
 begin
   Result := ParseExpression;
+  SkipWhitespace;
+  if FPos <= Length(FText) then
+    raise Exception.CreateFmt('Unexpected token at position %d', [FPos]);
 end;
 
 { TDotEnv.TKeyComparer }
 
-constructor TDotEnv.TKeyComparer.Create(ACaseSensitive: Boolean);
+constructor TDotEnv.TKeyComparer.Create(aCaseSensitive: Boolean);
 begin
   inherited Create;
-  FCaseSensitive := ACaseSensitive;
+  FCaseSensitive := aCaseSensitive;
+  // Use default ordinal comparer; handle case-insensitive logic in Equals/GetHashCode
+  FComparer := TEqualityComparer<string>.Default;
 end;
 
-function TDotEnv.TKeyComparer.Equals(const Left, Right: string): Boolean;
+function TDotEnv.TKeyComparer.Equals(const aLeft, aRight: string): Boolean;
 begin
   if FCaseSensitive then
-    Result := Left = Right
+    Result := FComparer.Equals(aLeft, aRight)
   else
-    Result := SameText(Left, Right);
+    Result := SameText(aLeft, aRight);
 end;
 
-function TDotEnv.TKeyComparer.GetHashCode(const Value: string): Integer;
-var
-  Work: string;
+function TDotEnv.TKeyComparer.GetHashCode(const aValue: string): Integer;
 begin
   if FCaseSensitive then
-    Work := Value
+    Result := FComparer.GetHashCode(aValue)
   else
-    Work := AnsiUpperCase(Value);
-  Result := THashBobJenkins.GetHashValue(Work, 0);
+    // Hash on a normalized (lowercased) value to stay consistent with SameText equality
+    Result := TEqualityComparer<string>.Default.GetHashCode(aValue.ToLower);
 end;
 
 { TDotEnv }
@@ -868,11 +916,17 @@ end;
 constructor TDotEnv.Create;
 begin
   inherited Create;
-  FErrors := TList<TDotEnvError>.Create;
-  FTrace := TList<string>.Create;
-  FSequence := 0;
-  FCaseSensitiveCache := True;
-  FIncludeStack := TStack<string>.Create;
+  InitDefaults;
+end;
+
+constructor TDotEnv.Create(aMaxFileSize: Int64; aParentDepth: Integer);
+begin
+  inherited Create;
+  InitDefaults;
+  if aMaxFileSize > 0 then
+    FMaxFileSize := aMaxFileSize;
+  if aParentDepth >= 0 then
+    FParentDepth := aParentDepth;
 end;
 
 destructor TDotEnv.Destroy;
@@ -882,7 +936,19 @@ begin
   FTrace.Free;
   FInitialEnv.Free;
   FIncludeStack.Free;
+  FEvalStack.Free;
   inherited;
+end;
+
+procedure TDotEnv.InitDefaults;
+begin
+  FErrors := TList<TDotEnvError>.Create;
+  FTrace := TList<string>.Create;
+  FSequence := 0;
+  FCaseSensitiveCache := True;
+  FIncludeStack := TStack<string>.Create;
+  FMaxFileSize := MAX_DOTENV_FILE_SIZE;
+  FParentDepth := DEFAULT_PARENT_DEPTH;
 end;
 
 procedure TDotEnv.ResetState;
@@ -891,6 +957,11 @@ begin
   FTrace.Clear;
   if FIncludeStack <> nil then
     FIncludeStack.Clear;
+  // reset deferred evaluation state between loads
+  FDeferredActive := False;
+  FDeferred := nil;
+  if FEvalStack <> nil then
+    FEvalStack.Clear;
 end;
 
 function TDotEnv.DetermineCaseSensitive: Boolean;
@@ -905,53 +976,50 @@ end;
 
 procedure TDotEnv.EnsureValuesDictionary;
 var
-  Desired: Boolean;
-  NewDict: TDictionary<string, TStoredValue>;
-  Pair: TPair<string, TStoredValue>;
+  lDesired: Boolean;
+  lNewDict: TDictionary<string, TStoredValue>;
+  lPair: TPair<string, TStoredValue>;
 begin
-  Desired := DetermineCaseSensitive;
+  lDesired := DetermineCaseSensitive;
   if FValues = nil then
   begin
-    FValues := TDictionary<string, TStoredValue>.Create(TKeyComparer.Create(Desired));
-    FCaseSensitiveCache := Desired;
+    FValues := TDictionary<string, TStoredValue>.Create(TKeyComparer.Create(lDesired));
+    FCaseSensitiveCache := lDesired;
     Exit;
   end;
-  if Desired <> FCaseSensitiveCache then
+  if lDesired <> FCaseSensitiveCache then
   begin
-    NewDict := TDictionary<string, TStoredValue>.Create(TKeyComparer.Create(Desired));
-    for Pair in FValues do
-      NewDict.AddOrSetValue(NormalizeKey(Pair.Value.Key), Pair.Value);
+    lNewDict := TDictionary<string, TStoredValue>.Create(TKeyComparer.Create(lDesired));
+    for lPair in FValues do
+      lNewDict.AddOrSetValue(NormalizeKey(lPair.Value.Key), lPair.Value);
     FValues.Free;
-    FValues := NewDict;
-    FCaseSensitiveCache := Desired;
+    FValues := lNewDict;
+    FCaseSensitiveCache := lDesired;
   end;
 end;
 
-function TDotEnv.NormalizeKey(const Key: string): string;
+function TDotEnv.NormalizeKey(const aKey: string): string;
 begin
-  if DetermineCaseSensitive then
-    Result := Key
-  else
-    Result := AnsiUpperCase(Key);
+  Result := aKey;
 end;
 
-procedure TDotEnv.AddError(const FilePath: string; Line, Column: Integer; Kind: TDotEnvErrorKind;
-  const Msg: string; Fatal: Boolean);
+procedure TDotEnv.AddError(const aFilePath: string; aLine, aColumn: Integer; aKind: TDotEnvErrorKind;
+  const aMsg: string; aFatal: Boolean);
 var
-  Err: TDotEnvError;
+  lErr: TDotEnvError;
 begin
-  Err.FilePath := FilePath;
-  Err.Line := Line;
-  Err.Column := Column;
-  Err.Kind := Kind;
-  Err.Message := Msg;
-  Err.Fatal := Fatal;
-  FErrors.Add(Err);
+  lErr.FilePath := aFilePath;
+  lErr.Line := aLine;
+  lErr.Column := aColumn;
+  lErr.Kind := aKind;
+  lErr.Message := aMsg;
+  lErr.Fatal := aFatal;
+  FErrors.Add(lErr);
 end;
 
-procedure TDotEnv.AddTrace(const Msg: string);
+procedure TDotEnv.AddTrace(const aMsg: string);
 begin
-  FTrace.Add(Msg);
+  FTrace.Add(aMsg);
 end;
 
 procedure TDotEnv.EnsureInitialEnv;
@@ -962,89 +1030,89 @@ end;
 
 procedure TDotEnv.CaptureInitialEnv;
 var
-  Comparer: IEqualityComparer<string>;
+  lComparer: IEqualityComparer<string>;
 {$IFDEF MSWINDOWS}
-  Block: PWideChar;
-  Ptr: PWideChar;
-  Entry: string;
-  EqPos: Integer;
+  lBlock: PWideChar;
+  lPtr: PWideChar;
+  lEntry: string;
+  lEqPos: Integer;
 {$ELSE}
-  Env: PPAnsiChar;
-  Entry: string;
-  EqPos: Integer;
+  lEnv: PPAnsiChar;
+  lEntry: string;
+  lEqPos: Integer;
 {$ENDIF}
 begin
-  Comparer := TKeyComparer.Create(False);
-  FInitialEnv := TDictionary<string, Byte>.Create(Comparer);
+  lComparer := TKeyComparer.Create(not IsWindowsPlatform);
+  FInitialEnv := TDictionary<string, Byte>.Create(lComparer);
 {$IFDEF MSWINDOWS}
-  Block := GetEnvironmentStringsW;
-  if Block = nil then
+  lBlock := GetEnvironmentStringsW;
+  if lBlock = nil then
     Exit;
   try
-    Ptr := Block;
-    while Ptr^ <> #0 do
+    lPtr := lBlock;
+    while lPtr^ <> #0 do
     begin
-      Entry := Ptr;
-      EqPos := Pos('=', Entry);
-      if EqPos > 1 then
-        FInitialEnv.AddOrSetValue(AnsiUpperCase(Copy(Entry, 1, EqPos - 1)), 1);
-      Inc(Ptr, Length(Ptr) + 1);
+      lEntry := lPtr;
+      lEqPos := Pos('=', lEntry);
+      if lEqPos > 1 then
+        FInitialEnv.AddOrSetValue(Copy(lEntry, 1, lEqPos - 1), 1);
+      Inc(lPtr, lstrlenW(lPtr) + 1);
     end;
   finally
-    FreeEnvironmentStringsW(Block);
+    FreeEnvironmentStringsW(lBlock);
   end;
 {$ELSE}
-  Env := environ;
-  while (Env <> nil) and (Env^ <> nil) do
+  lEnv := environ;
+  while (lEnv <> nil) and (lEnv^ <> nil) do
   begin
-    Entry := string(Env^);
-    EqPos := Pos('=', Entry);
-    if EqPos > 1 then
-      FInitialEnv.AddOrSetValue(Copy(Entry, 1, EqPos - 1), 1);
-    Inc(Env);
+    lEntry := string(lEnv^);
+    lEqPos := Pos('=', lEntry);
+    if lEqPos > 1 then
+      FInitialEnv.AddOrSetValue(Copy(lEntry, 1, lEqPos - 1), 1);
+    Inc(lEnv);
   end;
 {$ENDIF}
 end;
 
-function TDotEnv.ProcessEnvHasKey(const Key: string): Boolean;
+function TDotEnv.ProcessEnvHasKey(const aKey: string): Boolean;
 var
-  Lookup: string;
+  lLookup: string;
 begin
   EnsureInitialEnv;
   if FInitialEnv = nil then
     Exit(False);
-  Lookup := NormalizeKey(Key);
-  Result := FInitialEnv.ContainsKey(Lookup);
+  lLookup := NormalizeKey(aKey);
+  Result := FInitialEnv.ContainsKey(lLookup);
 end;
 
-function TDotEnv.TryGetValue(const Key: string; out Value: string): Boolean;
+function TDotEnv.TryGetValue(const aKey: string; out aValue: string): Boolean;
 var
-  Stored: TStoredValue;
+  lStored: TStoredValue;
 begin
   EnsureValuesDictionary;
-  Result := FValues.TryGetValue(NormalizeKey(Key), Stored);
+  Result := FValues.TryGetValue(NormalizeKey(aKey), lStored);
   if Result then
-    Value := Stored.Value
+    aValue := lStored.Value
   else
-    Value := '';
+    aValue := '';
 end;
 
-function TDotEnv.GetValue(const Key: string; const DefaultValue: string): string;
+function TDotEnv.GetValue(const aKey: string; const aDefaultValue: string): string;
 begin
-  if not TryGetValue(Key, Result) then
-    Result := DefaultValue;
+  if not TryGetValue(aKey, Result) then
+    Result := aDefaultValue;
 end;
 
 function TDotEnv.AsDictionary: TDictionary<string, string>;
 var
-  Dict: TDictionary<string, string>;
-  Pair: TPair<string, TStoredValue>;
+  lDict: TDictionary<string, string>;
+  lPair: TPair<string, TStoredValue>;
 begin
   EnsureValuesDictionary;
-  Dict := TDictionary<string, string>.Create(TKeyComparer.Create(DetermineCaseSensitive));
-  for Pair in FValues do
-    Dict.AddOrSetValue(Pair.Value.Key, Pair.Value.Value);
-  Result := Dict;
+  lDict := TDictionary<string, string>.Create(TKeyComparer.Create(DetermineCaseSensitive));
+  for lPair in FValues do
+    lDict.AddOrSetValue(lPair.Value.Key, lPair.Value.Value);
+  Result := lDict;
 end;
 
 function TDotEnv.GetErrors: TArray<TDotEnvError>;
@@ -1057,1220 +1125,1486 @@ begin
   Result := FTrace.ToArray;
 end;
 
-function TDotEnv.ResolveBuiltIn(const Name, SourceFile: string; out Value: string): Boolean;
+function TDotEnv.ResolveBuiltIn(const aName, aSourceFile: string; out aValue: string): Boolean;
 var
-  Dir: string;
+  lDir: string;
 begin
-  if SameText(Name, 'CUR_DIR') then
+  if SameText(aName, 'CUR_DIR') then
   begin
-    if SourceFile <> '' then
-      Dir := TPath.GetDirectoryName(SourceFile)
+    if aSourceFile <> '' then
+      lDir := TPath.GetDirectoryName(aSourceFile)
     else
-      Dir := TDirectory.GetCurrentDirectory;
-    Value := Dir;
+      lDir := TDirectory.GetCurrentDirectory;
+    aValue := lDir;
     Exit(True);
   end;
-  if SameText(Name, 'CUR_FILE') then
+  if SameText(aName, 'CUR_FILE') then
   begin
-    Value := SourceFile;
+    aValue := aSourceFile;
     Exit(True);
   end;
-  if SameText(Name, 'DIR_SEP') then
+  if SameText(aName, 'DIR_SEP') then
   begin
-    Value := string(TPath.DirectorySeparatorChar);
+    aValue := string(TPath.DirectorySeparatorChar);
     Exit(True);
   end;
-  if SameText(Name, 'APP_EXE') then
+  if SameText(aName, 'APP_EXE') then
   begin
-    Value := TPath.GetFullPath(ParamStr(0));
+    aValue := TPath.GetFullPath(ParamStr(0));
     Exit(True);
   end;
-  if SameText(Name, 'APP_DIR') then
+  if SameText(aName, 'APP_DIR') then
   begin
-    Value := ExcludeTrailingPathDelimiter(TPath.GetDirectoryName(TPath.GetFullPath(ParamStr(0))));
+    aValue := ExcludeTrailingPathDelimiter(TPath.GetDirectoryName(TPath.GetFullPath(ParamStr(0))));
     Exit(True);
   end;
   Result := False;
 end;
 
-function TDotEnv.ResolveSymbol(const Name, SourceFile: string; out Value: string): Boolean;
+function TDotEnv.ResolveSymbol(const aName, aSourceFile: string; out aValue: string): Boolean;
 var
-  Stored: TStoredValue;
-  Normal: string;
+  lStored: TStoredValue;
+  lNormal: string;
 begin
   EnsureValuesDictionary;
-  Normal := NormalizeKey(Name);
-  if FValues.TryGetValue(Normal, Stored) then
+  lNormal := NormalizeKey(aName);
+  if FValues.TryGetValue(lNormal, lStored) then
   begin
-    Value := Stored.Value;
+    aValue := lStored.Value;
     Exit(True);
   end;
-  Value := GetEnvironmentVariable(Name);
-  if Value <> '' then
+  // When DoNotOverrideExisting is set, prefer a non-empty process value
+  if TDotEnvOption.DoNotOverrideExisting in FCurrentOptions then
+  begin
+    aValue := GetEnvironmentVariable(aName);
+    if aValue <> '' then
+      Exit(True);
+  end;
+  if FDeferredActive and (FDeferred <> nil) then
+  begin
+    if FDeferred.ContainsKey(lNormal) then
+      EvaluateDeferredKey(lNormal);
+    if FValues.TryGetValue(lNormal, lStored) then
+    begin
+      aValue := lStored.Value;
+      Exit(True);
+    end;
+  end;
+  aValue := GetEnvironmentVariable(aName);
+  if aValue <> '' then
     Exit(True);
-  if ResolveBuiltIn(Name, SourceFile, Value) then
+  if ResolveBuiltIn(aName, aSourceFile, aValue) then
     Exit(True);
   if Assigned(FOnResolveSymbol) then
   begin
-    Value := FOnResolveSymbol(Name, SourceFile);
-    if Value <> '' then
+    aValue := FOnResolveSymbol(aName, aSourceFile);
+    if aValue <> '' then
       Exit(True);
   end;
   Result := False;
 end;
 
-function TDotEnv.ResolveVariable(const Name, SourceFile: string; Line: Integer;
-  const DefaultValue: string; HasDefault: Boolean; out Failed: Boolean): string;
+function TDotEnv.ResolveVariable(const aName, aSourceFile: string; aLine: Integer;
+  const aDefaultValue: string; aHasDefault: Boolean; out aFailed: Boolean): string;
 begin
-  Failed := False;
-  if ResolveSymbol(Name, SourceFile, Result) then
+  aFailed := False;
+  if ResolveSymbol(aName, aSourceFile, Result) then
     Exit;
-  if HasDefault then
+  if aHasDefault then
   begin
-    Result := DefaultValue;
+    Result := aDefaultValue;
     Exit;
   end;
   if TDotEnvOption.StrictUndefined in FCurrentOptions then
   begin
-    Failed := True;
-    AddError(SourceFile, Line, 1, TDotEnvErrorKind.DekStrict,
-      Format('Undefined variable %s', [Name]), True);
+    aFailed := True;
+    AddError(aSourceFile, aLine, 1, TDotEnvErrorKind.DekStrict,
+      Format('Undefined variable %s (no default). Use ${%s:-fallback} to provide a default.',
+      [aName, aName]), True);
   end;
   Result := '';
 end;
 
-function IsNameStartChar(const C: Char): Boolean;
+function IsNameStartChar(const aC: Char): Boolean;
 begin
-  Result := C.IsLetter or (C = '_');
+  Result := aC.IsLetter or (aC = '_');
 end;
 
-function IsNameChar(const C: Char): Boolean;
+function IsNameChar(const aC: Char): Boolean;
 begin
-  Result := C.IsLetterOrDigit or (C = '_');
+  Result := aC.IsLetterOrDigit or (aC = '_');
 end;
 
-function TDotEnv.ExpandVariable(const Source, SourceFile: string; Line: Integer;
-  var Index: Integer): string;
+function TDotEnv.ExpandVariable(const aSource, aSourceFile: string; aLine: Integer;
+  var aIndex: Integer): string;
 var
-  StartPos, EndPos: Integer;
-  NamePart: string;
-  DefaultValue: string;
-  HasDefault: Boolean;
-  DefaultPos: Integer;
-  Failed: Boolean;
+  lStartPos, lEndPos: Integer;
+  lNamePart: string;
+  lDefaultValue: string;
+  lHasDefault: Boolean;
+  lDefaultPos: Integer;
+  lFailed: Boolean;
 begin
   Result := '';
-  HasDefault := False;
-  if Index > Length(Source) then
+  lHasDefault := False;
+  lDefaultValue := '';
+  if aIndex > Length(aSource) then
     Exit;
-  if Source[Index] = '{' then
+  if aSource[aIndex] = '{' then
   begin
-    StartPos := Index + 1;
-    EndPos := StartPos;
-    while (EndPos <= Length(Source)) and (Source[EndPos] <> '}') do
-      Inc(EndPos);
-    if EndPos > Length(Source) then
+    lStartPos := aIndex + 1;
+    lEndPos := lStartPos;
+    while (lEndPos <= Length(aSource)) and (aSource[lEndPos] <> '}') do
+      Inc(lEndPos);
+    if lEndPos > Length(aSource) then
     begin
-      AddError(SourceFile, Line, 1, TDotEnvErrorKind.DekParse,
+      AddError(aSourceFile, aLine, 1, TDotEnvErrorKind.DekParse,
         'Missing closing brace in variable reference', True);
-      Index := Length(Source) + 1;
+      aIndex := Length(aSource) + 1;
       Exit('');
     end;
-    NamePart := Copy(Source, StartPos, EndPos - StartPos);
-    Index := EndPos + 1;
+    lNamePart := Copy(aSource, lStartPos, lEndPos - lStartPos);
+    aIndex := lEndPos + 1;
   end
   else
   begin
-    StartPos := Index;
-    if not ((StartPos <= Length(Source)) and IsNameStartChar(Source[StartPos])) then
+    lStartPos := aIndex;
+    if not ((lStartPos <= Length(aSource)) and IsNameStartChar(aSource[lStartPos])) then
     begin
-      Result := '$' + Source[Index];
-      Inc(Index);
+      Result := '$' + aSource[aIndex];
+      Inc(aIndex);
       Exit;
     end;
-    EndPos := StartPos;
-    Inc(EndPos);
-    while (EndPos <= Length(Source)) and IsNameChar(Source[EndPos]) do
-      Inc(EndPos);
-    NamePart := Copy(Source, StartPos, EndPos - StartPos);
-    Index := EndPos;
+    lEndPos := lStartPos;
+    Inc(lEndPos);
+    while (lEndPos <= Length(aSource)) and IsNameChar(aSource[lEndPos]) do
+      Inc(lEndPos);
+    lNamePart := Copy(aSource, lStartPos, lEndPos - lStartPos);
+    aIndex := lEndPos;
   end;
-  DefaultPos := Pos(':-', NamePart);
-  if DefaultPos > 0 then
+  lDefaultPos := Pos(':-', lNamePart);
+  if lDefaultPos > 0 then
   begin
-    DefaultValue := Copy(NamePart, DefaultPos + 2, MaxInt);
-    NamePart := Copy(NamePart, 1, DefaultPos - 1);
-    HasDefault := True;
+    lDefaultValue := Copy(lNamePart, lDefaultPos + 2, MaxInt);
+    lNamePart := Copy(lNamePart, 1, lDefaultPos - 1);
+    lHasDefault := True;
   end;
-  NamePart := Trim(NamePart);
-  Result := ResolveVariable(NamePart, SourceFile, Line, DefaultValue, HasDefault, Failed);
+  lNamePart := Trim(lNamePart);
+  Result := ResolveVariable(lNamePart, aSourceFile, aLine, lDefaultValue, lHasDefault, lFailed);
 end;
 
-function TDotEnv.ExpandExpression(const Source, SourceFile: string; Line: Integer;
-  var Index: Integer): string;
+function TDotEnv.ExpandExpression(const aSource, aSourceFile: string; aLine: Integer;
+  var aIndex: Integer): string;
 var
-  StartPos: Integer;
-  Depth: Integer;
-  ExprText: string;
-  Parser: TExprParser;
-  Value: TExprValue;
+  lStartPos: Integer;
+  lDepth: Integer;
+  lExprText: string;
+  lParser: TExprParser;
+  lValue: TExprValue;
 begin
   Result := '';
-  if (Index > Length(Source)) or (Source[Index] <> '[') then
+  if (aIndex > Length(aSource)) or (aSource[aIndex] <> '[') then
     Exit;
-  Inc(Index);
-  StartPos := Index;
-  Depth := 1;
-  while (Index <= Length(Source)) and (Depth > 0) do
+  Inc(aIndex);
+  lStartPos := aIndex;
+  lDepth := 1;
+  while (aIndex <= Length(aSource)) and (lDepth > 0) do
   begin
-    if Source[Index] = '[' then
-      Inc(Depth)
-    else if Source[Index] = ']' then
+    if aSource[aIndex] = '[' then
+      Inc(lDepth)
+    else if aSource[aIndex] = ']' then
     begin
-      Dec(Depth);
-      if Depth = 0 then
+      Dec(lDepth);
+      if lDepth = 0 then
         Break;
     end;
-    Inc(Index);
+    Inc(aIndex);
   end;
-  if Depth <> 0 then
+  if lDepth <> 0 then
   begin
-    AddError(SourceFile, Line, 1, TDotEnvErrorKind.DekParse, 'Unterminated expression', True);
-    Index := Length(Source) + 1;
+    AddError(aSourceFile, aLine, 1, TDotEnvErrorKind.DekParse, 'Unterminated expression', True);
+    aIndex := Length(aSource) + 1;
     Exit;
   end;
-  ExprText := Copy(Source, StartPos, Index - StartPos);
-  Inc(Index); // skip closing ]
-  Parser := TExprParser.Create(Self, ExprText, SourceFile, Line);
+  lExprText := Copy(aSource, lStartPos, aIndex - lStartPos);
+  Inc(aIndex); // skip closing ]
+  // Pre-expand nested constructs (e.g., inner $[ ... ]) before parsing the expression
+  lExprText := ExpandValue(lExprText, aSourceFile, aLine);
+  lParser := TExprParser.Create(Self, lExprText, aSourceFile, aLine);
   try
     try
-      Value := Parser.Evaluate;
-      Result := Value.ToStringValue;
+      lValue := lParser.Evaluate;
+      Result := lValue.ToStringValue;
     except
       on E: Exception do
       begin
-        AddError(SourceFile, Line, 1, TDotEnvErrorKind.DekParse,
+        AddError(aSourceFile, aLine, 1, TDotEnvErrorKind.DekParse,
           Format('Expression error: %s', [E.Message]), True);
         Result := '';
       end;
     end;
   finally
-    Parser.Free;
+    lParser.Free;
   end;
 end;
 
-function TDotEnv.ExpandCommand(const Source, SourceFile: string; Line: Integer;
-  var Index: Integer): string;
+function TDotEnv.ExpandCommand(const aSource, aSourceFile: string; aLine: Integer;
+  var aIndex: Integer): string;
 var
-  StartPos: Integer;
-  Depth: Integer;
-  CmdText: string;
-  Output: string;
-  ErrMsg: string;
+  lStartPos: Integer;
+  lDepth: Integer;
+  lCmdText: string;
+  lOutput: string;
+  lErrMsg: string;
 begin
   Result := '';
-  if (Index > Length(Source)) or (Source[Index] <> '(') then
+  if (aIndex > Length(aSource)) or (aSource[aIndex] <> '(') then
     Exit;
   if not (TDotEnvOption.AllowCommandSubst in FCurrentOptions) then
   begin
     // consume command but return literal
-    StartPos := Index;
-    Depth := 1;
-    Inc(Index);
-    while (Index <= Length(Source)) and (Depth > 0) do
+    lStartPos := aIndex;
+    lDepth := 1;
+    Inc(aIndex);
+    while (aIndex <= Length(aSource)) and (lDepth > 0) do
     begin
-      if Source[Index] = '(' then
-        Inc(Depth)
-      else if Source[Index] = ')' then
+      if aSource[aIndex] = '(' then
+        Inc(lDepth)
+      else if aSource[aIndex] = ')' then
       begin
-        Dec(Depth);
-        if Depth = 0 then
+        Dec(lDepth);
+        if lDepth = 0 then
           Break;
       end;
-      Inc(Index);
+      Inc(aIndex);
     end;
-    if Depth <> 0 then
+    if lDepth <> 0 then
     begin
-      AddError(SourceFile, Line, 1, TDotEnvErrorKind.DekParse,
+      AddError(aSourceFile, aLine, 1, TDotEnvErrorKind.DekParse,
         'Unterminated command substitution', True);
-      Index := Length(Source) + 1;
+      aIndex := Length(aSource) + 1;
       Exit;
     end;
-    CmdText := Copy(Source, StartPos, Index - StartPos + 1);
-    Inc(Index);
-    AddError(SourceFile, Line, 1, TDotEnvErrorKind.DekCommand,
+    lCmdText := Copy(aSource, lStartPos, aIndex - lStartPos + 1);
+    Inc(aIndex);
+    AddError(aSourceFile, aLine, 1, TDotEnvErrorKind.DekCommand,
       'Command substitution disabled by configuration', False);
-    Result := '$' + CmdText;
+    Result := '$' + lCmdText;
     Exit;
   end;
 
-  Inc(Index);
-  StartPos := Index;
-  Depth := 1;
-  while (Index <= Length(Source)) and (Depth > 0) do
+  Inc(aIndex);
+  lStartPos := aIndex;
+  lDepth := 1;
+  while (aIndex <= Length(aSource)) and (lDepth > 0) do
   begin
-    if Source[Index] = '(' then
-      Inc(Depth)
-    else if Source[Index] = ')' then
+    if aSource[aIndex] = '(' then
+      Inc(lDepth)
+    else if aSource[aIndex] = ')' then
     begin
-      Dec(Depth);
-      if Depth = 0 then
+      Dec(lDepth);
+      if lDepth = 0 then
         Break;
     end;
-    Inc(Index);
+    Inc(aIndex);
   end;
-  if Depth <> 0 then
+  if lDepth <> 0 then
   begin
-    AddError(SourceFile, Line, 1, TDotEnvErrorKind.DekParse,
+    AddError(aSourceFile, aLine, 1, TDotEnvErrorKind.DekParse,
       'Unterminated command substitution', True);
-    Index := Length(Source) + 1;
+    aIndex := Length(aSource) + 1;
     Exit;
   end;
-  CmdText := Copy(Source, StartPos, Index - StartPos);
-  Inc(Index);
-  if ExecuteCommand(CmdText, Output, ErrMsg) then
-    Result := Output.Trim
+  lCmdText := Copy(aSource, lStartPos, aIndex - lStartPos);
+  Inc(aIndex);
+  if ExecuteCommand(lCmdText, lOutput, lErrMsg) then
+    Result := lOutput.Trim
   else
   begin
-    AddError(SourceFile, Line, 1, TDotEnvErrorKind.DekCommand, ErrMsg, False);
+    AddError(aSourceFile, aLine, 1, TDotEnvErrorKind.DekCommand, lErrMsg, False);
     Result := '';
   end;
 end;
 
-function TDotEnv.ExpandValue(const RawValue, SourceFile: string; Line: Integer): string;
+function TDotEnv.ExpandValue(const aRawValue, aSourceFile: string; aLine: Integer): string;
 var
-  SB: TStringBuilder;
+  lSB: TStringBuilder;
   I: Integer;
   Ch: Char;
 begin
-  SB := TStringBuilder.Create;
+  lSB := TStringBuilder.Create;
   try
     I := 1;
-    while I <= Length(RawValue) do
+    while I <= Length(aRawValue) do
     begin
-      Ch := RawValue[I];
+      Ch := aRawValue[I];
       if Ch = '$' then
       begin
         Inc(I);
-        if I > Length(RawValue) then
+        if I > Length(aRawValue) then
         begin
-          SB.Append('$');
+          lSB.Append('$');
           Break;
         end;
-        case RawValue[I] of
+        case aRawValue[I] of
           '{', '_', 'A' .. 'Z', 'a' .. 'z':
-            SB.Append(ExpandVariable(RawValue, SourceFile, Line, I));
+            lSB.Append(ExpandVariable(aRawValue, aSourceFile, aLine, I));
           '[':
-            SB.Append(ExpandExpression(RawValue, SourceFile, Line, I));
+            lSB.Append(ExpandExpression(aRawValue, aSourceFile, aLine, I));
           '(':
-            SB.Append(ExpandCommand(RawValue, SourceFile, Line, I));
+            lSB.Append(ExpandCommand(aRawValue, aSourceFile, aLine, I));
           '$':
             begin
-              SB.Append('$');
+              lSB.Append('$');
               Inc(I);
             end;
         else
-          SB.Append('$');
-          SB.Append(RawValue[I]);
+          lSB.Append('$');
+          lSB.Append(aRawValue[I]);
           Inc(I);
         end;
       end
       else
       begin
-        SB.Append(Ch);
+        lSB.Append(Ch);
         Inc(I);
       end;
     end;
-    Result := SB.ToString;
+    Result := lSB.ToString;
   finally
-    SB.Free;
+    lSB.Free;
   end;
 end;
 
-function TDotEnv.Expand(const S: string; const SourceFilePath: string): string;
+function TDotEnv.Expand(const aText: string; const aSourceFilePath: string): string;
 begin
-  Result := ExpandValue(S, SourceFilePath, 0);
+  Result := ExpandValue(aText, aSourceFilePath, 0);
 end;
 
-procedure TDotEnv.StoreValue(const Assignment: TRawAssignment; const ExpandedValue: string);
+procedure TDotEnv.StoreValue(const aAssignment: TRawAssignment; const aExpandedValue: string);
 var
-  Normal: string;
-  Stored: TStoredValue;
-  SkipOverride: Boolean;
+  lNormal: string;
+  lStored: TStoredValue;
+  lSkipOverride: Boolean;
 begin
   EnsureValuesDictionary;
-  Normal := NormalizeKey(Assignment.Key);
-  SkipOverride := False;
+  lNormal := NormalizeKey(aAssignment.Key);
+  lSkipOverride := False;
   if (TDotEnvOption.DoNotOverrideExisting in FCurrentOptions) and
-     (not FValues.ContainsKey(Normal)) and ProcessEnvHasKey(Assignment.Key) then
-    SkipOverride := True;
-  if SkipOverride then
+     (not FValues.ContainsKey(lNormal)) and ProcessEnvHasKey(aAssignment.Key) then
+    lSkipOverride := True;
+  if lSkipOverride then
   begin
-    AddTrace(Format('skip existing env: %s', [Assignment.Key]));
+    AddTrace(Format('skip existing env: %s', [aAssignment.Key]));
     Exit;
   end;
-  Stored.Key := Assignment.Key;
-  Stored.Value := ExpandedValue;
-  Stored.SourceFile := Assignment.FilePath;
-  Stored.Line := Assignment.Line;
-  Stored.RootIndex := Assignment.RootIndex;
-  Stored.Sequence := FSequence;
+  lStored.Key := aAssignment.Key;
+  lStored.Value := aExpandedValue;
+  lStored.SourceFile := aAssignment.FilePath;
+  lStored.Line := aAssignment.Line;
+  lStored.RootIndex := aAssignment.RootIndex;
+  lStored.Sequence := FSequence;
   Inc(FSequence);
-  FValues.AddOrSetValue(Normal, Stored);
-  ApplyToProcessEnv(Assignment.Key, ExpandedValue);
+  FValues.AddOrSetValue(lNormal, lStored);
+  // do not export to process environment (prevents cross-test/state leakage)
+  // ApplyToProcessEnv(aAssignment.Key, aExpandedValue);
 end;
 
-procedure TDotEnv.ApplyToProcessEnv(const Key, Value: string);
+procedure TDotEnv.ApplyToProcessEnv(const aKey, aValue: string);
 begin
 {$IFDEF MSWINDOWS}
-  SetEnvironmentVariable(PChar(Key), PChar(Value));
+  SetEnvironmentVariable(PChar(aKey), PChar(aValue));
 {$ELSE}
-  setenv(PAnsiChar(AnsiString(Key)), PAnsiChar(AnsiString(Value)), 1);
+  setenv(PAnsiChar(AnsiString(aKey)), PAnsiChar(AnsiString(aValue)), 1);
 {$ENDIF}
 end;
 
-function TDotEnv.ExecuteCommand(const Cmd: string; out Output: string; out ErrMsg: string): Boolean;
-{$IFDEF MSWINDOWS}
+procedure TDotEnv.EvaluateDeferredKey(const aNormalizedKey: string);
 var
-  ReadPipe, WritePipe: THandle;
-  Security: TSecurityAttributes;
-  StartInfo: TStartupInfo;
-  ProcInfo: TProcessInformation;
-  Buffer: array[0..2047] of AnsiChar;
-  BytesRead: Cardinal;
-  Chunk: AnsiString;
-  CmdLine: string;
-  ExitCode: Cardinal;
-{$ELSE}
-var
-  Pipe: Pointer;
-  Buffer: array[0..1023] of AnsiChar;
-  LinePtr: PAnsiChar;
-  Status: Integer;
-  Accum: AnsiString;
-{$ENDIF}
+  A: TRawAssignment;
+  lExpanded: string;
+  lErrBefore, lErrAfter: Integer;
+  i: Integer;
+  lHasNewFatal: Boolean;
 begin
-  Output := '';
-  ErrMsg := '';
-{$IFDEF MSWINDOWS}
-  ZeroMemory(@Security, SizeOf(Security));
-  Security.nLength := SizeOf(Security);
-  Security.bInheritHandle := True;
-  if not CreatePipe(ReadPipe, WritePipe, @Security, 0) then
+  if not FDeferredActive or (FDeferred = nil) then
+    Exit;
+  if not FDeferred.TryGetValue(aNormalizedKey, A) then
+    Exit; // already evaluated or not a winner
+  if (FEvalStack <> nil) and FEvalStack.Contains(aNormalizedKey) then
   begin
-    ErrMsg := SysErrorMessage(GetLastError);
+    AddError(A.FilePath, A.Line, 1, TDotEnvErrorKind.DekCycle,
+      Format('Cyclic reference for "%s"', [A.Key]), True);
+    // break the cycle; do not attempt to store a value
+    FDeferred.Remove(aNormalizedKey);
+    Exit;
+  end;
+  if FEvalStack = nil then
+    FEvalStack := THashSet<string>.Create(TKeyComparer.Create(DetermineCaseSensitive));
+  FEvalStack.Add(aNormalizedKey);
+  lErrBefore := FErrors.Count;
+  try
+    lExpanded := ExpandValue(A.RawValue, A.FilePath, A.Line);
+  finally
+    FEvalStack.Remove(aNormalizedKey);
+  end;
+  lErrAfter := FErrors.Count;
+  // Detect only newly-added fatal errors during this evaluation
+  lHasNewFatal := False;
+  for i := lErrBefore to lErrAfter - 1 do
+    if FErrors[i].Fatal then
+    begin
+      lHasNewFatal := True;
+      Break;
+    end;
+
+  FDeferred.Remove(aNormalizedKey);
+  if not lHasNewFatal then
+    StoreValue(A, lExpanded)
+  else
+    AddTrace(Format('skip store due to fatal errors: %s', [A.Key]));
+end;
+
+procedure TDotEnv.EvaluateAfterMergeEntries(const aEntries: TList<TRawAssignment>);
+var
+  lWinners: TDictionary<string, TRawAssignment>;
+  lEntry: TRawAssignment;
+  lKeys: TArray<string>;
+  K: string;
+  lKeyList: TList<string>;
+begin
+  EnsureValuesDictionary;
+  lWinners := TDictionary<string, TRawAssignment>.Create(TKeyComparer.Create(DetermineCaseSensitive));
+  try
+    // last-wins by precedence implied by aEntries order
+    for lEntry in aEntries do
+      lWinners.AddOrSetValue(NormalizeKey(lEntry.Key), lEntry);
+
+    FDeferredActive := True;
+    FEvalStack := THashSet<string>.Create(TKeyComparer.Create(DetermineCaseSensitive));
+    FDeferred := lWinners;
+    try
+      // snapshot keys since EvaluateDeferredKey mutates FDeferred/lWinners
+      lKeyList := TList<string>.Create;
+      try
+        for K in lWinners.Keys do
+          lKeyList.Add(K);
+        lKeys := lKeyList.ToArray;
+      finally
+        lKeyList.Free;
+      end;
+      for K in lKeys do
+        EvaluateDeferredKey(K);
+    finally
+      FEvalStack.Free;
+      FEvalStack := nil;
+      FDeferred := nil;
+      FDeferredActive := False;
+    end;
+  finally
+    lWinners.Free;
+  end;
+end;
+
+function TDotEnv.ExecuteCommand(const aCmd: string; out aOutput: string; out aErrMsg: string): Boolean;
+{$IFDEF MSWINDOWS}
+var
+  lReadPipe, lWritePipe: THandle;
+  lSecurity: TSecurityAttributes;
+  lStartInfo: TStartupInfo;
+  lProcInfo: TProcessInformation;
+  lBuffer: array[0..2047] of AnsiChar;
+  lBytesRead: Cardinal;
+  lChunk: AnsiString;
+  lCmdLine: string;
+  lRaw: string;
+  lPayload: string;
+  lInner: string;
+  lTempScript: string;
+  lNeedDeleteTemp: Boolean;
+  lFSrc, lFDst: TFileStream;
+  lFirst3: array[0..2] of Byte;
+  lReadCount, N: Integer;
+  lBuf: TBytes;
+  lComSpec: string;
+  lExitCode: Cardinal;
+  lGuid: TGUID;
+{$ELSE}
+var
+  lPipe: PIOFile;
+  lBuffer: array[0..1023] of AnsiChar;
+  lLinePtr: PAnsiChar;
+  lStatus: Integer;
+  {$IF DECLARED(WIFEXITED)}
+  lExitCode: Integer;
+  {$IFEND}
+  lAccum: AnsiString;
+{$ENDIF}
+begin
+  // Execute external command, capture stdout; implementation varies by platform
+  aOutput := '';
+  aErrMsg := '';
+  Result := False;
+{$IFDEF MSWINDOWS}
+  lNeedDeleteTemp := False;
+  lSecurity := Default(TSecurityAttributes);
+  lSecurity.nLength := SizeOf(lSecurity);
+  lSecurity.bInheritHandle := True;
+  if not CreatePipe(lReadPipe, lWritePipe, @lSecurity, 0) then
+  begin
+    aErrMsg := SysErrorMessage(GetLastError);
     Exit(False);
   end;
   try
-    if not SetHandleInformation(ReadPipe, HANDLE_FLAG_INHERIT, 0) then
+    if not SetHandleInformation(lReadPipe, HANDLE_FLAG_INHERIT, 0) then
     begin
-      ErrMsg := SysErrorMessage(GetLastError);
+      aErrMsg := SysErrorMessage(GetLastError);
       Exit(False);
     end;
-    FillChar(StartInfo, SizeOf(StartInfo), 0);
-    StartInfo.cb := SizeOf(StartInfo);
-    StartInfo.dwFlags := STARTF_USESTDHANDLES;
-    StartInfo.hStdInput := GetStdHandle(STD_INPUT_HANDLE);
-    StartInfo.hStdOutput := WritePipe;
-    StartInfo.hStdError := WritePipe;
-    FillChar(ProcInfo, SizeOf(ProcInfo), 0);
-    CmdLine := 'cmd.exe /C ' + Cmd;
-    if not CreateProcess(nil, PChar(CmdLine), nil, nil, True,
-      CREATE_NO_WINDOW, nil, nil, StartInfo, ProcInfo) then
+    lStartInfo := Default(TStartupInfo);
+    lStartInfo.cb := SizeOf(lStartInfo);
+    lStartInfo.dwFlags := STARTF_USESTDHANDLES;
+    lStartInfo.hStdInput := GetStdHandle(STD_INPUT_HANDLE);
+    lStartInfo.hStdOutput := lWritePipe;
+    lStartInfo.hStdError := lWritePipe;
+    lProcInfo := Default(TProcessInformation);
+
+    // Resolve command processor
+    lComSpec := GetEnvironmentVariable('COMSPEC');
+    if lComSpec = '' then
+      lComSpec := 'cmd.exe';
+
+    // Normalize payload
+    lRaw := Trim(aCmd);
+    lPayload := lRaw;
+
+    // If payload is a single quoted path to a .bat/.cmd file, and it has a UTF-8 BOM,
+    // create a temporary copy without BOM to avoid cmd.exe parse failures.
+    if (lPayload <> '') and (lPayload[1] = '"') and (lPayload[Length(lPayload)] = '"') then
     begin
-      ErrMsg := SysErrorMessage(GetLastError);
+      lInner := Copy(lPayload, 2, Length(lPayload) - 2);
+      if (Pos('"', lInner) = 0) and TFile.Exists(lInner) then
+      begin
+        if SameText(TPath.GetExtension(lInner), '.bat') or SameText(TPath.GetExtension(lInner), '.cmd') then
+        begin
+          lFSrc := TFileStream.Create(lInner, fmOpenRead or fmShareDenyWrite);
+          try
+            lReadCount := lFSrc.Read(lFirst3, 3);
+            if (lReadCount = 3) and (lFirst3[0] = $EF) and (lFirst3[1] = $BB) and (lFirst3[2] = $BF) then
+            begin
+              CreateGUID(lGuid);
+              lTempScript := TPath.Combine(TPath.GetTempPath,
+                GUIDToString(lGuid).Replace('{','').Replace('}','') + TPath.GetExtension(lInner));
+              lFDst := TFileStream.Create(lTempScript, fmCreate);
+              try
+                SetLength(lBuf, 64 * 1024);
+                while True do
+                begin
+                  N := lFSrc.Read(lBuf[0], Length(lBuf));
+                  if N <= 0 then Break;
+                  lFDst.Write(lBuf[0], N);
+                end;
+              finally
+                lFDst.Free;
+              end;
+              lPayload := '"' + lTempScript + '"';
+              lNeedDeleteTemp := True;
+            end;
+          finally
+            lFSrc.Free;
+          end;
+        end;
+      end;
+    end;
+
+    // Build the final command line for cmd.exe
+    if (lPayload <> '') and (lPayload[1] = '"') and (lPayload[Length(lPayload)] = '"') then
+      lCmdLine := '/S /C ' + lPayload
+    else
+      lCmdLine := '/S /C "' + lPayload + '"';
+    AddTrace('exec: ' + lCmdLine);
+    UniqueString(lCmdLine); // ensure mutable buffer for CreateProcess
+    if not CreateProcess(PChar(lComSpec), PChar(lCmdLine), nil, nil, True,
+      CREATE_NO_WINDOW, nil, nil, lStartInfo, lProcInfo) then
+    begin
+      aErrMsg := SysErrorMessage(GetLastError);
       Exit(False);
     end;
-    CloseHandle(WritePipe);
-    WritePipe := 0;
+    CloseHandle(lWritePipe);
+    lWritePipe := 0;
     try
       repeat
-        if not ReadFile(ReadPipe, Buffer, SizeOf(Buffer), BytesRead, nil) then
+        if not ReadFile(lReadPipe, lBuffer, SizeOf(lBuffer), lBytesRead, nil) then
           Break;
-        if BytesRead = 0 then
+        if lBytesRead = 0 then
           Break;
-        SetString(Chunk, PAnsiChar(@Buffer[0]), BytesRead);
-        Output := Output + string(Chunk);
+        SetString(lChunk, PAnsiChar(@lBuffer[0]), lBytesRead);
+        aOutput := aOutput + string(lChunk);
       until False;
-      WaitForSingleObject(ProcInfo.hProcess, INFINITE);
-      if not GetExitCodeProcess(ProcInfo.hProcess, ExitCode) then
-        ExitCode := 1;
-      if ExitCode <> 0 then
+      WaitForSingleObject(lProcInfo.hProcess, INFINITE);
+      if not GetExitCodeProcess(lProcInfo.hProcess, lExitCode) then
+        lExitCode := 1;
+      if lExitCode <> 0 then
       begin
-        ErrMsg := Format('Command exited with code %d', [ExitCode]);
+        aErrMsg := Format('Command exited with code %d', [lExitCode]);
         Result := False;
       end
       else
         Result := True;
     finally
-      CloseHandle(ProcInfo.hThread);
-      CloseHandle(ProcInfo.hProcess);
+      CloseHandle(lProcInfo.hThread);
+      CloseHandle(lProcInfo.hProcess);
+      if lNeedDeleteTemp and (lTempScript <> '') then
+      begin
+        try
+          TFile.Delete(lTempScript);
+        except
+          // ignore cleanup failures
+        end;
+      end;
     end;
   finally
-    if WritePipe <> 0 then
-      CloseHandle(WritePipe);
-    CloseHandle(ReadPipe);
+    if lWritePipe <> 0 then
+      CloseHandle(lWritePipe);
+    CloseHandle(lReadPipe);
   end;
 {$ELSE}
-  Pipe := popen(PAnsiChar(AnsiString(Cmd)), PAnsiChar(AnsiString('r')));
-  if Pipe = nil then
+  lAccum := '';
+  lPipe := popen(PAnsiChar(AnsiString(aCmd)), PAnsiChar(AnsiString('r')));
+  if lPipe = nil then
   begin
-    ErrMsg := 'Failed to execute command';
+    aErrMsg := 'Failed to execute command';
     Exit(False);
   end;
   try
     while True do
     begin
-      LinePtr := fgets(@Buffer[0], SizeOf(Buffer), Pipe);
-      if LinePtr = nil then
+      lLinePtr := fgets(@lBuffer[0], SizeOf(lBuffer), lPipe);
+      if lLinePtr = nil then
         Break;
-      Accum := Accum + AnsiString(LinePtr);
+      lAccum := lAccum + AnsiString(lLinePtr);
     end;
   finally
-    Status := pclose(Pipe);
+    lStatus := pclose(lPipe);
   end;
-  Output := string(Accum);
-  if Status <> 0 then
-  begin
-    ErrMsg := Format('Command exited with status %d', [Status]);
-    Result := False;
-  end
+  aOutput := string(lAccum);
+  // Interpret exit status: prefer sys/wait helpers when available; otherwise fall back to raw Status.
+  {$IF DECLARED(WIFEXITED)}
+  if WIFEXITED(lStatus) then
+    lExitCode := WEXITSTATUS(lStatus)
   else
-    Result := True;
+    lExitCode := 1;
+  Result := (lExitCode = 0);
+  if not Result then
+    aErrMsg := Format('Command exited with code %d', [lExitCode]);
+  {$ELSE}
+  Result := (lStatus = 0);
+  if not Result then
+    aErrMsg := Format('Command exited with code %d', [lStatus]);
+  {$IFEND}
 {$ENDIF}
-  Output := Output.Trim;
 end;
 
-procedure TDotEnv.CollectFile(const FilePath: string; RootIndex, FileOrder: Integer;
-  Entries: TList<TRawAssignment>);
+procedure TDotEnv.CollectFile(const aFilePath: string; aRootIndex, aFileOrder: Integer;
+  aEntries: TList<TRawAssignment>);
 var
-  Loaded: Boolean;
+  lLoaded: Boolean;
+  lPathToUse: string;
+  lDir: string;
+  lCandidate: string;
+  lItems: TArray<string>;
 begin
-  AddTrace('considered: ' + FilePath);
-  if TFile.Exists(FilePath) then
+  AddTrace('considered: ' + aFilePath);
+  lPathToUse := aFilePath;
+
+  // POSIX: allow case-insensitive match for ".env.secret"
+  if not TFile.Exists(lPathToUse) and SameText(TPath.GetFileName(lPathToUse), '.env.secret') then
   begin
-    Loaded := ParseFile(FilePath, RootIndex, FileOrder, Entries);
-    if Loaded then
-      AddTrace('loaded: ' + FilePath)
+    lDir := TPath.GetDirectoryName(lPathToUse);
+    try
+      lItems := TDirectory.GetFiles(lDir);
+      for lCandidate in lItems do
+        if SameText(TPath.GetFileName(lCandidate), '.env.secret') then
+        begin
+          lPathToUse := lCandidate;
+          Break;
+        end;
+    except
+      // ignore directory listing failures; fall back to original path
+    end;
+  end;
+
+  if TFile.Exists(lPathToUse) then
+  begin
+    lLoaded := ParseFile(lPathToUse, aRootIndex, aFileOrder, aEntries);
+    if lLoaded then
+      AddTrace('loaded: ' + lPathToUse)
     else
-      AddTrace('ignored: ' + FilePath);
+      AddTrace('ignored: ' + lPathToUse);
   end
   else
-    AddTrace('missing: ' + FilePath);
+    AddTrace('missing: ' + lPathToUse);
 end;
 
-function TDotEnv.ParseFile(const FilePath: string; RootIndex, FileOrder: Integer;
-  Entries: TList<TRawAssignment>): Boolean;
+function TDotEnv.ParseFile(const aFilePath: string; aRootIndex, aFileOrder: Integer;
+  aEntries: TList<TRawAssignment>): Boolean;
 var
-  Content: string;
-  Size: Int64;
-  NormalPath: string;
+  lContent: string;
+  lSize: Int64;
+  lNormalPath: string;
+  lFS: TFileStream;
 begin
   Result := False;
-  NormalPath := TPath.GetFullPath(FilePath);
-  if NormalPath = '' then
+  lNormalPath := TPath.GetFullPath(aFilePath);
+  if lNormalPath = '' then
     Exit;
-  if IsPathOnStack(NormalPath) then
+  if IsPathOnStack(lNormalPath) then
   begin
-    AddError(NormalPath, 0, 0, TDotEnvErrorKind.DekCycle,
-      Format('Include cycle detected involving %s', [NormalPath]), True);
+    AddError(lNormalPath, 0, 0, TDotEnvErrorKind.DekCycle,
+      Format('Include cycle detected involving %s', [lNormalPath]), True);
     Exit;
   end;
-  if not CheckSecretPermissions(NormalPath) then
+  if not CheckSecretPermissions(lNormalPath) then
     Exit;
-  FIncludeStack.Push(NormalPath);
+  FIncludeStack.Push(lNormalPath);
   try
     try
-      if not TFile.Exists(NormalPath) then
+      if not TFile.Exists(lNormalPath) then
         Exit;
-      Size := TFile.GetSize(NormalPath);
-      if Size > MAX_DOTENV_FILE_SIZE then
+      lFS := TFileStream.Create(lNormalPath, fmOpenRead or fmShareDenyWrite);
+      try
+        lSize := lFS.Size;
+      finally
+        lFS.Free;
+      end;
+      if lSize > FMaxFileSize then
       begin
-        AddError(NormalPath, 0, 0, TDotEnvErrorKind.DekSecurity,
-          Format('File %s exceeds maximum size', [NormalPath]), True);
+        AddError(lNormalPath, 0, 0, TDotEnvErrorKind.DekSecurity,
+          Format('File %s exceeds maximum size', [lNormalPath]), True);
         Exit;
       end;
-      Content := TFile.ReadAllText(NormalPath, TEncoding.UTF8);
+      lContent := TFile.ReadAllText(lNormalPath, TEncoding.UTF8);
     except
       on E: Exception do
       begin
-        AddError(NormalPath, 0, 0, TDotEnvErrorKind.DekIO, E.Message, True);
+        AddError(lNormalPath, 0, 0, TDotEnvErrorKind.DekIO, E.Message, True);
         Exit;
       end;
     end;
-    Content := StringReplace(Content, #13#10, #10, [rfReplaceAll]);
-    Content := StringReplace(Content, #13, #10, [rfReplaceAll]);
-    ParseContent(NormalPath, RootIndex, FileOrder, Content, Entries);
+    lContent := StringReplace(lContent, #13#10, #10, [rfReplaceAll]);
+    lContent := StringReplace(lContent, #13, #10, [rfReplaceAll]);
+    ParseContent(lNormalPath, aRootIndex, aFileOrder, lContent, aEntries);
     Result := True;
   finally
     FIncludeStack.Pop;
   end;
 end;
 
-function TDotEnv.ParseDoubleQuoted(const FilePath: string; const Fragment: string;
-  LineNumber: Integer): string;
+function TDotEnv.ParseDoubleQuoted(const aFilePath: string; const aFragment: string;
+  aLineNumber: Integer): string;
 var
-  Buffer: TStringBuilder;
-  I, Len: Integer;
+  lBuffer: TStringBuilder;
+  I, lLen: Integer;
   Ch: Char;
 begin
-  Buffer := TStringBuilder.Create;
+  lBuffer := TStringBuilder.Create;
   try
-    Len := Length(Fragment);
+    lLen := Length(aFragment);
     I := 2;
-    while I <= Len do
+    while I <= lLen do
     begin
-      Ch := Fragment[I];
+      Ch := aFragment[I];
       if Ch = '"' then
         Break;
-      if (Ch = '\') and (I < Len) then
+      if (Ch = '\') and (I < lLen) then
       begin
         Inc(I);
-        case Fragment[I] of
-          'n': Buffer.Append(#10);
-          'r': Buffer.Append(#13);
-          't': Buffer.Append(#9);
-          '"': Buffer.Append('"');
-          '\': Buffer.Append('\');
-          '$': Buffer.Append('$');
+        case aFragment[I] of
+          'n': lBuffer.Append(#10);
+          'r': lBuffer.Append(#13);
+          't': lBuffer.Append(#9);
+          '"': lBuffer.Append('"');
+          '\': lBuffer.Append('\');
+          '$': lBuffer.Append('$$'); // ensure literal $ survives expansion
         else
-          Buffer.Append(Fragment[I]);
+          lBuffer.Append(aFragment[I]);
         end;
       end
       else
-        Buffer.Append(Ch);
+        lBuffer.Append(Ch);
       Inc(I);
     end;
-    if (I > Len) or (Fragment[I] <> '"') then
-      AddError(FilePath, LineNumber, 1, TDotEnvErrorKind.DekParse, 'Unterminated double quote', True);
-    Result := Buffer.ToString;
+    if (I > lLen) or (aFragment[I] <> '"') then
+      AddError(aFilePath, aLineNumber, 1, TDotEnvErrorKind.DekParse, 'Unterminated double quote', True);
+    Result := lBuffer.ToString;
   finally
-    Buffer.Free;
+    lBuffer.Free;
   end;
 end;
 
-function TDotEnv.ParseSingleQuoted(const FilePath: string; const Fragment: string;
-  LineNumber: Integer): string;
+function TDotEnv.ParseSingleQuoted(const aFilePath: string; const aFragment: string;
+  aLineNumber: Integer): string;
 var
-  Buffer: TStringBuilder;
-  I, Len: Integer;
+  lBuffer: TStringBuilder;
+  I, lLen: Integer;
   Ch: Char;
 begin
-  Buffer := TStringBuilder.Create;
+  lBuffer := TStringBuilder.Create;
   try
-    Len := Length(Fragment);
+    lLen := Length(aFragment);
     I := 2;
-    while I <= Len do
+    while I <= lLen do
     begin
-      Ch := Fragment[I];
+      Ch := aFragment[I];
       if Ch = '''' then
       begin
-        if (I < Len) and (Fragment[I + 1] = '''') then
+        if (I < lLen) and (aFragment[I + 1] = '''') then
         begin
-          Buffer.Append('''');
+          lBuffer.Append('''');
           Inc(I);
         end
         else
           Break;
       end
       else
-        Buffer.Append(Ch);
+        lBuffer.Append(Ch);
       Inc(I);
     end;
-    if (I > Len) or (Fragment[I] <> '''') then
-      AddError(FilePath, LineNumber, 1, TDotEnvErrorKind.DekParse, 'Unterminated single quote', True);
-    Result := Buffer.ToString;
+    if (I > lLen) or (aFragment[I] <> '''') then
+      AddError(aFilePath, aLineNumber, 1, TDotEnvErrorKind.DekParse, 'Unterminated single quote', True);
+    Result := lBuffer.ToString;
   finally
-    Buffer.Free;
+    lBuffer.Free;
   end;
 end;
 
-function TDotEnv.ParseTripleQuoted(const FilePath: string; var LineIndex: Integer;
-  const Lines: TArray<string>; const Fragment: string; const QuoteToken: string;
-  LineNumber: Integer): string;
+function TDotEnv.ParseTripleQuoted(const aFilePath: string; var aLineIndex: Integer;
+  const aLines: TArray<string>; const aFragment: string; const aQuoteToken: string;
+  aLineNumber: Integer): string;
 var
-  Buffer: TStringBuilder;
-  Current: string;
-  Delim: string;
-  PosClose: Integer;
-  Found: Boolean;
+  lBuffer: TStringBuilder;
+  lCurrent: string;
+  lDelim: string;
+  lPosClose: Integer;
+  lFound: Boolean;
 begin
-  Buffer := TStringBuilder.Create;
+  lBuffer := TStringBuilder.Create;
   try
-    Delim := QuoteToken;
-    Current := Copy(Fragment, Length(Delim) + 1, MaxInt);
-    if (Current <> '') and (Current[1] = #10) then
-      Delete(Current, 1, 1);
-    Found := False;
+    lDelim := aQuoteToken;
+    lCurrent := Copy(aFragment, Length(lDelim) + 1, MaxInt);
+    if (lCurrent <> '') and (lCurrent[1] = #10) then
+      Delete(lCurrent, 1, 1);
+    lFound := False;
     while True do
     begin
-      PosClose := Pos(Delim, Current);
-      if PosClose > 0 then
+      lPosClose := Pos(lDelim, lCurrent);
+      if lPosClose > 0 then
       begin
-        if PosClose > 1 then
+        if lPosClose > 1 then
         begin
-          if Buffer.Length > 0 then
-            Buffer.Append(#10);
-          Buffer.Append(Copy(Current, 1, PosClose - 1));
+          if lBuffer.Length > 0 then
+            lBuffer.Append(#10);
+          lBuffer.Append(Copy(lCurrent, 1, lPosClose - 1));
         end;
-        Found := True;
+        lFound := True;
         Break;
       end;
-      if Buffer.Length > 0 then
-        Buffer.Append(#10);
-      Buffer.Append(Current);
-      if LineIndex >= High(Lines) then
+      if lBuffer.Length > 0 then
+        lBuffer.Append(#10);
+      lBuffer.Append(lCurrent);
+      if aLineIndex >= High(aLines) then
         Break;
-      Inc(LineIndex);
-      Current := Lines[LineIndex];
+      Inc(aLineIndex);
+      lCurrent := aLines[aLineIndex];
     end;
-    if not Found then
-      AddError(FilePath, LineNumber, 1, TDotEnvErrorKind.DekParse, 'Unterminated triple quote', True);
-    Result := Buffer.ToString;
+    if not lFound then
+      AddError(aFilePath, aLineNumber, 1, TDotEnvErrorKind.DekParse, 'Unterminated triple quote', True);
+    Result := lBuffer.ToString;
   finally
-    Buffer.Free;
+    lBuffer.Free;
   end;
 end;
 
-function TDotEnv.ParseHeredoc(const FilePath: string; var LineIndex: Integer;
-  const Lines: TArray<string>; const Marker: string; LineNumber: Integer): string;
+function TDotEnv.ParseHeredoc(const aFilePath: string; var aLineIndex: Integer;
+  const aLines: TArray<string>; const aMarker: string; aLineNumber: Integer): string;
 var
-  Buffer: TStringBuilder;
-  Current: string;
-  Found: Boolean;
+  lBuffer: TStringBuilder;
+  lCurrent: string;
+  lFound: Boolean;
 begin
-  Buffer := TStringBuilder.Create;
+  lBuffer := TStringBuilder.Create;
   try
-    Found := False;
-    while LineIndex < High(Lines) do
+    lFound := False;
+    while aLineIndex < High(aLines) do
     begin
-      Inc(LineIndex);
-      Current := Lines[LineIndex];
-      if Current = Marker then
+      Inc(aLineIndex);
+      lCurrent := aLines[aLineIndex];
+      if lCurrent = aMarker then
       begin
-        Found := True;
+        lFound := True;
         Break;
       end;
-      if Buffer.Length > 0 then
-        Buffer.Append(#10);
-      Buffer.Append(Current);
+      if lBuffer.Length > 0 then
+        lBuffer.Append(#10);
+      lBuffer.Append(lCurrent);
     end;
-    if not Found then
-      AddError(FilePath, LineNumber, 1, TDotEnvErrorKind.DekParse, 'Unterminated heredoc', True);
-    Result := Buffer.ToString;
+    if not lFound then
+      AddError(aFilePath, aLineNumber, 1, TDotEnvErrorKind.DekParse, 'Unterminated heredoc', True);
+    Result := lBuffer.ToString;
   finally
-    Buffer.Free;
+    lBuffer.Free;
   end;
 end;
 
-function TDotEnv.ParseUnquoted(const FilePath: string; var LineIndex: Integer;
-  const Lines: TArray<string>; const Fragment: string; LineNumber: Integer): string;
+function TDotEnv.ParseUnquoted(const aFilePath: string; var aLineIndex: Integer;
+  const aLines: TArray<string>; const aFragment: string; aLineNumber: Integer): string;
 var
-  Buffer: TStringBuilder;
-  Current: string;
-  Segment: string;
-  ContinueLine: Boolean;
+  lBuffer: TStringBuilder;
+  lCurrent: string;
+  lSegment: string;
+  lContinueLine: Boolean;
 begin
-  Buffer := TStringBuilder.Create;
+  lBuffer := TStringBuilder.Create;
   try
-    Current := Fragment;
+    lCurrent := aFragment;
     repeat
-      Segment := StripCommentPreservingEscape(Current);
-      StripTrailingWhitespaceWithEscape(Segment);
-      ContinueLine := False;
-      if (Length(Segment) > 0) and (Segment[Length(Segment)] = '\') then
+      lSegment := StripCommentPreservingEscape(lCurrent);
+      StripTrailingWhitespaceWithEscape(lSegment);
+      lContinueLine := False;
+      if (Length(lSegment) > 0) and (lSegment[Length(lSegment)] = '\') then
       begin
-        Delete(Segment, Length(Segment), 1);
-        ContinueLine := True;
+        Delete(lSegment, Length(lSegment), 1);
+        lContinueLine := True;
       end;
-      Segment := DecodeEscapes(Segment);
-      Buffer.Append(Segment);
-      if ContinueLine then
+      lSegment := DecodeEscapes(lSegment);
+      lBuffer.Append(lSegment);
+      if lContinueLine then
       begin
-        Buffer.Append(#10);
-        if LineIndex >= High(Lines) then
+        lBuffer.Append(#10);
+        if aLineIndex >= High(aLines) then
         begin
-          AddError(FilePath, LineNumber, 1, TDotEnvErrorKind.DekParse,
+          AddError(aFilePath, aLineNumber, 1, TDotEnvErrorKind.DekParse,
             'Line continuation reached end of file', True);
           Break;
         end;
-        Inc(LineIndex);
-        Current := Lines[LineIndex];
+        Inc(aLineIndex);
+        lCurrent := aLines[aLineIndex];
       end;
-    until not ContinueLine;
-    Result := Buffer.ToString;
+    until not lContinueLine;
+    Result := lBuffer.ToString;
   finally
-    Buffer.Free;
+    lBuffer.Free;
   end;
 end;
 
-function TDotEnv.ParseValue(const FilePath: string; var LineIndex: Integer;
-  const Lines: TArray<string>; const InitialRemainder: string; LineNumber: Integer): string;
+function TDotEnv.ParseValue(const aFilePath: string; var aLineIndex: Integer;
+  const aLines: TArray<string>; const aInitialRemainder: string; aLineNumber: Integer): string;
 var
-  Fragment: string;
-  Marker: string;
-  TripleDouble: string;
-  TripleSingle: string;
+  lFragment: string;
+  lMarker: string;
+  lTripleDouble: string;
+  lTripleSingle: string;
 begin
-  Fragment := InitialRemainder;
-  if Fragment = '' then
+  lFragment := aInitialRemainder;
+  if lFragment = '' then
     Exit('');
-  TripleDouble := StringOfChar('"', 3);
-  TripleSingle := StringOfChar(#39, 3);
-  if Length(Fragment) >= 3 then
+  lTripleDouble := StringOfChar('"', 3);
+  lTripleSingle := StringOfChar(#39, 3);
+  if Length(lFragment) >= 3 then
   begin
-    if Copy(Fragment, 1, 3) = TripleDouble then
-      Exit(ParseTripleQuoted(FilePath, LineIndex, Lines, Fragment, TripleDouble, LineNumber));
-    if Copy(Fragment, 1, 3) = TripleSingle then
-      Exit(ParseTripleQuoted(FilePath, LineIndex, Lines, Fragment, TripleSingle, LineNumber));
+    if Copy(lFragment, 1, 3) = lTripleDouble then
+      Exit(ParseTripleQuoted(aFilePath, aLineIndex, aLines, lFragment, lTripleDouble, aLineNumber));
+    if Copy(lFragment, 1, 3) = lTripleSingle then
+      Exit(ParseTripleQuoted(aFilePath, aLineIndex, aLines, lFragment, lTripleSingle, aLineNumber));
   end;
-  if (Length(Fragment) >= 2) and (Copy(Fragment, 1, 2) = '<<') then
+  if (Length(lFragment) >= 2) and (Copy(lFragment, 1, 2) = '<<') then
   begin
-    Marker := Trim(Copy(Fragment, 3, MaxInt));
-    if Marker = '' then
+    lMarker := Trim(Copy(lFragment, 3, MaxInt));
+    if lMarker = '' then
     begin
-      AddError(FilePath, LineNumber, 1, TDotEnvErrorKind.DekParse, 'Heredoc marker expected', True);
+      AddError(aFilePath, aLineNumber, 1, TDotEnvErrorKind.DekParse, 'Heredoc marker expected', True);
       Exit('');
     end;
-    Exit(ParseHeredoc(FilePath, LineIndex, Lines, Marker, LineNumber));
+    Exit(ParseHeredoc(aFilePath, aLineIndex, aLines, lMarker, aLineNumber));
   end;
-  if Fragment[1] = '"' then
-    Exit(ParseDoubleQuoted(FilePath, Fragment, LineNumber));
-  if Fragment[1] = '''' then
-    Exit(ParseSingleQuoted(FilePath, Fragment, LineNumber));
-  Result := ParseUnquoted(FilePath, LineIndex, Lines, Fragment, LineNumber);
+  if lFragment[1] = '"' then
+    Exit(ParseDoubleQuoted(aFilePath, lFragment, aLineNumber));
+  if lFragment[1] = '''' then
+    Exit(ParseSingleQuoted(aFilePath, lFragment, aLineNumber));
+  Result := ParseUnquoted(aFilePath, aLineIndex, aLines, lFragment, aLineNumber);
 end;
 
-function TDotEnv.ParseKeyValue(const FilePath: string; const Line: string; LineNumber: Integer;
-  RootIndex, FileOrder: Integer; out Assignment: TRawAssignment): Boolean;
+function TDotEnv.ParseKeyValue(const aFilePath: string; const aLine: string; aLineNumber: Integer;
+  aRootIndex, aFileOrder: Integer; out aAssignment: TRawAssignment): Boolean;
 var
-  Len: Integer;
+  lLen: Integer;
   I: Integer;
-  KeyStart, KeyEnd: Integer;
-  Delim: Char;
-  Remainder: string;
-  Trimmed: string;
+  lKeyStart, lKeyEnd: Integer;
+  lDelim: Char;
+  lRemainder: string;
+  lTrimmed: string;
 begin
   Result := False;
-  Trimmed := Trim(Line);
-  if Trimmed = '' then
+  lTrimmed := Trim(aLine);
+  if lTrimmed = '' then
     Exit(False);
-  if Trimmed[1] in ['#', ';'] then
+  if lTrimmed[1] in ['#', ';'] then
     Exit(False);
 
-  Len := Length(Line);
+  lLen := Length(aLine);
   I := 1;
-  while (I <= Len) and (Line[I] in [' ', #9]) do
+  while (I <= lLen) and (aLine[I] in [' ', #9]) do
     Inc(I);
-  if (I > Len) or not IsNameStartChar(Line[I]) then
+  if (I > lLen) or not IsNameStartChar(aLine[I]) then
   begin
-    AddError(FilePath, LineNumber, 1, TDotEnvErrorKind.DekParse, 'Invalid key', True);
+    AddError(aFilePath, aLineNumber, 1, TDotEnvErrorKind.DekParse, 'Invalid key', True);
     Exit(False);
   end;
-  KeyStart := I;
+  lKeyStart := I;
   Inc(I);
-  while (I <= Len) and IsNameChar(Line[I]) do
+  while (I <= lLen) and IsNameChar(aLine[I]) do
     Inc(I);
-  KeyEnd := I - 1;
-  while (I <= Len) and (Line[I] in [' ', #9]) do
+  lKeyEnd := I - 1;
+  while (I <= lLen) and (aLine[I] in [' ', #9]) do
     Inc(I);
-  if I > Len then
+  if I > lLen then
   begin
-    AddError(FilePath, LineNumber, 1, TDotEnvErrorKind.DekParse, 'Expected delimiter', True);
+    AddError(aFilePath, aLineNumber, 1, TDotEnvErrorKind.DekParse, 'Expected delimiter', True);
     Exit(False);
   end;
-  Delim := Line[I];
-  if (Delim = '<') and (I < Len) and (Line[I + 1] = '<') then
+  lDelim := aLine[I];
+  if (lDelim = '<') and (I < lLen) and (aLine[I + 1] = '<') then
   begin
-    Remainder := Copy(Line, I, MaxInt);
+    lRemainder := Copy(aLine, I, MaxInt);
   end
   else
   begin
-    if not (Delim in ['=', ':']) then
+    if not (lDelim in ['=', ':']) then
     begin
-      AddError(FilePath, LineNumber, 1, TDotEnvErrorKind.DekParse, 'Expected = or :', True);
+      AddError(aFilePath, aLineNumber, 1, TDotEnvErrorKind.DekParse, 'Expected = or :', True);
       Exit(False);
     end;
     Inc(I);
-    while (I <= Len) and (Line[I] in [' ', #9]) do
+    while (I <= lLen) and (aLine[I] in [' ', #9]) do
       Inc(I);
-    Remainder := Copy(Line, I, MaxInt);
+    lRemainder := Copy(aLine, I, MaxInt);
   end;
 
-  Assignment.Key := Copy(Line, KeyStart, KeyEnd - KeyStart + 1);
-  Assignment.RawValue := Remainder;
-  Assignment.FilePath := FilePath;
-  Assignment.Line := LineNumber;
-  Assignment.RootIndex := RootIndex;
-  Assignment.FileOrder := FileOrder;
+  aAssignment.Key := Copy(aLine, lKeyStart, lKeyEnd - lKeyStart + 1);
+  aAssignment.RawValue := lRemainder;
+  aAssignment.FilePath := aFilePath;
+  aAssignment.Line := aLineNumber;
+  aAssignment.RootIndex := aRootIndex;
+  aAssignment.FileOrder := aFileOrder;
   Result := True;
 end;
 
-procedure TDotEnv.ParseContent(const FilePath: string; RootIndex, FileOrder: Integer;
-  const Content: string; Entries: TList<TRawAssignment>);
+procedure TDotEnv.ParseContent(const aFilePath: string; aRootIndex, aFileOrder: Integer;
+  const aContent: string; aEntries: TList<TRawAssignment>);
 var
-  Lines: TArray<string>;
-  LineIndex: Integer;
-  Line: string;
-  Assignment: TRawAssignment;
-  Value: string;
+  lLines: TArray<string>;
+  lLineIndex: Integer;
+  lLine: string;
+  lAssignment: TRawAssignment;
+  lValue: string;
 begin
-  Lines := Content.Split([#10]);
-  LineIndex := 0;
-  while LineIndex <= High(Lines) do
+  lLines := aContent.Split([#10]);
+  lLineIndex := 0;
+  while lLineIndex <= High(lLines) do
   begin
-    Line := Lines[LineIndex];
-    if HandleIncludeLine(Line, FilePath, LineIndex + 1, RootIndex, FileOrder, Entries) then
+    lLine := lLines[lLineIndex];
+    if HandleIncludeLine(lLine, aFilePath, lLineIndex + 1, aRootIndex, aFileOrder, aEntries) then
     begin
-      Inc(LineIndex);
+      Inc(lLineIndex);
       Continue;
     end;
-    if ParseKeyValue(FilePath, Line, LineIndex + 1, RootIndex, FileOrder, Assignment) then
+    if ParseKeyValue(aFilePath, lLine, lLineIndex + 1, aRootIndex, aFileOrder, lAssignment) then
     begin
-      Value := ParseValue(FilePath, LineIndex, Lines, Assignment.RawValue, Assignment.Line);
-      Assignment.RawValue := Value;
-      Entries.Add(Assignment);
+      lValue := ParseValue(aFilePath, lLineIndex, lLines, lAssignment.RawValue, lAssignment.Line);
+      lAssignment.RawValue := lValue;
+      aEntries.Add(lAssignment);
     end;
-    Inc(LineIndex);
+    Inc(lLineIndex);
   end;
 end;
 
-procedure TDotEnv.LoadFiles(const AFiles: array of string; const AOptions: TDotEnvOptions);
+procedure TDotEnv.LoadFiles(const aFiles: array of string; const aOptions: TDotEnvOptions);
 var
-  Entries: TList<TRawAssignment>;
+  lEntries: TList<TRawAssignment>;
   I: Integer;
-  FilePath: string;
-  Entry: TRawAssignment;
-  Value: string;
-  FileOrder: Integer;
+  lFilePath: string;
+  lEntry: TRawAssignment;
+  lValue: string;
+  lFileOrder: Integer;
+  j: Integer;
+  lErrStart: Integer;
+  lHasFatal: Boolean;
 begin
-  FCurrentOptions := AOptions;
+  FCurrentOptions := aOptions;
   ResetState;
   EnsureValuesDictionary;
-  Entries := TList<TRawAssignment>.Create;
+  lEntries := TList<TRawAssignment>.Create;
   try
-    FileOrder := 0;
-    for I := Low(AFiles) to High(AFiles) do
+    lFileOrder := 0;
+    for I := Low(aFiles) to High(aFiles) do
     begin
-      FilePath := TPath.GetFullPath(AFiles[I]);
-      CollectFile(FilePath, 0, FileOrder, Entries);
-      Inc(FileOrder);
+      lFilePath := TPath.GetFullPath(aFiles[I]);
+      CollectFile(lFilePath, 0, lFileOrder, lEntries);
+      Inc(lFileOrder);
     end;
-    for Entry in Entries do
+    if TDotEnvOption.StreamingEvaluation in FCurrentOptions then
     begin
-      Value := ExpandValue(Entry.RawValue, Entry.FilePath, Entry.Line);
-      StoreValue(Entry, Value);
-    end;
+      for I := 0 to lEntries.Count - 1 do
+      begin
+        lEntry := lEntries[I];
+        lErrStart := FErrors.Count;
+        lValue := ExpandValue(lEntry.RawValue, lEntry.FilePath, lEntry.Line);
+        lHasFatal := False;
+        for j := lErrStart to FErrors.Count - 1 do
+          if FErrors[j].Fatal then
+          begin
+            lHasFatal := True;
+            Break;
+          end;
+        if not lHasFatal then
+          StoreValue(lEntry, lValue)
+        else
+          AddTrace(Format('skip store due to fatal errors: %s (%s:%d)',
+            [lEntry.Key, lEntry.FilePath, lEntry.Line]));
+      end;
+    end
+    else
+      EvaluateAfterMergeEntries(lEntries);
   finally
-    Entries.Free;
+    lEntries.Free;
   end;
 end;
 
-procedure TDotEnv.SetSearchRoots(const ARoots: TArray<TSearchRoot>);
+procedure TDotEnv.SetSearchRoots(const aRoots: TArray<TSearchRoot>);
 begin
-  FCustomRoots := Copy(ARoots);
+  FCustomRoots := Copy(aRoots, 0, Length(aRoots));
   FHasCustomRoots := Length(FCustomRoots) > 0;
 end;
 
-function TDotEnv.ExpandRoots(const BaseDir: string; const AOptions: TDotEnvOptions): TArray<TSearchRoot>;
+function TDotEnv.ExpandRoots(const aBaseDir: string; const aOptions: TDotEnvOptions): TArray<TSearchRoot>;
 var
-  Roots: TList<TSearchRoot>;
-  Seen: TDictionary<string, Byte>;
-  BasePath: string;
-  Current: string;
-  ParentPath: string;
-  Depth: Integer;
-  HomeDir: string;
+  lRoots: TList<TSearchRoot>;
+  lSeen: TDictionary<string, Byte>;
+  lBasePath: string;
+  lCurrent: string;
+  lParentPath: string;
+  lDepth: Integer;
+  lHomeDir: string;
 {$IFNDEF MSWINDOWS}
-  XdgHome: string;
-  XdgDirs: string;
-  Parts: TArray<string>;
-  DirItem: string;
+  lXdgHome: string;
+  lXdgDirs: string;
+  lParts: TArray<string>;
+  lDirItem: string;
 {$ENDIF}
 
-  function NormalizeKey(const Path: string): string;
-  var
-    FullPath: string;
+  function NormalizePathKey(const aPath: string): string;
   begin
-    FullPath := TPath.GetFullPath(Path);
-    if IsWindowsPlatform then
-      Result := AnsiUpperCase(FullPath)
-    else
-      Result := FullPath;
+    Result := TPath.GetFullPath(aPath);
   end;
 
-  procedure AddRoot(const Kind: TSearchRootKind; const Path: string; DepthValue: Integer = 0);
+  procedure AddRoot(const aKind: TSearchRootKind; const aPath: string);
   var
-    RootItem: TSearchRoot;
-    KeyPath: string;
+    lRootItem: TSearchRoot;
+    lKeyPath: string;
   begin
-    if Path = '' then
+    if aPath = '' then
       Exit;
-    KeyPath := NormalizeKey(Path);
-    if KeyPath = '' then
+    lKeyPath := NormalizePathKey(aPath);
+    if lKeyPath = '' then
       Exit;
-    if not Seen.ContainsKey(KeyPath) then
+    if not lSeen.ContainsKey(lKeyPath) then
     begin
-      RootItem.Kind := Kind;
-      RootItem.Path := TPath.GetFullPath(Path);
-      RootItem.MaxDepth := DepthValue;
-      Roots.Add(RootItem);
-      Seen.AddOrSetValue(KeyPath, 1);
+      lRootItem.Kind := aKind;
+      lRootItem.Path := TPath.GetFullPath(aPath);
+      lRoots.Add(lRootItem);
+      lSeen.AddOrSetValue(lKeyPath, 1);
     end;
   end;
 
 begin
   if FHasCustomRoots then
-    Exit(Copy(FCustomRoots));
+  begin
+    Result := Copy(FCustomRoots, 0, Length(FCustomRoots));
+    Exit;
+  end;
 
-  Roots := TList<TSearchRoot>.Create;
-  Seen := TDictionary<string, Byte>.Create(TKeyComparer.Create(True));
+  lRoots := TList<TSearchRoot>.Create;
+  lSeen := TDictionary<string, Byte>.Create(TKeyComparer.Create(not IsWindowsPlatform));
   try
-    BasePath := BaseDir;
-    if BasePath = '' then
-      BasePath := TDirectory.GetCurrentDirectory;
-    BasePath := TPath.GetFullPath(BasePath);
-    AddRoot(TSearchRootKind.srCWD, BasePath, 0);
+    lBasePath := aBaseDir;
+    if lBasePath = '' then
+      lBasePath := TDirectory.GetCurrentDirectory;
+    lBasePath := TPath.GetFullPath(lBasePath);
+    AddRoot(TSearchRootKind.srCWD, lBasePath);
 
-    if TDotEnvOption.SearchParents in AOptions then
+    if FParentDepth > 0 then
     begin
-      Current := BasePath;
-      for Depth := 1 to DEFAULT_PARENT_DEPTH do
+      lCurrent := lBasePath;
+      for lDepth := 1 to FParentDepth do
       begin
-        ParentPath := TPath.GetDirectoryName(Current);
-        if (ParentPath = '') or SameFileName(ParentPath, Current) then
+        lParentPath := TPath.GetDirectoryName(lCurrent);
+        if (lParentPath = '') or SameFileName(lParentPath, lCurrent) then
           Break;
-        AddRoot(TSearchRootKind.srParents, ParentPath, Depth);
-        Current := ParentPath;
+        AddRoot(TSearchRootKind.srParents, lParentPath);
+        lCurrent := lParentPath;
       end;
     end;
 
 {$IFNDEF MSWINDOWS}
-    if TDotEnvOption.SearchXDG in AOptions then
+    if TDotEnvOption.SearchXDG in aOptions then
     begin
-      HomeDir := TPath.GetHomePath;
-      XdgHome := GetEnvironmentVariable('XDG_CONFIG_HOME');
-      if (XdgHome = '') and (HomeDir <> '') then
-        XdgHome := TPath.Combine(HomeDir, '.config');
-      if XdgHome <> '' then
-        AddRoot(TSearchRootKind.srXDG, TPath.Combine(XdgHome, 'maxlogic'));
-      XdgDirs := GetEnvironmentVariable('XDG_CONFIG_DIRS');
-      if XdgDirs = '' then
-        XdgDirs := '/etc/xdg';
-      Parts := XdgDirs.Split([':']);
-      for DirItem in Parts do
-        if DirItem.Trim <> '' then
-          AddRoot(TSearchRootKind.srXDG, TPath.Combine(DirItem.Trim, 'maxlogic'));
+      lHomeDir := TPath.GetHomePath;
+      lXdgHome := GetEnvironmentVariable('XDG_CONFIG_HOME');
+      if (lXdgHome = '') and (lHomeDir <> '') then
+        lXdgHome := TPath.Combine(lHomeDir, '.config');
+      if lXdgHome <> '' then
+        AddRoot(TSearchRootKind.srXDG, TPath.Combine(lXdgHome, 'maxlogic'));
+      lXdgDirs := GetEnvironmentVariable('XDG_CONFIG_DIRS');
+      if lXdgDirs = '' then
+        lXdgDirs := '/etc/xdg';
+      lParts := lXdgDirs.Split([':']);
+      for lDirItem in lParts do
+        if lDirItem.Trim <> '' then
+          AddRoot(TSearchRootKind.srXDG, TPath.Combine(lDirItem.Trim, 'maxlogic'));
     end;
 {$ENDIF}
 
-    if TDotEnvOption.SearchUserHome in AOptions then
+    if TDotEnvOption.SearchUserHome in aOptions then
     begin
-      HomeDir := TPath.GetHomePath;
-      if HomeDir <> '' then
+      lHomeDir := TPath.GetHomePath;
+      if lHomeDir <> '' then
       begin
-        AddRoot(TSearchRootKind.srHome, HomeDir, 0);
-        AddRoot(TSearchRootKind.srHome, TPath.Combine(TPath.Combine(HomeDir, '.config'), 'maxlogic'), 0);
+        AddRoot(TSearchRootKind.srHome, lHomeDir);
+        AddRoot(TSearchRootKind.srHome, TPath.Combine(TPath.Combine(lHomeDir, '.config'), 'maxlogic'));
       end;
     end;
 
 {$IFDEF MSWINDOWS}
-    if TDotEnvOption.SearchWindowsProfile in AOptions then
+    if TDotEnvOption.SearchWindowsProfile in aOptions then
     begin
-      ParentPath := GetEnvironmentVariable('APPDATA');
-      if ParentPath <> '' then
-        AddRoot(TSearchRootKind.srWinProfile, TPath.Combine(ParentPath, 'MaxLogic'), 0);
+      lParentPath := GetEnvironmentVariable('APPDATA');
+      if lParentPath <> '' then
+        AddRoot(TSearchRootKind.srWinProfile, TPath.Combine(lParentPath, 'MaxLogic'));
     end;
 {$ENDIF}
 
-    Result := Roots.ToArray;
+    Result := lRoots.ToArray;
   finally
-    Roots.Free;
-    Seen.Free;
+    lRoots.Free;
+    lSeen.Free;
   end;
 end;
 
-function TDotEnv.CollectLayeredFiles(const ABaseDir: string; const AOptions: TDotEnvOptions): TArray<TLayeredFile>;
+function TDotEnv.CollectLayeredFiles(const aBaseDir: string; const aOptions: TDotEnvOptions): TArray<TLayeredFile>;
 var
-  Roots: TArray<TSearchRoot>;
-  RootIdx: Integer;
-  LayerIdx: Integer;
-  Files: TList<TLayeredFile>;
-  Info: TLayeredFile;
+  lRoots: TArray<TSearchRoot>;
+  lRootIdx: Integer;
+  lLayerIdx: Integer;
+  lFiles: TList<TLayeredFile>;
+  lInfo: TLayeredFile;
 begin
-  Roots := ExpandRoots(ABaseDir, AOptions);
-  Files := TList<TLayeredFile>.Create;
+  lRoots := ExpandRoots(aBaseDir, aOptions);
+  lFiles := TList<TLayeredFile>.Create;
   try
-    for RootIdx := High(Roots) downto Low(Roots) do
+    for lRootIdx := High(lRoots) downto Low(lRoots) do
     begin
-      for LayerIdx := Low(LAYER_FILES) to High(LAYER_FILES) do
+      for lLayerIdx := Low(LAYER_FILES) to High(LAYER_FILES) do
       begin
-        Info.Path := TPath.Combine(Roots[RootIdx].Path, LAYER_FILES[LayerIdx]);
-        Info.RootIndex := RootIdx;
-        Files.Add(Info);
+        lInfo.Path := TPath.Combine(lRoots[lRootIdx].Path, LAYER_FILES[lLayerIdx]);
+        lInfo.RootIndex := lRootIdx;
+        lFiles.Add(lInfo);
       end;
     end;
-    Result := Files.ToArray;
+    Result := lFiles.ToArray;
   finally
-    Files.Free;
+    lFiles.Free;
   end;
 end;
 
-function TDotEnv.HandleIncludeLine(const CurrentLine, FilePath: string; LineNumber: Integer;
-  RootIndex, FileOrder: Integer; Entries: TList<TRawAssignment>): Boolean;
+function TDotEnv.HandleIncludeLine(const aCurrentLine, aFilePath: string; aLineNumber: Integer;
+  aRootIndex, aFileOrder: Integer; aEntries: TList<TRawAssignment>): Boolean;
 var
-  Trimmed: string;
-  Optional: Boolean;
-  QuoteStart, QuoteEnd: Integer;
-  IncludePath: string;
-  Resolved: string;
+  lTrimmed: string;
+  lOptional: Boolean;
+  lQuoteStart, lQuoteEnd: Integer;
+  lIncludePath: string;
+  lResolved: string;
 begin
-  Trimmed := TrimLeft(CurrentLine);
-  Optional := False;
-  if StartsText('#include_if_exists', Trimmed) then
-    Optional := True
-  else if not StartsText('#include', Trimmed) then
+  lTrimmed := TrimLeft(aCurrentLine);
+  lOptional := False;
+  if StartsText('#include_if_exists', lTrimmed) then
+    lOptional := True
+  else if not StartsText('#include', lTrimmed) then
     Exit(False);
 
-  QuoteStart := Pos('"', Trimmed);
-  QuoteEnd := LastDelimiter('"', Trimmed);
-  if (QuoteStart = 0) or (QuoteEnd <= QuoteStart) then
+  lQuoteStart := Pos('"', lTrimmed);
+  lQuoteEnd := LastDelimiter('"', lTrimmed);
+  if (lQuoteStart = 0) or (lQuoteEnd <= lQuoteStart) then
   begin
-    AddError(FilePath, LineNumber, 1, TDotEnvErrorKind.DekParse,
+    AddError(aFilePath, aLineNumber, 1, TDotEnvErrorKind.DekParse,
       'Include directive requires quoted path', True);
     Exit(True);
   end;
-  IncludePath := Copy(Trimmed, QuoteStart + 1, QuoteEnd - QuoteStart - 1);
-  Resolved := ResolveIncludePath(FilePath, IncludePath);
-  if Resolved = '' then
+  lIncludePath := Copy(lTrimmed, lQuoteStart + 1, lQuoteEnd - lQuoteStart - 1);
+  lResolved := ResolveIncludePath(aFilePath, lIncludePath);
+  if lResolved = '' then
   begin
-    AddError(FilePath, LineNumber, 1, TDotEnvErrorKind.DekIO,
-      Format('Unable to resolve include target %s', [IncludePath]), True);
+    AddError(aFilePath, aLineNumber, 1, TDotEnvErrorKind.DekIO,
+      Format('Unable to resolve include target %s', [lIncludePath]), True);
     Exit(True);
   end;
 
-  AddTrace('considered: ' + Resolved);
-  if not TFile.Exists(Resolved) then
+  AddTrace('considered: ' + lResolved);
+  if not TFile.Exists(lResolved) then
   begin
-    AddTrace('missing: ' + Resolved);
-    if not Optional then
-      AddError(FilePath, LineNumber, 1, TDotEnvErrorKind.DekIO,
-        Format('Included file not found: %s', [Resolved]), True);
+    AddTrace('missing: ' + lResolved);
+    if not lOptional then
+      AddError(aFilePath, aLineNumber, 1, TDotEnvErrorKind.DekIO,
+        Format('Included file not found: %s', [lResolved]), True);
     Exit(True);
   end;
 
-  if ParseFile(Resolved, RootIndex, FileOrder, Entries) then
-    AddTrace('loaded: ' + Resolved)
+  if ParseFile(lResolved, aRootIndex, aFileOrder, aEntries) then
+    AddTrace('loaded: ' + lResolved)
   else
-    AddTrace('ignored: ' + Resolved);
+    AddTrace('ignored: ' + lResolved);
   Result := True;
 end;
 
-function TDotEnv.ResolveIncludePath(const BaseFile, Target: string): string;
+function TDotEnv.ResolveIncludePath(const aBaseFile, aTarget: string): string;
 var
-  BaseDir: string;
-  Combined: string;
+  lBaseDir: string;
+  lCombined: string;
 begin
   Result := '';
-  if Target = '' then
+  if aTarget = '' then
     Exit;
-  if TPath.IsRelativePath(Target) then
+  if not TPath.IsPathRooted(aTarget) then
   begin
-    if BaseFile <> '' then
-      BaseDir := TPath.GetDirectoryName(BaseFile)
+    if aBaseFile <> '' then
+      lBaseDir := TPath.GetDirectoryName(aBaseFile)
     else
-      BaseDir := TDirectory.GetCurrentDirectory;
-    Combined := TPath.Combine(BaseDir, Target);
+      lBaseDir := TDirectory.GetCurrentDirectory;
+    lCombined := TPath.Combine(lBaseDir, aTarget);
   end
   else
-    Combined := Target;
+    lCombined := aTarget;
   try
-    Result := TPath.GetFullPath(Combined);
+    Result := TPath.GetFullPath(lCombined);
   except
     Result := '';
   end;
 end;
 
-function TDotEnv.IsPathOnStack(const Path: string): Boolean;
+function TDotEnv.IsPathOnStack(const aPath: string): Boolean;
 var
-  Item: string;
+  lItem: string;
 begin
   Result := False;
   if FIncludeStack = nil then
     Exit(False);
-  for Item in FIncludeStack do
-    if SameFileName(Item, Path) then
+  for lItem in FIncludeStack do
+    if SameFileName(lItem, aPath) then
       Exit(True);
+  Exit(False);
 end;
 
-function TDotEnv.CheckSecretPermissions(const FilePath: string): Boolean;
+function TDotEnv.CheckSecretPermissions(const aFilePath: string): Boolean;
 {$IFDEF MSWINDOWS}
 begin
   Result := True;
 end;
 {$ELSE}
 var
-  StatBuf: _stat;
+  lStatBuf: stat;
+  lFileNameOnly: string;
 begin
   Result := True;
-  if not FilePath.EndsWith('.secret', True) then
+  lFileNameOnly := TPath.GetFileName(aFilePath);
+  if not SameText(lFileNameOnly, '.env.secret') then
     Exit(True);
 
-  if fpstat(PAnsiChar(AnsiString(FilePath)), StatBuf) <> 0 then
+  if stat(PAnsiChar(AnsiString(aFilePath)), lStatBuf) <> 0 then
   begin
-    AddError(FilePath, 0, 0, TDotEnvErrorKind.DekIO,
+    AddError(aFilePath, 0, 0, TDotEnvErrorKind.DekIO,
       SysErrorMessage(errno), True);
     Exit(False);
   end;
-  if (StatBuf.st_mode and (S_IRWXG or S_IRWXO)) <> 0 then
+  if (lStatBuf.st_mode and (S_IRWXG or S_IRWXO)) <> 0 then
   begin
-    AddError(FilePath, 0, 0, TDotEnvErrorKind.DekSecurity,
+    AddError(aFilePath, 0, 0, TDotEnvErrorKind.DekSecurity,
       'Secret files must be 0600 (owner read/write only)', True);
     Exit(False);
   end;
 end;
 {$ENDIF}
 
-procedure TDotEnv.LoadLayered(const ABaseDir: string; const AOptions: TDotEnvOptions);
+procedure TDotEnv.LoadLayered(const aBaseDir: string; const aOptions: TDotEnvOptions);
 var
-  Entries: TList<TRawAssignment>;
-  FileInfos: TArray<TLayeredFile>;
-  Info: TLayeredFile;
-  Entry: TRawAssignment;
-  Value: string;
-  FileOrder: Integer;
+  lEntries: TList<TRawAssignment>;
+  lFileInfos: TArray<TLayeredFile>;
+  lInfo: TLayeredFile;
+  lEntry: TRawAssignment;
+  lValue: string;
+  lFileOrder: Integer;
+  j: Integer;
+  lErrStart: Integer;
+  lHasFatal: Boolean;
 begin
-  FCurrentOptions := AOptions;
+  FCurrentOptions := aOptions;
   ResetState;
   EnsureValuesDictionary;
-  Entries := TList<TRawAssignment>.Create;
+  lEntries := TList<TRawAssignment>.Create;
   try
-    FileInfos := CollectLayeredFiles(ABaseDir, AOptions);
-    FileOrder := 0;
-    for Info in FileInfos do
+    lFileInfos := CollectLayeredFiles(aBaseDir, aOptions);
+    lFileOrder := 0;
+    for lInfo in lFileInfos do
     begin
-      CollectFile(Info.Path, Info.RootIndex, FileOrder, Entries);
-      Inc(FileOrder);
+      CollectFile(lInfo.Path, lInfo.RootIndex, lFileOrder, lEntries);
+      Inc(lFileOrder);
     end;
-    for Entry in Entries do
+    if TDotEnvOption.StreamingEvaluation in FCurrentOptions then
     begin
-      Value := ExpandValue(Entry.RawValue, Entry.FilePath, Entry.Line);
-      StoreValue(Entry, Value);
-    end;
+      for lFileOrder := 0 to lEntries.Count - 1 do
+      begin
+        lEntry := lEntries[lFileOrder];
+        lErrStart := FErrors.Count;
+        lValue := ExpandValue(lEntry.RawValue, lEntry.FilePath, lEntry.Line);
+        lHasFatal := False;
+        for j := lErrStart to FErrors.Count - 1 do
+          if FErrors[j].Fatal then
+          begin
+            lHasFatal := True;
+            Break;
+          end;
+        if not lHasFatal then
+          StoreValue(lEntry, lValue)
+        else
+          AddTrace(Format('skip store due to fatal errors: %s (%s:%d)',
+            [lEntry.Key, lEntry.FilePath, lEntry.Line]));
+      end;
+    end
+    else
+      EvaluateAfterMergeEntries(lEntries);
   finally
-    Entries.Free;
+    lEntries.Free;
   end;
 end;
 
-class function TDotEnv.DefaultSearchRoots(const ABaseDir: string; AOptions: TDotEnvOptions): TArray<TSearchRoot>;
+class function TDotEnv.DefaultSearchRoots(const aBaseDir: string; aOptions: TDotEnvOptions): TArray<TSearchRoot>;
 var
-  Inst: TDotEnv;
+  lInst: TDotEnv;
 begin
-  Inst := TDotEnv.Create;
+  lInst := TDotEnv.Create;
   try
-    Result := Inst.ExpandRoots(ABaseDir, AOptions);
+    Result := lInst.ExpandRoots(aBaseDir, aOptions);
   finally
-    Inst.Free;
+    lInst.Free;
   end;
 end;
 
