@@ -7,7 +7,7 @@ unit maxLogic.StrUtils;
 interface
 
 uses
-  System.Classes, System.SysUtils, System.Types, System.Generics.Collections, System.StrUtils;
+  System.Classes, System.SysUtils, System.Types, System.Generics.Collections, System.Generics.Defaults, System.StrUtils;
 
 const
   CR = sLineBreak;
@@ -248,6 +248,11 @@ procedure PrepareTextForStrToFloatWcc(var s: string);
 
 function BytesToRawStr(const b: TBytes): RawByteString;
 function RawStrToBytes(const s: RawByteString): TBytes;
+
+type
+  TStringComparerHelper = class helper for TStringComparer
+    class function OrdinalIgnoreCase: TCustomComparer<String>; static;
+  end;
 
 implementation
 
@@ -1125,7 +1130,11 @@ begin
     move(s[1], Result[0], length(s));
 end;
 
-
+{ TStringComparerHelper }
+class function TStringComparerHelper.OrdinalIgnoreCase: TCustomComparer<String>;
+begin
+  Result:= TIStringComparer.Ordinal;
+end;
 
 end.
 

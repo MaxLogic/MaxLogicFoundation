@@ -15,6 +15,8 @@ uses
   DUnitX.Loggers.Xml.NUnit,
   MaxLogic.DotEnv.Tests in 'unit\MaxLogic.DotEnv.Tests.pas',
   maxlogic.DotEnv in '..\maxlogic.DotEnv.pas',
+  MaxLogic.RichIniFile in '..\MaxLogic.RichIniFile.pas',
+  MaxLogic.RichIniFiles.Tests in 'unit\MaxLogic.RichIniFiles.Tests.pas',
   maxLogic.StrUtils in '..\MaxLogic.StrUtils.pas',
   MaxLogic.PortableTimer.Tests in 'unit\MaxLogic.PortableTimer.Tests.pas',
   MaxLogic.StrUtils.Tests in 'unit\MaxLogic.StrUtils.Tests.pas';
