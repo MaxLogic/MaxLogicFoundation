@@ -1,0 +1,48 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{029FFBBA-7038-4381-BC3A-A30D8B78087F}</ProjectGuid>
+    </PropertyGroup>
+    <ItemGroup>
+        <Projects Include="MaxLogic.RichIniBenchmark.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="MaxLogic.BufferedFile.Benchmark.dproj">
+            <Dependencies/>
+        </Projects>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Default.Personality.12</Borland.Personality>
+        <Borland.ProjectType/>
+        <BorlandProject>
+            <Default.Personality/>
+        </BorlandProject>
+    </ProjectExtensions>
+    <Target Name="MaxLogic_RichIniBenchmark">
+        <MSBuild Projects="MaxLogic.RichIniBenchmark.dproj"/>
+    </Target>
+    <Target Name="MaxLogic_RichIniBenchmark:Clean">
+        <MSBuild Projects="MaxLogic.RichIniBenchmark.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="MaxLogic_RichIniBenchmark:Make">
+        <MSBuild Projects="MaxLogic.RichIniBenchmark.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="MaxLogic_BufferedFile_Benchmark">
+        <MSBuild Projects="MaxLogic.BufferedFile.Benchmark.dproj"/>
+    </Target>
+    <Target Name="MaxLogic_BufferedFile_Benchmark:Clean">
+        <MSBuild Projects="MaxLogic.BufferedFile.Benchmark.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="MaxLogic_BufferedFile_Benchmark:Make">
+        <MSBuild Projects="MaxLogic.BufferedFile.Benchmark.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="Build">
+        <CallTarget Targets="MaxLogic_RichIniBenchmark;MaxLogic_BufferedFile_Benchmark"/>
+    </Target>
+    <Target Name="Clean">
+        <CallTarget Targets="MaxLogic_RichIniBenchmark:Clean;MaxLogic_BufferedFile_Benchmark:Clean"/>
+    </Target>
+    <Target Name="Make">
+        <CallTarget Targets="MaxLogic_RichIniBenchmark:Make;MaxLogic_BufferedFile_Benchmark:Make"/>
+    </Target>
+    <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>

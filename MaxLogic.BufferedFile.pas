@@ -1,7 +1,27 @@
 ﻿Unit MaxLogic.BufferedFile;
 
 {
-  This is to optimize reading a file byte by byte
+  TBufferedFile is a single-direction read helper tailored for workloads that
+  consume streams byte-by-byte or in very small slices. It maintains an internal
+  block cache to amortize disk I/O while keeping cursor movement cheap.
+
+  Best use cases:
+    * Parsers or tokenizers that advance one byte/character at a time.
+    * Scenarios with frequent random peek/copy operations on small ranges.
+
+  Things it does NOT do:
+    * Writing or bidirectional buffering.
+    * Replacing RTL TFileStream for bulk reads (use >= 4 KB chunks if throughput
+      is the goal — TBufferedFile only wins when the caller cannot batch reads).
+
+  Construction:
+    * Create with a buffer size tuned to your smallest hot read.
+    * Call Open with a filename or stream. Position/Seek operate relative to the
+      underlying stream but remain read-only.
+
+  Keep usages simple:
+    * Iterate via Cursor/NextByte for sequential scans.
+    * Use copyBytes/CopyRawByteString for range access without disturbing the cursor.
 }
 
 {$IFNDEF DEBUG}
@@ -84,6 +104,14 @@ End;
 Procedure TBufferedFile.copyBytes(Const aStartIndex, aCount: int64;
   Var aBuffer: TBytes);
 Begin
+  If aCount <= 0 Then
+  Begin
+    SetLength(aBuffer, 0);
+    Exit;
+  End;
+
+  SetLength(aBuffer, aCount);
+
   copyBytes(aStartIndex, aCount, @aBuffer[0]);
 End;
 
@@ -91,17 +119,45 @@ Procedure TBufferedFile.copyBytes(Const aStartIndex, aCount: int64; aBuffer: poi
 Var
   InBufferOffset: int64;
   CurFilePosition: int64;
+  Remaining: int64;
+  ToRead: Integer;
+  ReadCount: Integer;
+  Dest: pByte;
 Begin
+  If (aCount <= 0) Then
+    Exit;
+
+  If (aStartIndex < 0) Or (aCount < 0) Then
+    raise EArgumentOutOfRangeException.Create('Requested range is invalid.');
+
+  If (aCount > 0) And (aStartIndex > fFileSize - aCount) Then
+    raise EArgumentOutOfRangeException.Create('Requested range exceeds file size.');
+
   If (aStartIndex >= fBufferOffsetInFile) And (aStartIndex + aCount <= fBufferOffsetInFile + fBufferSize) Then
   Begin
     // translate InFileOffset to in BufferOffset
     InBufferOffset := (aStartIndex - fBufferOffsetInFile);
-    Move(fBuffer[InBufferOffset], aBuffer^, aCount);
+    Move(fBuffer[InBufferOffset], aBuffer^, NativeInt(aCount));
   End Else Begin
     CurFilePosition := fFile.Position; // store the current offset
     Try
       fFile.Position := aStartIndex;
-      fFile.Read(aBuffer^, aCount);
+      Dest := pByte(aBuffer);
+      Remaining := aCount;
+      While Remaining > 0 Do
+      Begin
+        If Remaining > High(Integer) Then
+          ToRead := High(Integer)
+        Else
+          ToRead := Integer(Remaining);
+
+        ReadCount := fFile.Read(Dest^, ToRead);
+        If ReadCount <> ToRead Then
+          raise EReadError.Create('Unable to read requested byte range from stream.');
+
+        Inc(Dest, ReadCount);
+        Dec(Remaining, ReadCount);
+      End;
     Finally
       fFile.Position := CurFilePosition; // restore the current offset
     End;
@@ -134,18 +190,31 @@ Begin
 End;
 
 Function TBufferedFile.NextByte: Boolean;
+Var
+  InBufferOffset: NativeInt;
 Begin
   If EoF Then
     exit(False);
 
-  result := True;
+  InBufferOffset := NativeInt(FCursor) - NativeInt(fStartBuffer);
+  If (InBufferOffset + 1 < fBufferSize) Then
+  Begin
+    Inc(FCursor);
+    Inc(fPosition);
+    Exit(True);
+  End;
 
-  inc(FCursor);
-  inc(fPosition);
+  readNextBlock;
 
-  If (fPosition >= (fBufferOffsetInFile + fBufferSize))
-    Or (fPosition < fBufferOffsetInFile) Then
-    readNextBlock;
+  If fBufferSize = 0 Then
+  Begin
+    fPosition := fFileSize;
+    Result := False;
+    Exit;
+  End;
+
+  fPosition := fBufferOffsetInFile;
+  Result := True;
 
 End;
 
@@ -175,25 +244,40 @@ End;
 
 Procedure TBufferedFile.Seek(Const aCount: int64);
 Var
-  InBufferOffset: int64;
-  requestedInBufferOffset: int64;
+  Target: int64;
+  BufferEnd: int64;
+  CursorOffset: Integer;
 Begin
-  InBufferOffset := (nativeUInt(FCursor) - nativeUInt(fStartBuffer));
-  requestedInBufferOffset := InBufferOffset + aCount;
+  Target := fPosition + aCount;
 
-  // are we still in the boundaries of the buffer?
-  If (requestedInBufferOffset >= 0) And (requestedInBufferOffset < fBufferSize) Then
+  If Target < 0 Then
+    Target := 0
+  Else If Target > fFileSize Then
+    Target := fFileSize;
+
+  BufferEnd := fBufferOffsetInFile + fBufferSize;
+  If (Target >= fBufferOffsetInFile) And (Target < BufferEnd) Then
   Begin
-    inc(FCursor, aCount);
-    inc(fPosition, aCount);
-  End Else If ((fBufferOffsetInFile + requestedInBufferOffset) >= fFileSize) Then
-  Begin
-    fFile.Position := fFileSize;
-    readNextBlock;
-  End Else Begin
-    fFile.Position := (fBufferOffsetInFile + requestedInBufferOffset);
-    readNextBlock;
+    fPosition := Target;
+    FCursor := fStartBuffer;
+    CursorOffset := Integer(Target - fBufferOffsetInFile);
+    Inc(FCursor, CursorOffset);
+    Exit;
   End;
+
+  fFile.Position := Target;
+  readNextBlock;
+
+  fPosition := Target;
+
+  If (fBufferSize > 0) And (Target >= fBufferOffsetInFile) And
+    (Target < (fBufferOffsetInFile + fBufferSize)) Then
+  Begin
+    FCursor := fStartBuffer;
+    CursorOffset := Integer(Target - fBufferOffsetInFile);
+    Inc(FCursor, CursorOffset);
+  End Else
+    FCursor := fStartBuffer;
 End;
 
 Procedure TBufferedFile.SetPosition(Const Value: int64);
