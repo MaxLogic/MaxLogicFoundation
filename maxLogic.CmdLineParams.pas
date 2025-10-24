@@ -248,7 +248,7 @@ end;
 function TCmdLineParams.has(const aSwitchNames: array of string; aIgnoreCase: boolean): boolean;
 begin
   for var n in aSwitchNames do
-    if find(n, aIgnoreCase)
+    if find(n, aIgnoreCase) then
       Exit(True);
   Result := False;
 end;
