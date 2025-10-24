@@ -1,9 +1,0 @@
-# Force Windows CRLF in the working tree for Delphi-related files
-*.pas   text eol=crlf
-*.dpr   text eol=crlf
-*.dfm   text eol=crlf
-*.dpk   text eol=crlf
-*.dproj text eol=crlf
-*.inc   text eol=crlf
-*.rc    text eol=crlf
-*.txt   text eol=crlf
