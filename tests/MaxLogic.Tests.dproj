@@ -170,9 +170,15 @@
         <DelphiCompile Include="$(MainSource)">
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
+        <DCCReference Include="..\MaxLogic.BufferedFile.pas"/>
+        <DCCReference Include="unit\MaxLogic.BufferedFile.Tests.pas"/>
         <DCCReference Include="unit\MaxLogic.DotEnv.Tests.pas"/>
         <DCCReference Include="..\maxlogic.DotEnv.pas"/>
+        <DCCReference Include="..\MaxLogic.RichIniFile.pas"/>
+        <DCCReference Include="unit\MaxLogic.RichIniFiles.Tests.pas"/>
+        <DCCReference Include="..\MaxLogic.StrUtils.pas"/>
         <DCCReference Include="unit\MaxLogic.PortableTimer.Tests.pas"/>
+        <DCCReference Include="unit\MaxLogic.StrUtils.Tests.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
             <DependentOn>..\MaxLogicDefault.optset</DependentOn>
