@@ -7,7 +7,8 @@ unit maxLogic.StrUtils;
 interface
 
 uses
-  System.Classes, System.SysUtils, System.Types, System.Generics.Collections, System.Generics.Defaults, System.StrUtils;
+  System.Classes, System.SysUtils, System.Types, System.Generics.Collections, System.Generics.Defaults,
+  System.StrUtils, System.RegularExpressions;
 
 const
   CR = sLineBreak;
@@ -254,10 +255,19 @@ type
     class function OrdinalIgnoreCase: TCustomComparer<String>; static;
   end;
 
+  TMatchEvaluatorProc = reference to function(const Match: TMatch): String;
+  TRegExHelper = record helper for TRegEx
+    function Replace(const Input: string; Evaluator: TMatchEvaluator): string; overload;
+    function Replace(const Input: string; Evaluator: TMatchEvaluator; Count: Integer): string; overload;
+
+    class function Replace(const Input, Pattern: string; Evaluator: TMatchEvaluatorProc): string; overload; static;
+    class function Replace(const Input, Pattern: string; Evaluator: TMatchEvaluatorProc; Options: TRegExOptions): string; overload; static;
+  end;
+
 implementation
 
 uses
-  System.character, System.Masks, AutoFree, System.Math, System.RegularExpressions;
+  System.character, System.Masks, AutoFree, System.Math;
 
 function OccurrencesOfChar(const s: string; const c: char): integer;
 var
@@ -1134,6 +1144,64 @@ end;
 class function TStringComparerHelper.OrdinalIgnoreCase: TCustomComparer<String>;
 begin
   Result:= TIStringComparer.Ordinal;
+end;
+
+{ TRegExHelper }
+
+{$REGION 'MatchEvaluatorProcHolder'}
+type
+  TMatchEvaluatorProcHolder = class
+  private
+    fProc: TMatchEvaluatorProc;
+    function Evaluator(const aMatch: TMatch): String;
+  end;
+
+function TMatchEvaluatorProcHolder.Evaluator(const aMatch: TMatch): String;
+begin
+  if assigned(fProc) then
+    Result:= fProc(aMatch);
+end;
+{$ENDREGION 'RegExHelperClass'}
+
+
+class function TRegExHelper.Replace(const Input, Pattern: string;
+  Evaluator: TMatchEvaluatorProc; Options: TRegExOptions): string;
+var
+  h: TMatchEvaluatorProcHolder ;
+begin
+  gc(h, TMatchEvaluatorProcHolder.Create);
+  h.fProc:= Evaluator;
+  Result:= TRegEx.Replace(Input, Pattern, h.Evaluator, Options);
+end;
+
+class function TRegExHelper.Replace(const Input, Pattern: string;
+  Evaluator: TMatchEvaluatorProc): string;
+var
+  h: TMatchEvaluatorProcHolder ;
+begin
+  gc(h, TMatchEvaluatorProcHolder.Create);
+  h.fProc:= Evaluator;
+  Result:= TRegEx.Replace(Input, Pattern, h.Evaluator);
+end;
+
+function TRegExHelper.Replace(const Input: string;
+  Evaluator: TMatchEvaluator; Count: Integer): string;
+var
+  h: TMatchEvaluatorProcHolder ;
+begin
+  gc(h, TMatchEvaluatorProcHolder.Create);
+  h.fProc:= Evaluator;
+  Result:= Replace(Input, h.Evaluator, Count);
+end;
+
+function TRegExHelper.Replace(const Input: string;
+  Evaluator: TMatchEvaluator): string;
+var
+  h: TMatchEvaluatorProcHolder ;
+begin
+  gc(h, TMatchEvaluatorProcHolder.Create);
+  h.fProc:= Evaluator;
+  Result:= Replace(Input, h.Evaluator);
 end;
 
 end.
