@@ -255,14 +255,31 @@ type
     class function OrdinalIgnoreCase: TCustomComparer<String>; static;
   end;
 
-  TMatchEvaluatorProc = reference to function(const Match: TMatch): String;
-  TRegExHelper = record helper for TRegEx
-    function Replace(const Input: string; Evaluator: TMatchEvaluator): string; overload;
-    function Replace(const Input: string; Evaluator: TMatchEvaluator; Count: Integer): string; overload;
 
+  // Anonymous-method evaluator type
+  TMatchEvaluatorProc = reference to function(const Match: TMatch): string;
+
+  TRegExHelper = record helper for TRegEx
+  private
+    type
+      // Bridges anonymous method -> 'of object' method pointer
+      TProcAdapter = class
+      private
+        fProc: TMatchEvaluatorProc;
+      public
+        constructor Create(const aProc: TMatchEvaluatorProc);
+        function Invoke(const Match: TMatch): string;
+      end;
+  public
+    // INSTANCE overloads accepting anonymous methods (what your call needs)
+    function Replace(const Input: string; Evaluator: TMatchEvaluatorProc): string; overload;
+    function Replace(const Input: string; Evaluator: TMatchEvaluatorProc; Count: Integer): string; overload;
+
+    // Optional: keep your class overloads too
     class function Replace(const Input, Pattern: string; Evaluator: TMatchEvaluatorProc): string; overload; static;
     class function Replace(const Input, Pattern: string; Evaluator: TMatchEvaluatorProc; Options: TRegExOptions): string; overload; static;
   end;
+
 
 implementation
 
@@ -1146,62 +1163,56 @@ begin
   Result:= TIStringComparer.Ordinal;
 end;
 
+{ TRegExHelper.TProcAdapter. }
+
+constructor TRegExHelper.TProcAdapter.Create(const aProc: TMatchEvaluatorProc);
+begin
+  inherited Create;
+  fProc := aProc;
+end;
+
+function TRegExHelper.TProcAdapter.Invoke(const Match: TMatch): string;
+begin
+  Result := fProc(Match);
+end;
+
 { TRegExHelper }
 
-{$REGION 'MatchEvaluatorProcHolder'}
-type
-  TMatchEvaluatorProcHolder = class
-  private
-    fProc: TMatchEvaluatorProc;
-    function Evaluator(const aMatch: TMatch): String;
-  end;
-
-function TMatchEvaluatorProcHolder.Evaluator(const aMatch: TMatch): String;
-begin
-  if assigned(fProc) then
-    Result:= fProc(aMatch);
-end;
-{$ENDREGION 'RegExHelperClass'}
-
-
-class function TRegExHelper.Replace(const Input, Pattern: string;
-  Evaluator: TMatchEvaluatorProc; Options: TRegExOptions): string;
+function TRegExHelper.Replace(const Input: string; Evaluator: TMatchEvaluatorProc): string;
 var
-  h: TMatchEvaluatorProcHolder ;
+  lAdapter: TProcAdapter;
 begin
-  gc(h, TMatchEvaluatorProcHolder.Create);
-  h.fProc:= Evaluator;
-  Result:= TRegEx.Replace(Input, Pattern, h.Evaluator, Options);
+  gc(lAdapter, TProcAdapter.Create(Evaluator));
+  // Call the built-in instance overload that expects 'of object'
+  Result := Self.Replace(Input, lAdapter.Invoke);
 end;
 
-class function TRegExHelper.Replace(const Input, Pattern: string;
-  Evaluator: TMatchEvaluatorProc): string;
+function TRegExHelper.Replace(const Input: string; Evaluator: TMatchEvaluatorProc; Count: Integer): string;
 var
-  h: TMatchEvaluatorProcHolder ;
+  lAdapter: TProcAdapter;
 begin
-  gc(h, TMatchEvaluatorProcHolder.Create);
-  h.fProc:= Evaluator;
-  Result:= TRegEx.Replace(Input, Pattern, h.Evaluator);
+  gc(lAdapter, TProcAdapter.Create(Evaluator));
+  Result := Self.Replace(Input, lAdapter.Invoke, Count);
 end;
 
-function TRegExHelper.Replace(const Input: string;
-  Evaluator: TMatchEvaluator; Count: Integer): string;
+class function TRegExHelper.Replace(const Input, Pattern: string; Evaluator: TMatchEvaluatorProc): string;
 var
-  h: TMatchEvaluatorProcHolder ;
+  lAdapter: TProcAdapter;
+  lRe: TRegEx;
 begin
-  gc(h, TMatchEvaluatorProcHolder.Create);
-  h.fProc:= Evaluator;
-  Result:= Replace(Input, h.Evaluator, Count);
+  gc(lAdapter, TProcAdapter.Create(Evaluator));
+  lRe := TRegEx.Create(Pattern);
+  Result := lRe.Replace(Input, lAdapter.Invoke);
 end;
 
-function TRegExHelper.Replace(const Input: string;
-  Evaluator: TMatchEvaluator): string;
+class function TRegExHelper.Replace(const Input, Pattern: string; Evaluator: TMatchEvaluatorProc; Options: TRegExOptions): string;
 var
-  h: TMatchEvaluatorProcHolder ;
+  lAdapter: TProcAdapter;
+  lRe: TRegEx;
 begin
-  gc(h, TMatchEvaluatorProcHolder.Create);
-  h.fProc:= Evaluator;
-  Result:= Replace(Input, h.Evaluator);
+  gc(lAdapter, TProcAdapter.Create(Evaluator));
+  lRe := TRegEx.Create(Pattern, Options);
+  Result := lRe.Replace(Input, lAdapter.Invoke);
 end;
 
 end.
