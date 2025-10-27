@@ -40,9 +40,10 @@ Begin
   Repeat
     If TFile.Exists(aFileName) Then
       FFileHandle := FileOpen(aFileName, fmOpenReadWrite OR fmShareExclusive)
-    Else
-    // chmod is as octal value
+    else begin
+      // chmod is as octal value
       FFileHandle := FileCreate(aFileName, fmOpenReadWrite Or fmShareExclusive, 420);
+    end;
 
     // we do not spin forever, the cpu would not like that. Rather go to sleep after some time
     If (FFileHandle = INVALID_HANDLE_VALUE) And (st.ElapsedMilliseconds < aTimeOutInMs) And (st.ElapsedMilliseconds > 30) Then
@@ -53,7 +54,9 @@ Begin
     End;
 
   Until (FFileHandle <> INVALID_HANDLE_VALUE) Or (st.ElapsedMilliseconds > aTimeOutInMs);
-  Result := FFileHandle > 0;
+
+  Result := (FFileHandle > 0)
+    and (FFileHandle <> INVALID_HANDLE_VALUE);
 End;
 
 Destructor TFileMutex.Destroy;
