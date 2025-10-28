@@ -8,8 +8,16 @@ uses
   System.SysUtils, System.Classes, generics.collections;
 
 type
+
+  TSwitchPrefix = (spDash, spSlash, spDoubleDash);
+  TSwitchPrefixes = set of TSwitchPrefix;
+
   iCmdLineparams = interface
     ['{5091EFAD-8AB6-4A68-A7B3-1C00055CD993}']
+
+    procedure SetSwitchPrefixes(const Value: TSwitchPrefixes);
+    function GetSwitchPrefixes: TSwitchPrefixes;
+
     /// <summary>
     /// Gets the total number of command line parameters stored.
     /// </summary>
@@ -54,13 +62,15 @@ type
     /// <returns>True if the switch is found (regardless of value), False otherwise. aValue is only guaranteed to be valid if Result is True and a value could be extracted.</returns>
     function find(const aSwitch: string; var aValue: string; aIgnoreCase: boolean = True): boolean; overload;
     function find(const aSwitchAndAliases: TArray<string>; var aValue: string; aIgnoreCase: boolean = True): boolean; overload;
-        
-    function has(const aSwitchNames: array of string; aIgnoreCase: boolean = True): boolean; 
-    
+
+    function has(const aSwitchNames: array of string; aIgnoreCase: boolean = True): boolean;
+
 
     property Count: integer read GetCount;
     property Params: TStringList read GetParamList;
+    property SwitchPrefixes: TSwitchPrefixes read GetSwitchPrefixes write SetSwitchPrefixes;
   end;
+
 
   /// <summary>
   /// Implements iCmdLineParams for parsing and accessing command line arguments.
@@ -71,11 +81,15 @@ type
     fOrgCaseDic: TDictionary<string, integer>;
     fLowerCaseDic: TDictionary<string, integer>;
     fParams: TStringList;
-    fChars: TSysCharSet;
+    fSwitchPrefixes: TSwitchPrefixes;
 
     procedure RebuildDic;
+    function IsSwitch(const aCmdParam: String; out aParamWithoutPrefix: String): Boolean; overload;
+    function IsSwitch(const aCmdParam: String): Boolean; overload;
     function GetCount: integer;
     function GetParamList: TStringList;
+    procedure SetSwitchPrefixes(const Value: TSwitchPrefixes);
+    function GetSwitchPrefixes: TSwitchPrefixes;
   public
     constructor Create;
     destructor Destroy; override;
@@ -86,12 +100,13 @@ type
     function find(const aSwitch: string): boolean; overload;
     function find(const aSwitch: string; var aValue: string; aIgnoreCase: boolean = True): boolean; overload;
     function find(const aSwitchAndAliases: TArray<string>; var aValue: string; aIgnoreCase: boolean = True): boolean; overload;
-    
+
     function has(const aSwitchNames: array of string; aIgnoreCase: boolean = True): boolean; overload;
-    
+
 
     property Count: integer read GetCount;
     property Params: TStringList read GetParamList;
+    property SwitchPrefixes: TSwitchPrefixes read GetSwitchPrefixes write SetSwitchPrefixes;
   end;
 
 function maxCmdLineParams: iCmdLineparams;
@@ -99,8 +114,7 @@ function maxCmdLineParams: iCmdLineparams;
 implementation
 
 uses
-  maxLogic.StrUtils, // Assuming SplitInHalfBy is here
-  System.Character;
+  maxLogic.StrUtils, system.StrUtils;
 
 var
   GlobalMaxCmdLineParams: iCmdLineparams = nil;
@@ -132,12 +146,13 @@ constructor TCmdLineParams.Create;
 begin
   inherited Create;
   {$IFDEF MSWINDOWS}
-  fChars := ['-', '/'];
+  Self.fSwitchPrefixes:= [spDash, spDoubleDash, spSlash];
   {$ELSE}
-  fChars := ['-'];
+  Self.fSwitchPrefixes:= [spDash, spDoubleDash];
   {$ENDIF}
   fOrgCaseDic := TDictionary<string, integer>.Create;
   fLowerCaseDic := TDictionary<string, integer>.Create;
+
   fParams := TStringList.Create;
   fParams.StrictDelimiter := True;
   fParams.Delimiter := ' ';
@@ -206,12 +221,10 @@ begin
   begin
     lPotentialValue := fParams[i + 1];
     // Check if the next parameter looks like another switch
-    if (length(lPotentialValue) > 0) and (lPotentialValue[1] in fChars) then
+    if IsSwitch(lPotentialValue) then
     begin
       // Next item looks like a switch, so current switch has no value.
-    end
-    else
-    begin
+    end else begin
       // Treat the next parameter as the value
       aValue := lPotentialValue;
     end;
@@ -253,6 +266,42 @@ begin
   Result := False;
 end;
 
+function TCmdLineParams.IsSwitch(const aCmdParam: String): Boolean;
+var
+  s: String;
+begin
+  Result:= IsSwitch(aCmdParam, s);
+end;
+
+function TCmdLineParams.IsSwitch(const aCmdParam: String;
+  out aParamWithoutPrefix: String): Boolean;
+var
+  sp: TSwitchPrefix;
+begin
+  Result := False;
+  if aCmdParam = '' then
+    exit;
+
+
+  if startsStr('--', aCmdParam) then
+    sp:= TSwitchPrefix.spDoubleDash
+  else if startsStr('-', aCmdParam) then
+    sp:= TSwitchPrefix.spDash
+  else if startsStr('/', aCmdParam) then
+    sp:= TSwitchPrefix.spSlash
+  else
+    Exit(False);
+
+  if sp in Self.fSwitchPrefixes then
+  begin
+    Result:= True;
+    if sp = TSwitchPrefix.spDoubleDash then
+      aParamWithoutPrefix:= Copy(aCmdParam, 3, Length(aCmdParam)-2)
+    else
+      aParamWithoutPrefix:= Copy(aCmdParam, 2, Length(aCmdParam)-1);
+  end;
+end;
+
 function TCmdLineParams.GetCount: integer;
 begin
   Result := fParams.Count;
@@ -261,6 +310,11 @@ end;
 function TCmdLineParams.GetParamList: TStringList;
 begin
   Result := fParams;
+end;
+
+function TCmdLineParams.GetSwitchPrefixes: TSwitchPrefixes;
+begin
+  Result:= fSwitchPrefixes;
 end;
 
 procedure TCmdLineParams.RebuildDic;
@@ -273,10 +327,8 @@ begin
 
   for var X := 0 to fParams.Count - 1 do
   begin
-    s := fParams[X];
-    if (s = '') or (not (s[1] in fChars)) then
+    if not IsSwitch(fParams[X], s) then
       Continue;
-    delete(s, 1, 1); // get rid of the switch prefix char
 
     // store switch without value in case of a ":" or '=" value separation
     if maxLogic.StrUtils.SplitInHalfBy(s, '=', lLeft, lRight) or maxLogic.StrUtils.SplitInHalfBy(s, ':', lLeft, lRight) then
@@ -295,6 +347,12 @@ begin
   end;
   fOrgCaseDic.TrimExcess;
   fLowerCaseDic.TrimExcess;
+end;
+
+procedure TCmdLineParams.SetSwitchPrefixes(const Value: TSwitchPrefixes);
+begin
+  fSwitchPrefixes := Value;
+  RebuildDic;
 end;
 
 initialization
