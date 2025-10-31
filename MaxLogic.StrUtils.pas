@@ -281,6 +281,8 @@ type
   end;
 
 
+function PrettyElapsed(const aMs: Int64): String;
+
 implementation
 
 uses
@@ -1213,6 +1215,24 @@ begin
   gc(lAdapter, TProcAdapter.Create(Evaluator));
   lRe := TRegEx.Create(Pattern, Options);
   Result := lRe.Replace(Input, lAdapter.Invoke);
+end;
+
+
+function PrettyElapsed(const aMs: Int64): String;
+var
+  ms, s, m, h: Int64;
+begin
+  ms := aMs;
+  s := ms div 1000;
+  ms := ms mod 1000;
+  m := s div 60;
+  s := s mod 60;
+  h := m div 60;
+  m := m mod 60;
+  if h > 0 then exit(Format('%dh %dm %ds %dms', [h, m, s, ms]));
+  if m > 0 then exit(Format('%dm %ds %dms', [m, s, ms]));
+  if s > 0 then exit(Format('%ds %dms', [s, ms]));
+  Result := Format('%dms', [ms]);
 end;
 
 end.
