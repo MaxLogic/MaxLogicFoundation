@@ -53,7 +53,7 @@ Begin
         sleep(sleepMs);
     End;
 
-  Until (FFileHandle <> INVALID_HANDLE_VALUE) ;
+    until (FFileHandle <> INVALID_HANDLE_VALUE) or (st.ElapsedMilliseconds >= aTimeOutInMs);
 
   Result := (FFileHandle <> INVALID_HANDLE_VALUE);
 End;
