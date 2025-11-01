@@ -53,10 +53,9 @@ Begin
         sleep(sleepMs);
     End;
 
-  Until (FFileHandle <> INVALID_HANDLE_VALUE) Or (st.ElapsedMilliseconds > aTimeOutInMs);
+  Until (FFileHandle <> INVALID_HANDLE_VALUE) ;
 
-  Result := (FFileHandle > 0)
-    and (FFileHandle <> INVALID_HANDLE_VALUE);
+  Result := (FFileHandle <> INVALID_HANDLE_VALUE);
 End;
 
 Destructor TFileMutex.Destroy;
@@ -68,14 +67,15 @@ End;
 Constructor TFileMutex.Create;
 Begin
   Inherited Create;
+  FFileHandle:= INVALID_HANDLE_VALUE;
 End;
 
 Procedure TFileMutex.Close;
 Begin
-  If FFileHandle > 0 Then
+  if fFileHandle <> INVALID_HANDLE_VALUE Then
   Begin
     FileClose(FFileHandle);
-    FFileHandle := 0;
+    FFileHandle := INVALID_HANDLE_VALUE;
   End;
 End;
 
