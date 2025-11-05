@@ -185,12 +185,10 @@ var
   lOldStrategy: ITabularReaderStrategy;
 begin
   lExt := TPath.GetExtension(aFileName).ToLower;
-  if lExt = '.csv' then
-    lStrategy := TTabularCsvAdapter.Create(aFileName)
-  else if (lExt = '.xls') or (lExt = '.xlsx') then
+  if (lExt = '.xls') or (lExt = '.xlsx') then
     lStrategy := TTabularFlexCelAdapter.Create(aFileName)
   else
-    raise Exception.CreateFmt('Unsupported file type: %s', [aFileName]);
+    lStrategy := TTabularCsvAdapter.Create(aFileName);
 
   lOldStrategy := fStrategy;
   fStrategy := lStrategy;
