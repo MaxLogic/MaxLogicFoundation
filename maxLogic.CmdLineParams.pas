@@ -63,14 +63,18 @@ type
     function find(const aSwitch: string; var aValue: string; aIgnoreCase: boolean = True): boolean; overload;
     function find(const aSwitchAndAliases: TArray<string>; var aValue: string; aIgnoreCase: boolean = True): boolean; overload;
 
-    function has(const aSwitchNames: array of string; aIgnoreCase: boolean = True): boolean;
+    // retrives a value from a givem switch
+    function Get(const aSwitch: string; aDefault: string = ''; aIgnoreCase: boolean = True): string; overload;
+    function Get(const aSwitchAndAliases: TArray<string>; aDefault: string = ''; aIgnoreCase: boolean = True): string; overload;
+    function Get(const aSwitch: string; aDefault: integer; aIgnoreCase: boolean = True): integer; overload;
+    function Get(const aSwitchAndAliases: TArray<string>; aDefault: integer; aIgnoreCase: boolean = True): integer; overload;
 
+    function has(const aSwitchNames: array of string; aIgnoreCase: boolean = True): boolean;
 
     property Count: integer read GetCount;
     property Params: TStringList read GetParamList;
     property SwitchPrefixes: TSwitchPrefixes read GetSwitchPrefixes write SetSwitchPrefixes;
   end;
-
 
   /// <summary>
   /// Implements iCmdLineParams for parsing and accessing command line arguments.
@@ -84,8 +88,8 @@ type
     fSwitchPrefixes: TSwitchPrefixes;
 
     procedure RebuildDic;
-    function IsSwitch(const aCmdParam: String; out aParamWithoutPrefix: String): Boolean; overload;
-    function IsSwitch(const aCmdParam: String): Boolean; overload;
+    function IsSwitch(const aCmdParam: string; out aParamWithoutPrefix: string): boolean; overload;
+    function IsSwitch(const aCmdParam: string): boolean; overload;
     function GetCount: integer;
     function GetParamList: TStringList;
     procedure SetSwitchPrefixes(const Value: TSwitchPrefixes);
@@ -101,8 +105,13 @@ type
     function find(const aSwitch: string; var aValue: string; aIgnoreCase: boolean = True): boolean; overload;
     function find(const aSwitchAndAliases: TArray<string>; var aValue: string; aIgnoreCase: boolean = True): boolean; overload;
 
-    function has(const aSwitchNames: array of string; aIgnoreCase: boolean = True): boolean; overload;
+    // retrives a value from a givem switch
+    function Get(const aSwitch: string; aDefault: string = ''; aIgnoreCase: boolean = True): string; overload;
+    function Get(const aSwitchAndAliases: TArray<string>; aDefault: string = ''; aIgnoreCase: boolean = True): string; overload;
+    function Get(const aSwitch: string; aDefault: integer; aIgnoreCase: boolean = True): integer; overload;
+    function Get(const aSwitchAndAliases: TArray<string>; aDefault: integer; aIgnoreCase: boolean = True): integer; overload;
 
+    function has(const aSwitchNames: array of string; aIgnoreCase: boolean = True): boolean; overload;
 
     property Count: integer read GetCount;
     property Params: TStringList read GetParamList;
@@ -114,7 +123,7 @@ function maxCmdLineParams: iCmdLineparams;
 implementation
 
 uses
-  maxLogic.StrUtils, system.StrUtils;
+  maxLogic.StrUtils, System.StrUtils;
 
 var
   GlobalMaxCmdLineParams: iCmdLineparams = nil;
@@ -122,12 +131,12 @@ var
 function maxCmdLineParams: iCmdLineparams;
 begin
   if GlobalMaxCmdLineParams <> nil then
-    Exit(GlobalMaxCmdLineParams);
-  Result:= TCmdLineparams.Create;
+    exit(GlobalMaxCmdLineParams);
+  Result := TCmdLineParams.Create;
 
   // simple test agains thread races
   if GlobalMaxCmdLineParams <> nil then
-    Exit(GlobalMaxCmdLineParams);
+    exit(GlobalMaxCmdLineParams);
   GlobalMaxCmdLineParams := Result;
 end;
 
@@ -146,9 +155,9 @@ constructor TCmdLineParams.Create;
 begin
   inherited Create;
   {$IFDEF MSWINDOWS}
-  Self.fSwitchPrefixes:= [spDash, spDoubleDash, spSlash];
+  self.fSwitchPrefixes := [spDash, spDoubleDash, spSlash];
   {$ELSE}
-  Self.fSwitchPrefixes:= [spDash, spDoubleDash];
+  self.fSwitchPrefixes := [spDash, spDoubleDash];
   {$ENDIF}
   fOrgCaseDic := TDictionary<string, integer>.Create;
   fLowerCaseDic := TDictionary<string, integer>.Create;
@@ -158,7 +167,7 @@ begin
   fParams.Delimiter := ' ';
 
   for var i := 1 to System.ParamCount do
-    fParams.add(System.ParamStr(i));
+    fParams.Add(System.ParamStr(i));
 
   RebuildDic;
 end;
@@ -171,13 +180,13 @@ begin
   inherited;
 end;
 
-function TCmdLineParams.find(const aSwitchAndAliases: TArray<string>; var aValue: string; aIgnoreCase: boolean = True): boolean; 
+function TCmdLineParams.find(const aSwitchAndAliases: TArray<string>; var aValue: string; aIgnoreCase: boolean = True): boolean;
 begin
   for var n in aSwitchAndAliases do
     if find(n, aValue, aIgnoreCase) then
-      Exit(True);
-  aValue:= '';
-  Result:= False;
+      exit(True);
+  aValue := '';
+  Result := False;
 end;
 
 function TCmdLineParams.find(const aSwitch: string; aIgnoreCase: boolean): boolean;
@@ -262,19 +271,19 @@ function TCmdLineParams.has(const aSwitchNames: array of string; aIgnoreCase: bo
 begin
   for var n in aSwitchNames do
     if find(n, aIgnoreCase) then
-      Exit(True);
+      exit(True);
   Result := False;
 end;
 
-function TCmdLineParams.IsSwitch(const aCmdParam: String): Boolean;
+function TCmdLineParams.IsSwitch(const aCmdParam: string): boolean;
 var
-  s: String;
+  s: string;
 begin
-  Result:= IsSwitch(aCmdParam, s);
+  Result := IsSwitch(aCmdParam, s);
 end;
 
-function TCmdLineParams.IsSwitch(const aCmdParam: String;
-  out aParamWithoutPrefix: String): Boolean;
+function TCmdLineParams.IsSwitch(const aCmdParam: string;
+  out aParamWithoutPrefix: string): boolean;
 var
   sp: TSwitchPrefix;
 begin
@@ -282,23 +291,22 @@ begin
   if aCmdParam = '' then
     exit;
 
-
   if startsStr('--', aCmdParam) then
-    sp:= TSwitchPrefix.spDoubleDash
+    sp := TSwitchPrefix.spDoubleDash
   else if startsStr('-', aCmdParam) then
-    sp:= TSwitchPrefix.spDash
+    sp := TSwitchPrefix.spDash
   else if startsStr('/', aCmdParam) then
-    sp:= TSwitchPrefix.spSlash
+    sp := TSwitchPrefix.spSlash
   else
-    Exit(False);
+    exit(False);
 
-  if sp in Self.fSwitchPrefixes then
+  if sp in self.fSwitchPrefixes then
   begin
-    Result:= True;
+    Result := True;
     if sp = TSwitchPrefix.spDoubleDash then
-      aParamWithoutPrefix:= Copy(aCmdParam, 3, Length(aCmdParam)-2)
+      aParamWithoutPrefix := copy(aCmdParam, 3, length(aCmdParam) - 2)
     else
-      aParamWithoutPrefix:= Copy(aCmdParam, 2, Length(aCmdParam)-1);
+      aParamWithoutPrefix := copy(aCmdParam, 2, length(aCmdParam) - 1);
   end;
 end;
 
@@ -314,7 +322,7 @@ end;
 
 function TCmdLineParams.GetSwitchPrefixes: TSwitchPrefixes;
 begin
-  Result:= fSwitchPrefixes;
+  Result := fSwitchPrefixes;
 end;
 
 procedure TCmdLineParams.RebuildDic;
@@ -339,11 +347,11 @@ begin
       Continue;
 
     if not fOrgCaseDic.ContainsKey(s) then
-      fOrgCaseDic.add(s, X);
+      fOrgCaseDic.Add(s, X);
 
     lLowerParam := s.ToLower;
     if not fLowerCaseDic.ContainsKey(lLowerParam) then
-      fLowerCaseDic.add(lLowerParam, X);
+      fLowerCaseDic.Add(lLowerParam, X);
   end;
   fOrgCaseDic.TrimExcess;
   fLowerCaseDic.TrimExcess;
@@ -355,10 +363,48 @@ begin
   RebuildDic;
 end;
 
+function TCmdLineParams.Get(const aSwitch: string; aDefault: string; aIgnoreCase: boolean): string;
+var
+  lValue: string;
+begin
+  if find(aSwitch, lValue, aIgnoreCase) and (lValue <> '') then
+    exit(lValue);
+  Result := aDefault;
+end;
+
+function TCmdLineParams.Get(const aSwitchAndAliases: TArray<string>; aDefault: string; aIgnoreCase: boolean): string;
+var
+  lValue: string;
+begin
+  if find(aSwitchAndAliases, lValue, aIgnoreCase) and (lValue <> '') then
+    exit(lValue);
+  Result := aDefault;
+end;
+
+function TCmdLineParams.Get(const aSwitch: string; aDefault: integer; aIgnoreCase: boolean): integer;
+var
+  lValue: string;
+  lParsed: integer;
+begin
+  if find(aSwitch, lValue, aIgnoreCase) and ((lValue <> '') and TryStrToInt(lValue, lParsed)) then
+    exit(lParsed);
+  Result := aDefault;
+end;
+
+function TCmdLineParams.Get(const aSwitchAndAliases: TArray<string>; aDefault: integer; aIgnoreCase: boolean): integer;
+var
+  lValue: string;
+  lParsed: integer;
+begin
+  if find(aSwitchAndAliases, lValue, aIgnoreCase) and ((lValue <> '') and TryStrToInt(lValue, lParsed)) then
+    exit(lParsed);
+  Result := aDefault;
+end;
+
 initialization
 
 finalization
-  GlobalMaxCmdLineParams:= nil;
+  GlobalMaxCmdLineParams := nil;
 
 end.
 
