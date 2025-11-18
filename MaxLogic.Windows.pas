@@ -1,129 +1,132 @@
-unit MaxLogic.Windows;
+unit maxLogic.Windows;
 
-Interface
+interface
 
 uses
-  winApi.Windows, system.classes, system.sysUtils, system.generics.Collections;
+  Winapi.Windows, System.Classes, System.SysUtils, System.generics.collections;
 
-Type
+type
   TSystemUser = record
     Node,
-      UserName,
-      SID: String;
-    rawRow: String; // the sv row as a whole
+      Username,
+      SID: string;
+    rawRow: string; // the sv row as a whole
   end;
 
-Function retriveWindowsUsers: TArray<TSystemUser>;
+function retriveWindowsUsers: TArray<TSystemUser>;
 
 { Run a DOS program and retrieve its output dynamically while it is running. }
-Function GetDosOutput(CommandLine: String; aWorkDir: String = 'C:\'): String;
+function GetDosOutput(CommandLine: string; aWorkDir: string = 'C:\'): string;
 
-Type
-  tStrProc = reference To Procedure(Const line: String);
-  // Capture console output in [Realtime] and return its char right away
-Procedure CaptureConsoleOutput(Const aExeFileName, AParameters: String;
-  OnLineReady: tStrProc; Const aWorkingDir: String = '');
+type
+  tStrProc = reference to procedure(const line: string);
+// Capture console output in [Realtime] and return its char right away
+procedure CaptureConsoleOutput(const aExeFileName, AParameters: string;
+  OnLineReady: tStrProc; const aWorkingDir: string = '');
 
-function GetFullProcessImageName(APid: DWord): string;
+function GetFullProcessImageName(APid: dword): string;
 
 /// <summary>
 /// checks if the application is already running
 /// if aCheckFullPath is true you need to specify the fill file name including the path
 /// if aCheckFullPath is false, then only the filename without the path will betested
 /// </summary>
-function ProcessIsRunning(const aExeName: String; aCheckFullPath: Boolean): Boolean;
+function ProcessIsRunning(const aExeName: string; aCheckFullPath: boolean): boolean;
 
 function QueryFullProcessImageName(
   hProcess: THandle;
-  dwFlags: DWord;
+  dwFlags: dword;
   lpExeName: PChar;
-  out lpdwSize: DWord
+  out lpdwSize: dword
   ): BOOL;
-stdcall external kernel32 name 'QueryFullProcessImageNameW';
+  stdcall external kernel32 Name 'QueryFullProcessImageNameW';
 
-function RunAsAdmin(hWnd: hWnd; filename: string; Parameters: string): Boolean;
+function RunAsAdmin(hwnd: hwnd; FileName: string; Parameters: string): boolean;
 
-Implementation
+function IsDelphiRunning: boolean;
+function ForceForegroundWindow(hwnd: THandle): boolean;
+
+implementation
 
 uses
-  system.ioUtils, system.strUtils, MaxLogic.ioUtils, autoFree,
-  ShellApi, TLHelp32;
+  System.IOUtils, System.StrUtils, maxLogic.IOUtils, AutoFree,
+  ShellApi, TlHelp32;
 
-Function retriveWindowsUsers: TArray<TSystemUser>;
+function retriveWindowsUsers: TArray<TSystemUser>;
 var
-  cmd: String;
-  row, l: TStringList;
-  NodeIndex, NameIndex, SidIndex, x: Integer;
+  cmd: string;
+  Row, l: TStringList;
+  NodeIndex, NameIndex, SidIndex, X: integer;
   u: TSystemUser;
-  items: TList<TSystemUser>;
+  Items: TList<TSystemUser>;
 begin
   Result := [];
 
-  gc(l, TStringList.create);
-  gc(row, TStringList.create);
+  gc(l, TStringList.Create);
+  gc(Row, TStringList.Create);
 
   cmd := 'wmic.exe useraccount get name,sid /format:csv';
-  l.Text := GetDosOutput(cmd, getInstallDir);
+  l.Text := GetDosOutput(cmd, getinstalldir);
 
-  row.StrictDelimiter := True;
-  row.delimiter := ',';
-  row.CaseSensitive := false;
+  Row.StrictDelimiter := True;
+  Row.delimiter := ',';
+  Row.CaseSensitive := False;
 
   // there are some empty lines there... get rid of them...
-  for x := l.count - 1 downto 0 do
-    if trim(l[x]) = '' then
-      l.delete(x);
-  if l.count < 2 then
+  for X := l.Count - 1 downto 0 do
+    if Trim(l[X]) = '' then
+      l.delete(X);
+  if l.Count < 2 then
     exit;
 
-  row.delimitedText := l[0];
-  NodeIndex := row.IndexOf('Node');
-  NameIndex := row.IndexOf('Name');
-  SidIndex := row.IndexOf('SID');
-  gc(items, TList<TSystemUser>.create);
-  For x := 1 to l.count - 1 do
+  Row.delimitedText := l[0];
+  NodeIndex := Row.IndexOf('Node');
+  NameIndex := Row.IndexOf('Name');
+  SidIndex := Row.IndexOf('SID');
+  gc(Items, TList<TSystemUser>.Create);
+  for X := 1 to l.Count - 1 do
   begin
-    row.delimitedText := l[x];
-    u := default (TSystemUser);
+    Row.delimitedText := l[X];
+    u := default(TSystemUser);
     if NameIndex <> -1 then
-      u.UserName := row[NameIndex];
+      u.Username := Row[NameIndex];
     if NodeIndex <> -1 then
-      u.Node := row[NodeIndex];
+      u.Node := Row[NodeIndex];
     if SidIndex <> -1 then
-      u.SID := row[SidIndex];
-    u.rawRow := l[x];
-    items.add(u);
+      u.SID := Row[SidIndex];
+    u.rawRow := l[X];
+    Items.Add(u);
   end;
-  Result := items.ToArray;
+  Result := Items.ToArray;
 end;
 
 { Run a DOS program and retrieve its output dynamically while it is running. }
 
-Function GetDosOutput(CommandLine: String; aWorkDir: String = 'C:\'): String;
-Var
+function GetDosOutput(CommandLine: string; aWorkDir: string = 'C:\'): string;
+var
   SecurityAttributes: TSecurityAttributes;
   StartupInfo: TStartupInfo;
   ProcessInfo: TProcessInformation;
   StdOutPipeRead, StdOutPipeWrite: THandle;
-  WasOK: Boolean;
-  pCommandLine: Array [0 .. 256] Of ansiChar;
+  WasOK: boolean;
+  pCommandLine: array[0..256] of AnsiChar;
   BytesRead: Cardinal;
-  sCmd, WorkDir: String;
-  isOK: Boolean;
-Begin
+  sCmd, WorkDir: string;
+  IsOk: boolean;
+begin
   Result := '';
-  With SecurityAttributes Do
-  Begin
-    nLength := sizeOf(SecurityAttributes);
+  with SecurityAttributes do
+  begin
+    nLength := SizeOf(SecurityAttributes);
     bInheritHandle := True;
-    lpSecurityDescriptor := Nil;
-  End;
+    lpSecurityDescriptor := nil;
+  end;
   CreatePipe(StdOutPipeRead, StdOutPipeWrite, @SecurityAttributes, 0);
-  Try
+  try
 
-    StartupInfo := Default (TStartupInfo);
-    StartupInfo.cb := sizeOf(StartupInfo);
-    StartupInfo.dwFlags := STARTF_USESHOWWINDOW Or STARTF_USESTDHANDLES;
+    StartupInfo := default(TStartupInfo);
+    StartupInfo.cb := SizeOf(StartupInfo);
+    StartupInfo.dwFlags := STARTF_USESHOWWINDOW or STARTF_USESTDHANDLES;
     StartupInfo.wShowWindow := SW_HIDE;
     StartupInfo.hStdInput := GetStdHandle(STD_INPUT_HANDLE);
 
@@ -135,118 +138,118 @@ Begin
 
     sCmd := 'cmd.exe /C ' + CommandLine;
     UniqueString(sCmd);
-    isOK := CreateProcess(Nil, PChar(sCmd), Nil, Nil,
-      True, 0, Nil, PChar(WorkDir), StartupInfo, ProcessInfo);
+    IsOk := CreateProcess(nil, PChar(sCmd), nil, nil,
+      True, 0, nil, PChar(WorkDir), StartupInfo, ProcessInfo);
 
     closeHandle(StdOutPipeWrite);
-    If isOK Then
-      Try
-        Repeat
-          // To read from the pipe, a process uses the read isOK in a call to the ReadFile function.
-          // ReadFile returns when one of the following is true:
-          // a write operation completes on the write end of the pipe,
-          // the number of bytes requested has been read,
-          // or an error occurs.
-          // When a process uses WriteFile to write to an anonymous pipe, the write operation is not completed until all bytes are
-          // written. If the pipe buffer is full before all bytes are written, WriteFile does not return until another process
-          // or thread uses ReadFile to make more buffer space available.
-          WasOK := winApi.Windows.ReadFile(StdOutPipeRead, pCommandLine, 255, BytesRead, Nil);
-          If BytesRead > 0 Then
-          Begin
-            pCommandLine[BytesRead] := #0;
-            Result := Result + pCommandLine;
-          End;
-        Until Not WasOK Or (BytesRead = 0);
-        WaitForSingleObject(ProcessInfo.hProcess, INFINITE);
-      Finally
-        closeHandle(ProcessInfo.hThread);
-        closeHandle(ProcessInfo.hProcess);
-      End;
-  Finally
+    if IsOk then
+    try
+      repeat
+        // To read from the pipe, a process uses the read isOK in a call to the ReadFile function.
+        // ReadFile returns when one of the following is true:
+        // a write operation completes on the write end of the pipe,
+        // the number of bytes requested has been read,
+        // or an error occurs.
+        // When a process uses WriteFile to write to an anonymous pipe, the write operation is not completed until all bytes are
+        // written. If the pipe buffer is full before all bytes are written, WriteFile does not return until another process
+        // or thread uses ReadFile to make more buffer space available.
+        WasOK := Winapi.Windows.ReadFile(StdOutPipeRead, pCommandLine, 255, BytesRead, nil);
+        if BytesRead > 0 then
+        begin
+          pCommandLine[BytesRead] := #0;
+          Result := Result + pCommandLine;
+        end;
+      until not WasOK or (BytesRead = 0);
+      WaitForSingleObject(ProcessInfo.hProcess, INFINITE);
+    finally
+      closeHandle(ProcessInfo.hThread);
+      closeHandle(ProcessInfo.hProcess);
+    end;
+  finally
     closeHandle(StdOutPipeRead);
-  End;
-  Result := trim(Result);
-End;
+  end;
+  Result := Trim(Result);
+end;
 
 // Capture console output in [Realtime] and return its char right away
 
-Procedure CaptureConsoleOutput(Const aExeFileName, AParameters: String;
-  OnLineReady: tStrProc; Const aWorkingDir: String = '');
-Const
+procedure CaptureConsoleOutput(const aExeFileName, AParameters: string;
+  OnLineReady: tStrProc; const aWorkingDir: string = '');
+const
   CReadBuffer = 2400;
-Var
-  sCmd: String;
+var
+  sCmd: string;
   SecurityAttributes: TSecurityAttributes;
   hRead: THandle;
   hWrite: THandle;
   StartupInfo: TStartupInfo;
   ProcessInfo: TProcessInformation;
-  pBuffer: Array [0 .. CReadBuffer + 1] Of ansiChar;
-  dRead: DWord;
-  dRunning: DWord;
-  WorkingDir: String;
-Begin
-  SecurityAttributes.nLength := sizeOf(TSecurityAttributes);
+  pBuffer: array[0..CReadBuffer + 1] of AnsiChar;
+  dRead: dword;
+  dRunning: dword;
+  WorkingDir: string;
+begin
+  SecurityAttributes.nLength := SizeOf(TSecurityAttributes);
   SecurityAttributes.bInheritHandle := True;
-  SecurityAttributes.lpSecurityDescriptor := Nil;
+  SecurityAttributes.lpSecurityDescriptor := nil;
 
-  If CreatePipe(hRead, hWrite, @SecurityAttributes, 0) Then
-  Begin
-    StartupInfo := Default (TStartupInfo);
-    StartupInfo.cb := sizeOf(TStartupInfo);
+  if CreatePipe(hRead, hWrite, @SecurityAttributes, 0) then
+  begin
+    StartupInfo := default(TStartupInfo);
+    StartupInfo.cb := SizeOf(TStartupInfo);
     StartupInfo.hStdInput := hRead;
     StartupInfo.hStdOutput := hWrite;
     StartupInfo.hStdError := hWrite;
-    StartupInfo.dwFlags := STARTF_USESTDHANDLES Or STARTF_USESHOWWINDOW;
+    StartupInfo.dwFlags := STARTF_USESTDHANDLES or STARTF_USESHOWWINDOW;
     StartupInfo.wShowWindow := SW_HIDE;
 
     sCmd := aExeFileName + ' ' + AParameters;
     UniqueString(sCmd);
 
     WorkingDir := aWorkingDir;
-    If WorkingDir = '' Then
-      WorkingDir := getInstallDir;
+    if WorkingDir = '' then
+      WorkingDir := getinstalldir;
 
-    If CreateProcess(Nil, PChar(sCmd), @SecurityAttributes,
+    if CreateProcess(nil, PChar(sCmd), @SecurityAttributes,
       @SecurityAttributes, True,
       NORMAL_PRIORITY_CLASS,
-      Nil, PChar(WorkingDir), StartupInfo, ProcessInfo) Then
-    Begin
-      Repeat
+      nil, PChar(WorkingDir), StartupInfo, ProcessInfo) then
+    begin
+      repeat
         dRunning := WaitForSingleObject(ProcessInfo.hProcess, 100);
         // Application.ProcessMessages();
-        Repeat
+        repeat
           dRead := 0;
-          ReadFile(hRead, pBuffer[0], CReadBuffer, dRead, Nil);
+          ReadFile(hRead, pBuffer[0], CReadBuffer, dRead, nil);
           pBuffer[dRead] := #0;
 
           // OemToAnsi(pBuffer, pBuffer);
-          OnLineReady(String(pBuffer));
-        Until (dRead < CReadBuffer);
-      Until (dRunning <> WAIT_TIMEOUT);
+          OnLineReady(string(pBuffer));
+        until (dRead < CReadBuffer);
+      until (dRunning <> WAIT_TIMEOUT);
 
       closeHandle(ProcessInfo.hProcess);
       closeHandle(ProcessInfo.hThread);
-    End;
+    end;
 
     closeHandle(hRead);
     closeHandle(hWrite);
-  End;
-End;
+  end;
+end;
 
-function GetFullProcessImageName(APid: DWord): string;
+function GetFullProcessImageName(APid: dword): string;
 var
   LBuffer: PChar;
-  LSize: DWord;
+  LSize: dword;
   LProcess: THandle;
 begin
   Result := '';
-  LProcess := OpenProcess(PROCESS_QUERY_INFORMATION, false, APid);
+  LProcess := OpenProcess(PROCESS_QUERY_INFORMATION, False, APid);
   if LProcess <> INVALID_HANDLE_VALUE then
   begin
     try
       LSize := MAX_PATH;
-      LBuffer := GetMemory(LSize * sizeOf(Char));
+      LBuffer := GetMemory(LSize * SizeOf(char));
       try
         if QueryFullProcessImageName(LProcess, 0, LBuffer, LSize) then
         begin
@@ -261,7 +264,7 @@ begin
   end;
 end;
 
-function ProcessIsRunning(const aExeName: String; aCheckFullPath: Boolean): Boolean;
+function ProcessIsRunning(const aExeName: string; aCheckFullPath: boolean): boolean;
 var
   LSnapshot: THandle;
   LProcess: TProcessEntry32;
@@ -269,7 +272,7 @@ var
 begin
   LSnapshot := CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
   try
-    LProcess.dwSize := sizeOf(LProcess);
+    LProcess.dwSize := SizeOf(LProcess);
     if Process32First(LSnapshot, LProcess) then
     begin
       LExe := ExtractFileName(aExeName);
@@ -277,18 +280,17 @@ begin
         if SameText(LProcess.szExeFile, LExe)
           and
           ((not aCheckFullPath)
-            or SameText(GetFullProcessImageName(LProcess.th32ProcessID), aExeName))
-        then
+          or SameText(GetFullProcessImageName(LProcess.th32ProcessID), aExeName)) then
           exit(True);
       until not Process32Next(LSnapshot, LProcess);
     end;
-    Result := false;
+    Result := False;
   finally
     closeHandle(LSnapshot)
   end;
 end;
 
-function RunAsAdmin(hWnd: hWnd; filename: string; Parameters: string): Boolean;
+function RunAsAdmin(hwnd: hwnd; FileName: string; Parameters: string): boolean;
 {
   source: https://stackoverflow.com/questions/923350/delphi-prompt-for-uac-elevation-when-needed
 
@@ -300,12 +302,12 @@ function RunAsAdmin(hWnd: hWnd; filename: string; Parameters: string): Boolean;
 var
   sei: TShellExecuteInfo;
 begin
-  ZeroMemory(@sei, sizeOf(sei));
-  sei.cbSize := sizeOf(TShellExecuteInfo);
-  sei.Wnd := hWnd;
+  ZeroMemory(@sei, SizeOf(sei));
+  sei.cbSize := SizeOf(TShellExecuteInfo);
+  sei.Wnd := hwnd;
   sei.fMask := SEE_MASK_FLAG_DDEWAIT or SEE_MASK_FLAG_NO_UI;
   sei.lpVerb := PChar('runas');
-  sei.lpFile := PChar(filename); // PAnsiChar;
+  sei.lpFile := PChar(FileName); // PAnsiChar;
   if Parameters <> '' then
     sei.lpParameters := PChar(Parameters); // PAnsiChar;
   sei.nShow := SW_SHOWNORMAL; // Integer;
@@ -313,4 +315,22 @@ begin
   Result := ShellExecuteEx(@sei);
 end;
 
+function IsDelphiRunning: boolean;
+begin
+  Result := FindWindow('TAppBuilder', nil) > 0;
+end;
+
+function ForceForegroundWindow(hwnd: THandle): boolean;
+begin
+  if IsIconic(hwnd) then
+    ShowWindow(hwnd, SW_RESTORE);
+
+  SetActiveWindow(hwnd);
+  // BringWindowToTop(hWnd);
+  SetForegroundWindow(hwnd);
+
+  Result := (GetForegroundWindow = hwnd);
+end; { ForceForegroundWindow }
+
 end.
+

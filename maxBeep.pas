@@ -1,93 +1,173 @@
 unit maxBeep;
-{just some small functions to play some sounds}
+
 interface
-uses
-windows, classes, sysUtils;
 
-{Info about windows.MesageBeep params:
-
-This parameter can be one of the following values.
-Value	Meaning
-
-0xFFFFFFFF
-A simple beep. If the sound card is not available, the sound is generated using the speaker.
-
-MB_ICONASTERISK
-0x00000040L
-             See MB_ICONINFORMATION.
-
-MB_ICONEXCLAMATION
-0x00000030L
-             See MB_ICONWARNING.
-
-MB_ICONERROR
-0x00000010L
-The sound specified as the Windows Critical Stop sound.
-
-MB_ICONHAND
-0x00000010L
-See MB_ICONERROR.
-
-MB_ICONINFORMATION
-0x00000040L
-The sound specified as the Windows Asterisk sound.
-
-MB_ICONQUESTION
-0x00000020L
-The sound specified as the Windows Question sound.
-
-MB_ICONSTOP
-0x00000010L
-See MB_ICONERROR.
-
-MB_ICONWARNING
-0x00000030L
-The sound specified as the Windows Exclamation sound.
-
-MB_OK
-0x00000000L
-The sound specified as the Windows Default Beep sound.
-}
+type
+  TMaxSoundKind = (
+    msInfo,
+    msWarning,
+    msError,
+    msQuestion,
+    msOk
+    );
 
 procedure BeepOk;
 procedure BeepError;
-Procedure BeepQuestion;
-Procedure BeepInfo;
+procedure BeepQuestion;
+procedure BeepInfo;
 procedure BeepWarning;
-Procedure PlaySound(const FileName: string);
+
+procedure PlaySoundFile(const aFileName: string);
+
 implementation
+
+{$IF DEFINED(ANDROID) or DEFINED(IOS) or DEFINED(MACOS)}
+{$DEFINE USE_FMX_MEDIA}
+{$IFEND}
+
 uses
-mmsystem, messages, controls;
+  System.SysUtils,
+  {$IFDEF MSWINDOWS}
+  Winapi.Windows, Winapi.mmSystem,
+  {$ELSE}
+  {$IFDEF USE_FMX_MEDIA}
+  FMX.Media,
+  {$ENDIF}
+  {$ENDIF}
+  System.IOUtils;
+
+{$IFDEF USE_FMX_MEDIA}
+var
+  gPlayer: TMediaPlayer;
+
+procedure EnsurePlayer;
+begin
+  if gPlayer = nil then
+  begin
+    gPlayer := TMediaPlayer.Create(nil);
+    gPlayer.Loop := False;
+  end;
+end;
+
+function GetDefaultSoundFile(const aKind: TMaxSoundKind): string;
+var
+  lFileName: string;
+begin
+  case aKind of
+    msInfo:
+      lFileName := 'info.wav';
+    msWarning:
+      lFileName := 'warning.wav';
+    msError:
+      lFileName := 'error.wav';
+    msQuestion:
+      lFileName := 'question.wav';
+    msOk:
+      lFileName := 'ok.wav';
+  end;
+
+  // @Pawel todo: adjust to your actual asset path (e.g. resources, documents, etc.)
+  Result := TPath.Combine(TPath.GetDocumentsPath, lFileName);
+end;
+{$ENDIF}
+
+procedure InternalBeep(const aKind: TMaxSoundKind);
+{$IFDEF MSWINDOWS}
+const
+  C_MAP: array[TMaxSoundKind] of UINT = (
+    MB_ICONASTERISK, // msInfo
+    MB_ICONEXCLAMATION, // msWarning
+    MB_ICONHAND, // msError
+    MB_ICONQUESTION, // msQuestion
+    MB_OK // msOk
+    );
+begin
+  MessageBeep(C_MAP[aKind]);
+end;
+{$ELSE}
+{$IFDEF USE_FMX_MEDIA}
+var
+  lFile: string;
+begin
+  lFile := GetDefaultSoundFile(aKind);
+  PlaySoundFile(lFile);
+end;
+{$ELSE}
+begin
+  // no-op: sound not implemented on this platform
+end;
+{$ENDIF}
+{$ENDIF}
 
 procedure BeepOk;
 begin
-
-        Windows.MessageBeep(mb_ok);
+  InternalBeep(msOk);
 end;
+
 procedure BeepError;
 begin
-        Windows.MessageBeep(MB_ICONERROR);
+  InternalBeep(msError);
 end;
 
-Procedure BeepQuestion;
+procedure BeepQuestion;
 begin
-        Windows.MessageBeep(MB_ICONQUESTION);
+  InternalBeep(msQuestion);
 end;
-Procedure BeepInfo;
+
+procedure BeepInfo;
 begin
-        Windows.MessageBeep(MB_ICONINFORMATION);
+  InternalBeep(msInfo);
 end;
+
 procedure BeepWarning;
 begin
-        Windows.MessageBeep(MB_ICONWARNING);
+  InternalBeep(msWarning);
 end;
 
-
-procedure PlaySound(const Filename: string);
+{$IFDEF MSWINDOWS}
+procedure PlaySoundFile(const aFileName: string);
 begin
-//'C:\Windows\Media\sound.wav',
-    sndPlaySound(pWideChar(FileName),
-    SND_NODEFAULT Or SND_ASYNC  or SND_FILENAME);
+  if aFileName = '' then
+    exit;
+
+  sndPlaySound(PChar(aFileName),
+    SND_ASYNC or SND_NODEFAULT or SND_FILENAME);
 end;
+{$ENDIF}
+
+{$IFDEF USE_FMX_MEDIA}
+procedure PlaySoundFile(const aFileName: string);
+begin
+  if aFileName = '' then
+    exit;
+
+  if not TFile.Exists(aFileName) then
+    exit;
+
+  EnsurePlayer;
+
+  gPlayer.stop;
+  gPlayer.Clear;
+  gPlayer.FileName := aFileName;
+  gPlayer.Play;
+end;
+{$ENDIF}
+
+{$IFNDEF MSWINDOWS}
+{$IFNDEF USE_FMX_MEDIA}
+procedure PlaySoundFile(const aFileName: string);
+begin
+  // no-op: no backend for this platform
+end;
+{$ENDIF}
+{$ENDIF}
+
+{$IFDEF USE_FMX_MEDIA}
+initialization
+
+finalization
+  gPlayer.Free;
+  {$ENDIF}
 
 end.
+

@@ -15,6 +15,7 @@
         <DCC_FILE_OPEN>error</DCC_FILE_OPEN>
         <DCC_TYPED_CONST_VARPAR>error</DCC_TYPED_CONST_VARPAR>
         <DCC_DcuOutput>.\dcu\$(platform)\$(config)\</DCC_DcuOutput>
+        <DCC_UNKNOWN_CUSTOM_ATTRIBUTE>error</DCC_UNKNOWN_CUSTOM_ATTRIBUTE>
     </PropertyGroup>
     <ProjectExtensions>
         <Borland.Personality>Delphi.Personality.12</Borland.Personality>

@@ -1,11 +1,12 @@
-Unit maxLogAsyncWriter;
+unit maxLogAsyncWriter;
 
 {$REGION 'Version History'}
 { copyright Pawel Piotrowski
   Description: this is a class that helps using old style log writing f existing legacy applications
 
-  Version: 2.10
+  Version: 2.11
   History:
+  2025-11-17: added global logger
   2024-10-10: Linux compatible
   2018-28: all logs are now written to the blog format, which is a encrypted binary log format
   2018-10-10: rebuild to prevent deadlocks that seemed to occur with the previous version
@@ -28,57 +29,57 @@ Unit maxLogAsyncWriter;
 {$ENDREGION}
 
 {$IFDEF DEBUG}
-  // this will force the log entries to be written immediately
-  // this will make the app slower
-  {$DEFINE FORCE_FULL_FLUSH}
+// this will force the log entries to be written immediately
+// this will make the app slower
+{$DEFINE FORCE_FULL_FLUSH}
 {$ENDIF}
 
-Interface
+interface
 
-Uses
+uses
   {$IFDEF madExcept}
   madExcept,
   {$ENDIF}
   {$IFDEF MsWindows}
-  windows,
+  Windows,
   {$ENDIF}
-  classes, sysUtils, maxAsync, generics.collections,
+  Classes, SysUtils, maxAsync, generics.collections,
   synCommons, SynCrypto,
   diagnostics;
 
-Type
+type
   // forward declaration
-  TMaxLogAsyncWriter = Class;
+  TMaxLogAsyncWriter = class;
 
-  TLogItem = Record
-  Public
-    Msg: String;
-    Filename: String;
+  TLogItem = record
+  public
+    msg: string;
+    FileName: string;
     TimeStamp: Int64;
     DateTime: TDateTime;
     CreatePlainTextLogFile: boolean;
-    ThreadId: DWORD;
-    ThreadName: String;
-    Class Function Create: TLogItem; Static;
-    Function estimateInMemorySize: DWORD;
-  End;
+    ThreadId: dword;
+    ThreadName: string;
+    class function Create: TLogItem; static;
+    function estimateInMemorySize: dword;
+  end;
 
   TItems = TArray<TLogItem>;
 
   TCompressMethod = (cmNone = 0, cmSynLZ1 = 1, cmSynLZ2 = 2);
 
-  TBinaryLogWriter = Class
-  Public
+  TBinaryLogWriter = class
+  public
 
     // sometimes we want explicitly to keep the old logs.... here is how you can do it
-    Class Var DisableOldLogPurging: boolean;
-    // completly disable writing of the binary log
-    Class Var Disabled: boolean;
-  Private
-    Const
-    cMaxBLogSize = 1024 * 1024 * 10;
-    cMaxOldFileCount = 10;
-  Private
+    class var DisableOldLogPurging: boolean;
+      // completly disable writing of the binary log
+    class var Disabled: boolean;
+  private
+    const
+      cMaxBLogSize = 1024 * 1024 * 10;
+      cMaxOldFileCount = 10;
+  private
     fLogPart: integer;
     fBLog: TStream;
     fKey: TSHA256Digest;
@@ -87,195 +88,265 @@ Type
     fOlderLogFiles: TStringList;
     fParent: TMaxLogAsyncWriter;
 
-    Procedure writeBLogHeader;
+    procedure writeBLogHeader;
 
-    Procedure write(Const items: TArray<TLogItem>);
-    Procedure OpenBLogFile(Const adir: String);
-    Class Procedure writeString(Const stream: TStream; Const s: String);
-    Procedure initKey;
+    procedure Write(const Items: TArray<TLogItem>);
+    procedure OpenBLogFile(const aDir: string);
+    class procedure Writestring(const Stream: TStream; const s: string);
+    procedure initKey;
 
     // after the file gets too big, we will rename it, read it, compress it, and write it again
-    Procedure MoveAndZipBLog;
-  Public
-    Constructor Create(aParent: TMaxLogAsyncWriter);
-    Destructor destroy; Override;
-  End;
+    procedure MoveAndZipBLog;
+  public
+    constructor Create(aParent: TMaxLogAsyncWriter);
+    destructor Destroy; override;
+  end;
 
-  TBlogArchiveRepacker = Class
-  Private
+  TBlogArchiveRepacker = class
+  private
     fLogPart: integer;
     fOld, fNew, fChunk: TMemoryStream;
-    fFileName: String;
+    fFilename: string;
     fKey: TSHA256Digest;
     fStopWatch: TStopWatch;
-    Procedure flushChunk;
-    Procedure addRecompressSummary;
-  Public
-    Constructor Create(Const aFileName: String; Const aKey: TSHA256Digest; aLogPart: integer);
-    Destructor destroy; Override;
+    procedure flushChunk;
+    procedure addRecompressSummary;
+  public
+    constructor Create(const aFileName: string; const aKey: TSHA256Digest; aLogPart: integer);
+    destructor Destroy; override;
 
-    Procedure execute;
-  End;
+    procedure Execute;
+  end;
 
-  TMaxLogAsyncWriter = Class
-  Private Const
-    mb = 1024 * 1024;
-    cMaxLogItemBufferSize = 10 * mb;
-    cLAZYDELAY = 300;
-    cWaitForFileTimeOut = 1000;
-    cMaxFileOpenTime = 10000;
+  TOnLogCallbackProc = reference to procedure(const aMsg, aLogFileName: string; aCreatePlainTextLogFile: boolean = True);
+  TMaxLogAsyncWriter = class
+  private const
+      mb = 1024 * 1024;
+      cMaxLogItemBufferSize = 10 * mb;
+      cLAZYDELAY = 300;
+      cWaitForFileTimeOut = 1000;
+      cMaxFileOpenTime = 10000;
 
-  Private Type
-    TFileHolder = Class
-    Strict Private
-      fFileName: String;
-      fFile: TFileStream;
-      fWriter: TStreamWriter;
-      fLastAccessTimeStamp: Int64;
-      Procedure Open;
-      Procedure Close;
-    Public
-      DicKey: String;
-      Constructor Create(aFileName: String);
-      Destructor destroy; Override;
+  private type
+      TFileHolder = class
+      strict private
+        fFilename: string;
+        fFile: TFileStream;
+        fWriter: TStreamWriter;
+        fLastAccessTimeStamp: Int64;
+        procedure Open;
+        procedure Close;
+      public
+        DicKey: string;
+        constructor Create(aFileName: string);
+        destructor Destroy; override;
 
-      Procedure write(Const s: String);
-      // returns true if the file was closed
-      Function CheckLastAccessAndCloseIfNeeded: boolean;
-    End;
-  Private
-    fBLogDir: String;
-  Private
+        procedure Write(const s: string);
+        // returns true if the file was closed
+        function CheckLastAccessAndCloseIfNeeded: boolean;
+      end;
+  private
+    fBLogDir: string;
+    fOnLogCallbacks: TDictionary<string, TOnLogCallbackProc>;
     fAsync: iAsync;
     fSignalNewItemAvailable, fSignalAllItemsProcesed: iSignal;
     fTerminated: boolean;
     fItems: TList<TLogItem>;
-    fItemsSize: DWORD;
-    fdic: TObjectDictionary<String, TFileHolder>;
+    fItemsSize: dword;
+    fdic: TObjectDictionary<string, TFileHolder>;
     fBLogWriter: TBinaryLogWriter;
 
-    Procedure asyncprocess;
-    Procedure compact(Var items: TItems);
-    Function retriveItems(Out items: TItems): boolean;
-    Procedure OpenFile(Filename: String; Var fh: TFileHolder);
-    Procedure AddLogItem(Const LogItem: TLogItem);
-    Procedure CloseFiles(IgnoreDelay: boolean = false);
-    Procedure lock;
-    Procedure unLock;
+    procedure asyncprocess;
+    procedure compact(var Items: TItems);
+    function retriveItems(out Items: TItems): boolean;
+    procedure OpenFile(FileName: string; var fh: TFileHolder);
+    procedure AddLogItem(const LogItem: TLogItem);
+    procedure CloseFiles(IgnoreDelay: boolean = False);
+    procedure lock;
+    procedure unlock;
 
   private
     fLogAsyncWriter: TMaxLogAsyncWriter;
-  Public
-    Constructor Create(const aLogDir: String);
-    Destructor destroy; Override;
+  public
+    constructor Create(const aLogDir: string);
+    destructor Destroy; override;
 
-    Procedure AddToLogFile(Const aText: String; Const Filename: String; CreatePlainTextLogFile: boolean = true);
-    Procedure AddToLogFileAndWaitTilWritingComplete(Const aText: String; Const Filename: String; CreatePlainTextLogFile: boolean = true);
+    procedure AddToLogFile(const aText: string; const FileName: string; CreatePlainTextLogFile: boolean = True);
+    procedure AddToLogFileAndWaitTilWritingComplete(const aText: string; const FileName: string; CreatePlainTextLogFile: boolean = True);
     // forces all files to be written and closed; it will wait until all files are really closed
-    Procedure FetchAll;
-  Public
-    Property BLogDir: String Read fBLogDir;
-  End;
+    procedure FetchAll;
 
-Implementation
+    // if there is already a callback with tht name, it will be overriden
+    procedure RegisterOnLogCallback(const AName: string; aOnLogCallbackProc: TOnLogCallbackProc);
+    procedure UnRegisterOnLogCallback(const AName: string);
+    property BLogDir: string read fBLogDir;
+  end;
 
-Uses
-  // mmSystem,
-  AppWideStopWatch, pawel1,
-  maxCryptoHelper.Decryptor, ioUtils, bsutils, zlib, SynLZ, syncObjs, system.math;
+// if the logger is already created, but with a different log dir, then the old one will be freed and a new one will be created
+function InitGlobalLogger(const aLogDir: string): TMaxLogAsyncWriter;
+procedure FreeGlobalLogger;
+// if the Globa Logger was not yet initialized, and the log file name has a full path, then a new globalLogger will be created.
+// if not Global Logger is present, the function returns false
+function AddToLogFile(const aMsg, aLogFileName: string; aCreatePlainTextLogFile: boolean = True): boolean;
+// returns false if the logger is not created yet
+function FlushGlobalLogger: boolean;
+
+implementation
+
+uses
+  {$IFDEF MsWindows}
+  maxLogic.Windows,
+  {$ENDIF}
+  AppWideStopWatch,
+  maxCryptoHelper.Decryptor, System.IOUtils, bsUtils, System.zlib, SynLZ, System.SyncObjs, System.Math,
+  maxLogic.IOUtils, maxLogic.StrUtils,
+  System.StrUtils;
+
+var
+  fglGlobalLogger: TMaxLogAsyncWriter = nil;
+
+function InitGlobalLogger(const aLogDir: string): TMaxLogAsyncWriter;
+var
+  lDir, lCurDir: string;
+begin
+  lDir := slash(ExpandFileName(aLogDir));
+  if fglGlobalLogger <> nil then
+  begin
+    lCurDir := slash(ExpandFileName(fglGlobalLogger.BLogDir));
+    if not SameText(lDir, lCurDir) then
+      FreeAndNil(fglGlobalLogger);
+  end;
+
+  if fglGlobalLogger <> nil then
+    fglGlobalLogger := TMaxLogAsyncWriter.Create(aLogDir);
+
+  Result := fglGlobalLogger;
+end;
+
+procedure FreeGlobalLogger;
+begin
+  FreeAndNil(fglGlobalLogger);
+end;
+
+function AddToLogFile(const aMsg, aLogFileName: string; aCreatePlainTextLogFile: boolean = True): boolean;
+begin
+  if not assigned(fglGlobalLogger) then
+    if ExtractFilePath(aLogFileName) <> '' then
+      InitGlobalLogger(ExtractFilePath(aLogFileName));
+
+  if not assigned(fglGlobalLogger) then
+    exit(False);
+
+  fglGlobalLogger.AddToLogFile(aMsg, aLogFileName, aCreatePlainTextLogFile);
+  Result := True;
+end;
+
+function FlushGlobalLogger: boolean;
+begin
+  if not assigned(fglGlobalLogger) then
+    exit(False);
+
+  fglGlobalLogger.FetchAll;
+  Result := True;
+end;
 
 { TmaxLogAsyncWriter }
 
-Procedure TMaxLogAsyncWriter.AddToLogFile(Const aText, Filename: String; CreatePlainTextLogFile: boolean);
-Var
+procedure TMaxLogAsyncWriter.AddToLogFile(const aText, FileName: string; CreatePlainTextLogFile: boolean);
+var
   LogItem: TLogItem;
-Begin
+begin
   LogItem := TLogItem.Create;
-  LogItem.Msg := aText;
-  LogItem.Filename := Filename;
+  LogItem.msg := aText;
+  LogItem.FileName := FileName;
   LogItem.CreatePlainTextLogFile := CreatePlainTextLogFile;
   if CreatePlainTextLogFile then
-    if extractFilePath(LogItem.Filename) = '' then
-      LogItem.Filename:= TPath.Combine(Self.BLogDir, LogItem.Filename);
-
+    if ExtractFilePath(LogItem.FileName) = '' then
+      LogItem.FileName := TPath.Combine(self.BLogDir, LogItem.FileName);
 
   AddLogItem(LogItem);
-End;
 
-Procedure TMaxLogAsyncWriter.AddToLogFileAndWaitTilWritingComplete(Const aText, Filename: String; CreatePlainTextLogFile: boolean = true);
-Begin
-  AddToLogFile(aText, Filename, CreatePlainTextLogFile);
+  for var lProc in fOnLogCallbacks.Values.ToArray do
+  begin
+    if assigned(lProc) then
+      lProc(aText, FileName, CreatePlainTextLogFile);
+  end;
+end;
+
+procedure TMaxLogAsyncWriter.AddToLogFileAndWaitTilWritingComplete(const aText, FileName: string; CreatePlainTextLogFile: boolean = True);
+begin
+  AddToLogFile(aText, FileName, CreatePlainTextLogFile);
   FetchAll;
-End;
+end;
 
-Procedure TMaxLogAsyncWriter.asyncprocess;
-Var
+procedure TMaxLogAsyncWriter.asyncprocess;
+var
   LogItem: TLogItem;
-  items: TItems;
+  Items: TItems;
   fh: TFileHolder;
-Begin
-  While true Do
-  Begin
-    retriveItems(items);
-    If length(items) = 0 Then
-    Begin
-      If fTerminated Then
+begin
+  while True do
+  begin
+    retriveItems(Items);
+    if length(Items) = 0 then
+    begin
+      if fTerminated then
         break;
 
       fSignalAllItemsProcesed.setSignaled;
-      fSignalNewItemAvailable.waitforSignaled;//(cLAZYDELAY);
-      continue; // restart the loop and get the new items to process
-    End;
-
-    If Not TBinaryLogWriter.Disabled And assigned(fBLogWriter) Then
-      fBLogWriter.write(items);
-
-    compact(items);
-
-    For LogItem In items Do
-    Begin
-      OpenFile(LogItem.Filename, fh);
-      fh.write(LogItem.Msg);
+      fSignalNewItemAvailable.waitforSignaled; //(cLAZYDELAY);
+      Continue; // restart the loop and get the new items to process
     end;
-  End; // while
+
+    if not TBinaryLogWriter.Disabled and assigned(fBLogWriter) then
+      fBLogWriter.Write(Items);
+
+    compact(Items);
+
+    for LogItem in Items do
+    begin
+      OpenFile(LogItem.FileName, fh);
+      fh.Write(LogItem.msg);
+    end;
+  end; // while
 
   fSignalAllItemsProcesed.setSignaled;
-End;
+end;
 
-Procedure TMaxLogAsyncWriter.CloseFiles;
-Var
+procedure TMaxLogAsyncWriter.CloseFiles;
+var
   fh: TFileHolder;
-  ToDel: TList<String>;
-  s: String;
-Begin
-  ToDel := TList<String>.Create;
-  Try
-    If IgnoreDelay Then
-      fdic.clear
-    Else
-    Begin
-      For fh In fdic.values Do
-      Begin
-        If fh.CheckLastAccessAndCloseIfNeeded Then
-          ToDel.add(fh.DicKey);
-      End;
+  ToDel: TList<string>;
+  s: string;
+begin
+  ToDel := TList<string>.Create;
+  try
+    if IgnoreDelay then
+      fdic.Clear
+    else
+    begin
+      for fh in fdic.Values do
+      begin
+        if fh.CheckLastAccessAndCloseIfNeeded then
+          ToDel.Add(fh.DicKey);
+      end;
 
-      For s In ToDel Do
-        fdic.remove(s);
-    End;
-  Finally
-    ToDel.free;
-  End;
-End;
+      for s in ToDel do
+        fdic.Remove(s);
+    end;
+  finally
+    ToDel.Free;
+  end;
+end;
 
-Constructor TMaxLogAsyncWriter.Create;
-Begin
+constructor TMaxLogAsyncWriter.Create;
+begin
   inherited Create;
+  fOnLogCallbacks := TDictionary<string, TOnLogCallbackProc>.Create;
   fBLogDir := aLogDir;
 
-  If Not TBinaryLogWriter.Disabled Then
-    fBLogWriter := TBinaryLogWriter.Create(Self);
-
+  if not TBinaryLogWriter.Disabled then
+    fBLogWriter := TBinaryLogWriter.Create(self);
 
   fSignalNewItemAvailable := tSignal.Create;
   fSignalNewItemAvailable.setNonsignaled;
@@ -283,671 +354,695 @@ Begin
   fSignalAllItemsProcesed := tSignal.Create;
   fSignalAllItemsProcesed.setSignaled;
 
-  fdic := TObjectDictionary<String, TFileHolder>.Create([doOwnsValues]);
+  fdic := TObjectDictionary<string, TFileHolder>.Create([doOwnsValues]);
   fItems := TList<TLogItem>.Create;
   fAsync := maxAsync.SimpleAsyncCall(
-      Procedure
-    Begin
+    procedure
+    begin
       asyncprocess;
-    End
+    end
     , classname);
-End;
+end;
 
-Destructor TMaxLogAsyncWriter.destroy;
-Var
+destructor TMaxLogAsyncWriter.Destroy;
+var
   LogItem: TLogItem;
-Begin
-  fTerminated := true;
+begin
+  fTerminated := True;
   // wake up
   fSignalNewItemAvailable.setSignaled;
-  fAsync.waitFor;
+  fAsync.WaitFor;
 
-  CloseFiles(true);
-  fdic.free;
-  fItems.free;
+  CloseFiles(True);
+  fdic.Free;
+  fItems.Free;
 
-  If assigned(fBLogWriter) Then
-    fBLogWriter.free;
+  if assigned(fBLogWriter) then
+    fBLogWriter.Free;
+  FreeAndNil(fOnLogCallbacks);
+  inherited;
+end;
 
-  Inherited;
-End;
-
-Procedure TMaxLogAsyncWriter.FetchAll;
-Begin
+procedure TMaxLogAsyncWriter.FetchAll;
+begin
   fSignalAllItemsProcesed.setNonsignaled;
   fSignalNewItemAvailable.setSignaled;
   fSignalAllItemsProcesed.waitforSignaled;
-End;
+end;
 
-Procedure TMaxLogAsyncWriter.OpenFile(Filename: String;
+procedure TMaxLogAsyncWriter.OpenFile(FileName: string;
 
-Var
+  var
   fh:
   TFileHolder);
-Var
-  fn: String;
-Begin
-  Filename := expandfilename(Filename);
-  fn := AnsiLowercase(Filename);
+var
+  fn: string;
+begin
+  FileName := ExpandFileName(FileName);
+  fn := AnsiLowercase(FileName);
 
-  If Not fdic.TryGetValue(fn, fh) Then
-  Begin
-    fh := TFileHolder.Create(Filename);
+  if not fdic.TryGetValue(fn, fh) then
+  begin
+    fh := TFileHolder.Create(FileName);
     fh.DicKey := fn;
-    fdic.add(fn, fh);
-  End;
+    fdic.Add(fn, fh);
+  end;
 
-End;
+end;
 
-Procedure TMaxLogAsyncWriter.AddLogItem(Const LogItem: TLogItem);
-Var
-  path: String;
-Begin
+procedure TMaxLogAsyncWriter.RegisterOnLogCallback(const AName: string;
+  aOnLogCallbackProc: TOnLogCallbackProc);
+begin
+  if assigned(aOnLogCallbackProc) then
+    fOnLogCallbacks.AddOrSetValue(AName, aOnLogCallbackProc);
+end;
+
+procedure TMaxLogAsyncWriter.AddLogItem(const LogItem: TLogItem);
+var
+  Path: string;
+begin
   lock;
-  Try
-    fItems.add(LogItem);
+  try
+    fItems.Add(LogItem);
     fItemsSize := fItemsSize + LogItem.estimateInMemorySize;
 
-    fSignalAllItemsProcesed.SetNonSignaled;
+    fSignalAllItemsProcesed.setNonsignaled;
     fSignalNewItemAvailable.setSignaled;
-  Finally
-    unLock;
-  End;
+  finally
+    unlock;
+  end;
 
   // prevent memory overflow
-  While (fItemsSize > cMaxLogItemBufferSize) And (Not fTerminated) Do
+  while (fItemsSize > cMaxLogItemBufferSize) and (not fTerminated) do
     fSignalAllItemsProcesed.waitforSignaled(10);
 
   {$IFDEF FORCE_FULL_FLUSH}
   fSignalAllItemsProcesed.waitforSignaled;
   {$ENDIF}
-End;
+end;
 
-Function TMaxLogAsyncWriter.retriveItems(
-Out items: TItems): boolean;
-Begin
-  result := false;
+function TMaxLogAsyncWriter.retriveItems(
+  out Items: TItems): boolean;
+begin
+  Result := False;
   lock;
-  Try
-    items := fItems.toArray;
-    fItems.clear;
+  try
+    Items := fItems.ToArray;
+    fItems.Clear;
     fItemsSize := 0;
-    result := length(items) <> 0;
+    Result := length(Items) <> 0;
     fSignalNewItemAvailable.setNonsignaled;
-  Finally
-    unLock;
-  End;
-End;
+  finally
+    unlock;
+  end;
+end;
 
-Procedure TMaxLogAsyncWriter.lock;
-Begin
-  TMonitor.enter(self);
-End;
+procedure TMaxLogAsyncWriter.lock;
+begin
+  TMonitor.Enter(self);
+end;
 
-Procedure TMaxLogAsyncWriter.unLock;
-Begin
+procedure TMaxLogAsyncWriter.unlock;
+begin
   TMonitor.exit(self);
-End;
+end;
 
-Procedure TMaxLogAsyncWriter.compact;
-Var
-  dic: TDictionary<String, integer>;
-  item: TLogItem;
-  s: String;
-  newCount, i, x: integer;
+procedure TMaxLogAsyncWriter.UnRegisterOnLogCallback(const AName: string);
+begin
+  fOnLogCallbacks.Remove(AName);
+end;
+
+procedure TMaxLogAsyncWriter.compact;
+var
+  dic: TDictionary<string, integer>;
+  Item: TLogItem;
+  s: string;
+  newCount, i, X: integer;
   newItems: TItems;
-Begin
+begin
   newCount := 0;
-  setLength(newItems, length(items));
-  dic := Nil;
+  SetLength(newItems, length(Items));
+  dic := nil;
 
-  For x := 0 To length(items) - 1 Do
-    If items[x].CreatePlainTextLogFile Then
-    Begin
-      If dic = Nil Then
-        dic := TDictionary<String, integer>.Create(length(items));
+  for X := 0 to length(Items) - 1 do
+    if Items[X].CreatePlainTextLogFile then
+    begin
+      if dic = nil then
+        dic := TDictionary<string, integer>.Create(length(Items));
 
-      items[x].Filename := expandfilename(items[x].Filename);
-      s := AnsiLowercase(items[x].Filename);
-      If dic.TryGetValue(s, i) Then
-        newItems[i].Msg := newItems[i].Msg + sLineBreak + items[x].Msg
-      Else
-      Begin
-        newItems[newCount] := items[x];
-        dic.add(s, newCount);
-        inc(newCount);
-      End;
-    End;
+      Items[X].FileName := ExpandFileName(Items[X].FileName);
+      s := AnsiLowercase(Items[X].FileName);
+      if dic.TryGetValue(s, i) then
+        newItems[i].msg := newItems[i].msg + sLineBreak + Items[X].msg
+      else
+      begin
+        newItems[newCount] := Items[X];
+        dic.Add(s, newCount);
+        Inc(newCount);
+      end;
+    end;
 
   // trim
-  If newCount <> length(newItems) Then
-    setLength(newItems, newCount);
+  if newCount <> length(newItems) then
+    SetLength(newItems, newCount);
 
-  items := newItems;
-  If dic <> Nil Then
-    dic.free;
-End;
-
-
+  Items := newItems;
+  if dic <> nil then
+    dic.Free;
+end;
 
 { TmaxLogAsyncWriter.TFileHolder }
 
-Procedure TMaxLogAsyncWriter.TFileHolder.Close;
-Begin
-  If assigned(fWriter) Then
-    FreeAndNIL(fWriter);
-  If assigned(fFile) Then
-    FreeAndNIL(fFile);
-End;
+procedure TMaxLogAsyncWriter.TFileHolder.Close;
+begin
+  if assigned(fWriter) then
+    FreeAndNil(fWriter);
+  if assigned(fFile) then
+    FreeAndNil(fFile);
+end;
 
-Constructor TMaxLogAsyncWriter.TFileHolder.Create(aFileName: String);
-Begin
-  Inherited Create;
+constructor TMaxLogAsyncWriter.TFileHolder.Create(aFileName: string);
+begin
+  inherited Create;
 
-  fFileName := aFileName;
-End;
+  fFilename := aFileName;
+end;
 
-Destructor TMaxLogAsyncWriter.TFileHolder.destroy;
-Begin
+destructor TMaxLogAsyncWriter.TFileHolder.Destroy;
+begin
   Close;
 
-  Inherited;
+  inherited;
 
-End;
+end;
 
-Procedure TMaxLogAsyncWriter.TFileHolder.Open;
-Var
+procedure TMaxLogAsyncWriter.TFileHolder.Open;
+var
   hFile: THandle;
   st: TStopWatch;
-Begin
-  If assigned(fWriter) Then
+begin
+  if assigned(fWriter) then
     exit;
 
-  forceDirectories(extractFilePath(fFileName));
+  ForceDirectories(ExtractFilePath(fFilename));
   st := TStopWatch.startNew;
 
-  Repeat
+  repeat
     hFile := CreateFile(
-    { In the ANSI version of this function, the name is limited to MAX_PATH characters. To extend this limit to 32,767 wide characters, call the Unicode version of the function and prepend "\\?\" to the path. For more information, see Naming Files, Paths, and Namespaces. }
-    PChar('\\?\' + fFileName),
-      GENERIC_READ Or GENERIC_WRITE,
-      FILE_SHARE_READ Or FILE_SHARE_WRITE,
-      Nil,
+      { In the ANSI version of this function, the name is limited to MAX_PATH characters. To extend this limit to 32,767 wide characters, call the Unicode version of the function and prepend "\\?\" to the path. For more information, see Naming Files, Paths, and Namespaces. }
+      PChar('\\?\' + fFilename),
+      GENERIC_READ or GENERIC_WRITE,
+      FILE_SHARE_READ or FILE_SHARE_WRITE,
+      nil,
       OPEN_ALWAYS,
       FILE_ATTRIBUTE_NORMAL, 0);
-  Until (hFile <> INVALID_HANDLE_VALUE) Or (st.elapsedMilliseconds > cWaitForFileTimeOut);
+  until (hFile <> INVALID_HANDLE_VALUE) or (st.ElapsedMilliseconds > cWaitForFileTimeOut);
 
-  If hFile = INVALID_HANDLE_VALUE Then
-  Begin
+  if hFile = INVALID_HANDLE_VALUE then
+  begin
     // logging is not essential, just turn it off in that case
-    If pawel1.IsDelphiRunning Then
-      Raise Exception.Create(SysErrorMessage(GetLastError) + '; FileName: ' + fFileName + '; ElapsedTime: ' + IntToStr(st.elapsedMilliseconds) + ' ms')
-    Else
+    {$IFDEF MsWindows}
+    if maxLogic.Windows.IsDelphiRunning then
+      raise Exception.Create(SysErrorMessage(GetLastError) + '; FileName: ' + fFilename + '; ElapsedTime: ' + IntToStr(st.ElapsedMilliseconds) + ' ms')
+    else
+      {$ENDIF}
       exit;
-  End Else Begin
+  end else begin
     fFile := TFileStream.Create(hFile);
 
-    fFile.position := fFile.size;
-    fWriter := TStreamWriter.Create(fFile, TENcoding.utf8);
-  End;
-End;
+    fFile.Position := fFile.Size;
+    fWriter := TStreamWriter.Create(fFile, TEncoding.UTF8);
+  end;
+end;
 
-Procedure TMaxLogAsyncWriter.TFileHolder.write(Const s: String);
-Begin
-  fLastAccessTimeStamp := AppStopWatch.elapsedMilliseconds;
-  If Not assigned(fWriter) Then
+procedure TMaxLogAsyncWriter.TFileHolder.Write(const s: string);
+begin
+  fLastAccessTimeStamp := AppStopWatch.ElapsedMilliseconds;
+  if not assigned(fWriter) then
     Open;
-  If assigned(fWriter) Then
+  if assigned(fWriter) then
     fWriter.WriteLine(s);
-End;
+end;
 
-Function TMaxLogAsyncWriter.TFileHolder.CheckLastAccessAndCloseIfNeeded: boolean;
-Begin
-  result := true;
+function TMaxLogAsyncWriter.TFileHolder.CheckLastAccessAndCloseIfNeeded: boolean;
+begin
+  Result := True;
 
   // no need to perform TMonitor.enter if there is nothing to close
-  If Not assigned(fWriter) Then
+  if not assigned(fWriter) then
     exit;
 
-  If AppStopWatch.elapsedMilliseconds - fLastAccessTimeStamp > TMaxLogAsyncWriter.cMaxFileOpenTime Then
-  Begin
+  if AppStopWatch.ElapsedMilliseconds - fLastAccessTimeStamp > TMaxLogAsyncWriter.cMaxFileOpenTime then
+  begin
     Close;
-    result := true;
-  End
-  Else
-    result := false;
+    Result := True;
+  end
+  else
+    Result := False;
 
-End;
+end;
 
 { TBinaryLogWriter }
 
-Constructor TBinaryLogWriter.Create;
-Begin
-  Inherited Create;
-  fParent:= aParent;
+constructor TBinaryLogWriter.Create;
+begin
+  inherited Create;
+  fParent := aParent;
   fOlderLogFiles := TStringList.Create;
   fChunk := TMemoryStream.Create;
-  fChunk.size := 1024;
-End;
+  fChunk.Size := 1024;
+end;
 
-Destructor TBinaryLogWriter.destroy;
-Begin
+destructor TBinaryLogWriter.Destroy;
+begin
   FreeAndNil(fOlderLogFiles);
   FreeAndNil(fBLog);
   FreeAndNil(fChunk);
-  Inherited;
-End;
+  inherited;
+end;
 
-Procedure TBinaryLogWriter.write(Const items: TArray<TLogItem>);
-Var
-  dir: String;
-  size: DWORD;
-  fileNamesNoPath: Array Of String;
-  rs, s2: rawByteString;
-  x: integer;
+procedure TBinaryLogWriter.Write(const Items: TArray<TLogItem>);
+var
+  dir: string;
+  Size: dword;
+  fileNamesNoPath: array of string;
+  rs, S2: rawByteString;
+  X: integer;
   c: TAESCFB;
-Begin
-  If length(items) = 0 Then
+begin
+  if length(Items) = 0 then
     exit;
 
-  If Not assigned(fBLog) Then
-  Begin
+  if not assigned(fBLog) then
+  begin
     dir := fParent.fBLogDir;
     OpenBLogFile(dir);
     // if the funktion above failed...
-    If Not assigned(fBLog) Then
+    if not assigned(fBLog) then
       exit;
-  End;
+  end;
 
-  setLength(fileNamesNoPath, length(items));
+  SetLength(fileNamesNoPath, length(Items));
 
   // estimate buffer size
-  size := 0;
-  For x := 0 To length(items) - 1 Do
-  Begin
-    fileNamesNoPath[x] := extractFileName(items[x].Filename);
-    inc(size,
+  Size := 0;
+  for X := 0 to length(Items) - 1 do
+  begin
+    fileNamesNoPath[X] := ExtractFileName(Items[X].FileName);
+    Inc(Size,
       SizeOf(Int64) +
       SizeOf(TDateTime) +
-      SizeOf(DWORD) +
-      length(items[x].Msg) * 2 +
-      length(fileNamesNoPath[x]) * 2 +
-    // thread id
-      SizeOf(DWORD) * 2
+      SizeOf(dword) +
+      length(Items[X].msg) * 2 +
+      length(fileNamesNoPath[X]) * 2 +
+      // thread id
+      SizeOf(dword) * 2
       );
-  End;
+  end;
 
   // actually it will be a bit more then we need,
   // but, it is better to reserve more memory then to precise count the number of bytes needed for each string above
-  If fChunk.size < size Then
-    fChunk.size := size;
+  if fChunk.Size < Size then
+    fChunk.Size := Size;
 
   // write the data
-  fChunk.position := 0;
-  For x := 0 To length(items) - 1 Do
-  Begin
-    fChunk.writeBuffer(items[x].TimeStamp, SizeOf(Int64));
-    fChunk.writeBuffer(items[x].DateTime, SizeOf(TDateTime));
+  fChunk.Position := 0;
+  for X := 0 to length(Items) - 1 do
+  begin
+    fChunk.writeBuffer(Items[X].TimeStamp, SizeOf(Int64));
+    fChunk.writeBuffer(Items[X].DateTime, SizeOf(TDateTime));
 
-    writeString(fChunk, fileNamesNoPath[x]);
-    writeString(fChunk, items[x].Msg);
+    Writestring(fChunk, fileNamesNoPath[X]);
+    Writestring(fChunk, Items[X].msg);
 
-    fChunk.writeBuffer(items[x].ThreadId, SizeOf(DWORD));
-    writeString(fChunk, items[x].ThreadName);
-  End;
+    fChunk.writeBuffer(Items[X].ThreadId, SizeOf(dword));
+    Writestring(fChunk, Items[X].ThreadName);
+  end;
 
   // get the bytes out of the stream
-  size := fChunk.position;
-  fChunk.position := 0;
-  setLength(rs, size);
-  fChunk.ReadBuffer(rs[1], size);
+  Size := fChunk.Position;
+  fChunk.Position := 0;
+  SetLength(rs, Size);
+  fChunk.readbuffer(rs[1], Size);
 
   // now compress
-  setLength(s2, SynLZcompressdestlen(length(rs)));
-  size := SynLZcompress1(pAnsiChar(rs), length(rs), pAnsiChar(s2));
-  setLength(s2, size);
+  SetLength(S2, SynLZcompressdestlen(length(rs)));
+  Size := SynLZcompress1(pAnsiChar(rs), length(rs), pAnsiChar(S2));
+  SetLength(S2, Size);
 
   // encrypt
   c := TAESCFB.Create(fKey);
-  rs := c.encryptPKCS7(s2, true);
-  c.free;
+  rs := c.encryptPKCS7(S2, True);
+  c.Free;
 
-  size := length(rs);
-  fBLog.writeBuffer(size, 4);
-  If size <> 0 Then
-    fBLog.writeBuffer(rs[1], size);
+  Size := length(rs);
+  fBLog.writeBuffer(Size, 4);
+  if Size <> 0 then
+    fBLog.writeBuffer(rs[1], Size);
 
-  If fBLog.size > cMaxBLogSize Then
-  Begin
-    fBLog.free;
-    fBLog := Nil;
+  if fBLog.Size > cMaxBLogSize then
+  begin
+    fBLog.Free;
+    fBLog := nil;
     MoveAndZipBLog;
-  End;
+  end;
 
-End;
+end;
 
-Procedure TBinaryLogWriter.writeBLogHeader;
-Var
-  version: DWORD;
-  b: byte;
-Begin
-  version := 4;
-  fBLog.writeBuffer(version, SizeOf(DWORD));
-  fBLog.writeBuffer(System.MainThreadID, SizeOf(DWORD));
-  b := byte(cmSynLZ1);
+procedure TBinaryLogWriter.writeBLogHeader;
+var
+  Version: dword;
+  b: BYTE;
+begin
+  Version := 4;
+  fBLog.writeBuffer(Version, SizeOf(dword));
+  fBLog.writeBuffer(System.MainThreadID, SizeOf(dword));
+  b := BYTE(cmSynLZ1);
   fBLog.writeBuffer(b, 1);
-End;
+end;
 
-Procedure TBinaryLogWriter.OpenBLogFile(Const adir: String);
-Var
-  Filename: String;
+procedure TBinaryLogWriter.OpenBLogFile(const aDir: string);
+var
+  FileName: string;
   hFile: THandle;
   st: TStopWatch;
-Begin
-  If assigned(fBLog) Then
+begin
+  if assigned(fBLog) then
     exit;
 
   initKey;
 
   // now open the file
-  forceDirectories(adir);
-  Filename := adir + '.all.bLog';
+  ForceDirectories(aDir);
+  FileName := aDir + '.all.bLog';
   st := TStopWatch.startNew;
-  Repeat
+  repeat
     hFile := CreateFile(
-    { In the ANSI version of this function, the name is limited to MAX_PATH characters. To extend this limit to 32,767 wide characters, call the Unicode version of the function and prepend "\\?\" to the path. For more information, see Naming Files, Paths, and Namespaces. }
-    PChar('\\?\' + Filename),
-      GENERIC_READ Or GENERIC_WRITE,
-      FILE_SHARE_READ Or FILE_SHARE_WRITE,
-      Nil,
+      { In the ANSI version of this function, the name is limited to MAX_PATH characters. To extend this limit to 32,767 wide characters, call the Unicode version of the function and prepend "\\?\" to the path. For more information, see Naming Files, Paths, and Namespaces. }
+      PChar('\\?\' + FileName),
+      GENERIC_READ or GENERIC_WRITE,
+      FILE_SHARE_READ or FILE_SHARE_WRITE,
+      nil,
       OPEN_ALWAYS,
       FILE_ATTRIBUTE_NORMAL, 0);
-  Until (hFile <> INVALID_HANDLE_VALUE) Or (st.elapsedMilliseconds > TMaxLogAsyncWriter.cWaitForFileTimeOut);
+  until (hFile <> INVALID_HANDLE_VALUE) or (st.ElapsedMilliseconds > TMaxLogAsyncWriter.cWaitForFileTimeOut);
 
-  If hFile = INVALID_HANDLE_VALUE Then
-  Begin
+  if hFile = INVALID_HANDLE_VALUE then
+  begin
     // logging is not essential, just turn it off in that case
-    If pawel1.IsDelphiRunning Then
-      Raise Exception.Create(SysErrorMessage(GetLastError) + '; FileName: ' + Filename + '; ElapsedTime: ' + IntToStr(st.elapsedMilliseconds) + ' ms')
-    Else
+    {$IFDEF MsWindows}
+    if maxLogic.Windows.IsDelphiRunning then
+      raise Exception.Create(SysErrorMessage(GetLastError) + '; FileName: ' + FileName + '; ElapsedTime: ' + IntToStr(st.ElapsedMilliseconds) + ' ms')
+    else
+      {$ENDIF}
       exit;
-  End Else Begin
+  end else begin
     fBLog := TFileStream.Create(hFile);
-    If fBLog.size <> 0 Then
-      fBLog.position := fBLog.size
-    Else
-    Begin
+    if fBLog.Size <> 0 then
+      fBLog.Position := fBLog.Size
+    else
+    begin
       writeBLogHeader;
-    End;
-  End;
-End;
+    end;
+  end;
+end;
 
-Class Procedure TBinaryLogWriter.writeString(Const stream: TStream;
-Const s: String);
-Var
-  b: Tbytes;
-  size: DWORD;
-Begin
-  b := TENcoding.utf8.getBytes(s);
+class procedure TBinaryLogWriter.Writestring(const Stream: TStream;
+  const s: string);
+var
+  b: TBytes;
+  Size: dword;
+begin
+  b := TEncoding.UTF8.GetBytes(s);
 
-  size := length(b);
-  stream.writeBuffer(size, 4);
-  If size <> 0 Then
-    stream.writeBuffer(b[0], size);
-End;
+  Size := length(b);
+  Stream.writeBuffer(Size, 4);
+  if Size <> 0 then
+    Stream.writeBuffer(b[0], Size);
+end;
 
-Procedure TBinaryLogWriter.initKey;
-Var
-  b, outData: Tbytes;
-Begin
-  If fKeyInitialized Then
+procedure TBinaryLogWriter.initKey;
+var
+  b, outData: TBytes;
+begin
+  if fKeyInitialized then
     exit;
-  fKeyInitialized := true;
+  fKeyInitialized := True;
 
   // init aes key
   // 230 bytes
   b := [$8C, $53, $05, $53, $2D, $C2, $C1, $3C, $47, $B5, $E6, $4E, $50, $CC, $9F, $12, $3F, $F6, $2F, $6F, $7C, $15, $38, $2E, $42, $96, $38, $B5, $F9, $7B, $3A, $5B, $8F, $74, $AE, $33, $AE, $B7, $74, $C2
-      , $79, $D6, $42, $57, $40, $3A, $33, $D0, $D5, $37, $87, $58, $DC, $65, $78, $E0, $7C, $BB, $90, $B3, $94, $1F, $9D, $51, $C0, $35, $B1, $24, $FD, $63, $4A, $AA, $DE, $A6, $45, $4D, $AD, $17, $12, $78, $B5
-      , $77, $A4, $C6, $11, $CB, $78, $5E, $0D, $9F, $EA, $99, $34, $FC, $DB, $07, $87, $0C, $A3, $F8, $2D, $6C, $4B, $70, $4E, $74, $28, $ED, $28, $CD, $61, $A6, $78, $DD, $71, $9C, $45, $84, $AF, $40, $83, $24
-      , $EF, $76, $B4, $14, $CA, $B1, $63, $1C, $A0, $B6, $D7, $F6, $5A, $A0, $A6, $6C, $4B, $61, $2F, $B4, $24, $0F, $8D, $7D, $0B, $A3, $49, $D3, $91, $F9, $DD, $1F, $78, $D2, $D4, $7C, $29, $A6, $F7, $BC, $E5
-      , $5B, $85, $17, $82, $68, $12, $25, $00, $17, $6C, $E0, $16, $5D, $83, $E9, $6A, $27, $7B, $0C, $39, $4F, $FB, $96, $4C, $7D, $6D, $56, $62, $6E, $C6, $99, $EC, $EA, $9B, $07, $44, $DF, $45, $B3, $96, $DF
-      , $21, $8D, $E1, $09, $C9, $87, $6F, $E1, $3A, $46, $FB, $52, $13, $33, $3B, $A7, $12, $9A, $AB, $56, $7F, $35, $14, $9E, $9D, $75];
+    , $79, $D6, $42, $57, $40, $3A, $33, $D0, $D5, $37, $87, $58, $DC, $65, $78, $E0, $7C, $BB, $90, $B3, $94, $1F, $9D, $51, $C0, $35, $B1, $24, $FD, $63, $4A, $AA, $DE, $A6, $45, $4D, $AD, $17, $12, $78, $B5
+    , $77, $A4, $C6, $11, $CB, $78, $5E, $0D, $9F, $EA, $99, $34, $FC, $DB, $07, $87, $0C, $A3, $F8, $2D, $6C, $4B, $70, $4E, $74, $28, $ED, $28, $CD, $61, $A6, $78, $DD, $71, $9C, $45, $84, $AF, $40, $83, $24
+    , $EF, $76, $B4, $14, $CA, $B1, $63, $1C, $A0, $B6, $D7, $F6, $5A, $A0, $A6, $6C, $4B, $61, $2F, $B4, $24, $0F, $8D, $7D, $0B, $A3, $49, $D3, $91, $F9, $DD, $1F, $78, $D2, $D4, $7C, $29, $A6, $F7, $BC, $E5
+    , $5B, $85, $17, $82, $68, $12, $25, $00, $17, $6C, $E0, $16, $5D, $83, $E9, $6A, $27, $7B, $0C, $39, $4F, $FB, $96, $4C, $7D, $6D, $56, $62, $6E, $C6, $99, $EC, $EA, $9B, $07, $44, $DF, $45, $B3, $96, $DF
+    , $21, $8D, $E1, $09, $C9, $87, $6F, $E1, $3A, $46, $FB, $52, $13, $33, $3B, $A7, $12, $9A, $AB, $56, $7F, $35, $14, $9E, $9D, $75];
 
-  If maxCryptoHelper.Decryptor.decrypt(b, outData) Then
-  Begin
+  if maxCryptoHelper.Decryptor.decrypt(b, outData) then
+  begin
     move(outData[0], fKey, 32);
-  End Else Begin
-    Raise Exception.Create('Corruption in ' + classname);
+  end else begin
+    raise Exception.Create('Corruption in ' + classname);
     halt;
-  End;
+  end;
 
   // burn sensible data after usage:
-  FillChar(outData[0], length(outData), 0);
+  fillchar(outData[0], length(outData), 0);
 
-End;
+end;
 
-Procedure TBinaryLogWriter.MoveAndZipBLog;
-Var
-  fn1, fn2: String;
+procedure TBinaryLogWriter.MoveAndZipBLog;
+var
+  fn1, fn2: string;
   lKey: TSHA256Digest;
-Begin
+begin
   fn1 := fParent.fBLogDir + '.all.bLog';
-  fn2 := fParent.fBLogDir + '.all(' + formatDateTime('yyyy"-"mm"-"dd"_"hh";"nn";"ss"."zzz', now) + ').bLog';
+  fn2 := fParent.fBLogDir + '.all(' + FormatDateTime('yyyy"-"mm"-"dd"_"hh";"nn";"ss"."zzz', now) + ').bLog';
   TFile.move(fn1, fn2);
 
-  fOlderLogFiles.add(fn2);
-  If Not DisableOldLogPurging Then
-    While fOlderLogFiles.Count > max(2, cMaxOldFileCount) Do
-    Begin
+  fOlderLogFiles.Add(fn2);
+  if not DisableOldLogPurging then
+    while fOlderLogFiles.Count > Max(2, cMaxOldFileCount) do
+    begin
       // actually we will not delete the first log file, as it mostly contains some special start up informations.
       fn1 := fOlderLogFiles[1];
-      Try
-        If TFile.Exists(fn1) Then
-          TFile.Delete(fn1);
-      Except
+      try
+        if TFile.Exists(fn1) then
+          TFile.delete(fn1);
+      except
         // do nothing
-      End;
-      fOlderLogFiles.Delete(1);
-    End;
+      end;
+      fOlderLogFiles.delete(1);
+    end;
 
   lKey := fKey;
   maxAsync.SimpleAsyncCall(
-    Procedure
-    Var
+    procedure
+    var
       repacker: TBlogArchiveRepacker;
-    Begin
+    begin
       repacker := TBlogArchiveRepacker.Create(fn2, lKey, fLogPart);
       TInterlocked.increment(fLogPart);
-      Try
-        repacker.execute;
-      Finally
-        repacker.free;
-      End;
-    End, 'repackOldArchive');
-End;
+      try
+        repacker.Execute;
+      finally
+        repacker.Free;
+      end;
+    end, 'repackOldArchive');
+end;
 
 { TLogItem }
 
-Class
-  Function TLogItem.Create: TLogItem;
-Begin
-  result := Default (TLogItem);
-  result.TimeStamp := AppStopWatch.elapsedMilliseconds;
-  result.DateTime := now();
+class
+  function TLogItem.Create: TLogItem;
+  begin
+    Result := default(TLogItem);
+    Result.TimeStamp := AppStopWatch.ElapsedMilliseconds;
+    Result.DateTime := now();
 
-  result.ThreadId := GetCurrentThreadId();
-  result.ThreadName := TmaxAsyncGlobal.GetThreadName(result.ThreadId);
-End;
+    Result.ThreadId := GetCurrentThreadId();
+    Result.ThreadName := TmaxAsyncGlobal.GetThreadName(Result.ThreadId);
+  end;
 
-Function TLogItem.estimateInMemorySize: DWORD;
-Begin
-  result :=
-    length(Msg) * 2 +
-    length(Filename) * 2 +
-    SizeOf(TimeStamp) +
-    SizeOf(DateTime) +
-    SizeOf(CreatePlainTextLogFile) +
-    SizeOf(ThreadId) +
-    length(ThreadName) * 2;
-End;
+  function TLogItem.estimateInMemorySize: dword;
+  begin
+    Result :=
+      length(msg) * 2 +
+      length(FileName) * 2 +
+      SizeOf(TimeStamp) +
+      SizeOf(DateTime) +
+      SizeOf(CreatePlainTextLogFile) +
+      SizeOf(ThreadId) +
+      length(ThreadName) * 2;
+  end;
 
-{ TBlogArchiveRepacker }
+  { TBlogArchiveRepacker }
 
-Procedure TBlogArchiveRepacker.addRecompressSummary;
-Var
-  i64: Int64;
-  dt: TDateTime;
-  s: String;
-Begin
-  s := 'orgSize: ' + IntToStr(fOld.size) + ' b' + cr +
-    'Size (MB): ' + fstr(fOld.size / mb) + cr + cr +
-    'Part#: ' + IntToStr(fLogPart);
+  procedure TBlogArchiveRepacker.addRecompressSummary;
+  const
+    mb = 1024 * 1024;
+  var
+    i64: Int64;
+    dt: TDateTime;
+    s: string;
+  begin
+    s := 'orgSize: ' + IntToStr(fOld.Size) + ' b' + CR +
+      'Size (MB): ' + fStr(fOld.Size / mb) + CR + CR +
+      'Part#: ' + IntToStr(fLogPart);
 
-  i64 := AppStopWatch.elapsedMilliseconds;
-  fChunk.writeBuffer(i64, SizeOf(Int64));
-  dt := now;
-  fChunk.writeBuffer(dt, SizeOf(TDateTime));
+    i64 := AppStopWatch.ElapsedMilliseconds;
+    fChunk.writeBuffer(i64, SizeOf(Int64));
+    dt := now;
+    fChunk.writeBuffer(dt, SizeOf(TDateTime));
 
-  TBinaryLogWriter.writeString(fChunk, classname);
-  TBinaryLogWriter.writeString(fChunk, s);
+    TBinaryLogWriter.Writestring(fChunk, classname);
+    TBinaryLogWriter.Writestring(fChunk, s);
 
-  fChunk.writeBuffer(System.MainThreadID, SizeOf(DWORD));
-  TBinaryLogWriter.writeString(fChunk, '');
-End;
+    fChunk.writeBuffer(System.MainThreadID, SizeOf(dword));
+    TBinaryLogWriter.Writestring(fChunk, '');
+  end;
 
-Constructor TBlogArchiveRepacker.Create(Const aFileName: String;
-Const aKey: TSHA256Digest; aLogPart: integer);
-Begin
-  Inherited Create;
-  fLogPart := aLogPart;
-  fFileName := aFileName;
-  fKey := aKey;
-  fOld := TMemoryStream.Create;
-  fNew := TMemoryStream.Create;
-  fChunk := TMemoryStream.Create;
-End;
+  constructor TBlogArchiveRepacker.Create(const aFileName: string;
+    const aKey: TSHA256Digest; aLogPart: integer);
+  begin
+    inherited Create;
+    fLogPart := aLogPart;
+    fFilename := aFileName;
+    fKey := aKey;
+    fOld := TMemoryStream.Create;
+    fNew := TMemoryStream.Create;
+    fChunk := TMemoryStream.Create;
+  end;
 
-Destructor TBlogArchiveRepacker.destroy;
-Begin
-  fNew.free;
-  fOld.free;
-  fChunk.free;
-  Inherited;
-End;
+  destructor TBlogArchiveRepacker.Destroy;
+  begin
+    fNew.Free;
+    fOld.Free;
+    fChunk.Free;
+    inherited;
+  end;
 
-Procedure TBlogArchiveRepacker.execute;
-Var
-  version: DWORD;
-  s1, s2: rawByteString;
-  size: DWORD;
-  c: TAESCFB;
-  cm: TCompressMethod;
-  b: byte;
-Begin
-  fStopWatch := TStopWatch.startNew;
-  fOld.LoadFromFile(fFileName);
+  procedure TBlogArchiveRepacker.Execute;
+  const
+    mb = 1024 * 1024;
+  var
+    Version: dword;
+    S1, S2: rawByteString;
+    Size: dword;
+    c: TAESCFB;
+    cm: TCompressMethod;
+    b: BYTE;
+  begin
+    fStopWatch := TStopWatch.startNew;
+    fOld.LoadFromFile(fFilename);
 
-  // reserve some memory up front
-  fNew.size := fOld.size;
-  fChunk.size := fOld.size;
+    // reserve some memory up front
+    fNew.Size := fOld.Size;
+    fChunk.Size := fOld.Size;
 
-  // write header
-  version := 4; // the one that has compression enabled
-  fNew.writeBuffer(version, SizeOf(DWORD));
-  fNew.writeBuffer(System.MainThreadID, SizeOf(DWORD));
-  b := byte(cmSynLZ2);
-  fNew.writeBuffer(b, 1);
+    // write header
+    Version := 4; // the one that has compression enabled
+    fNew.writeBuffer(Version, SizeOf(dword));
+    fNew.writeBuffer(System.MainThreadID, SizeOf(dword));
+    b := BYTE(cmSynLZ2);
+    fNew.writeBuffer(b, 1);
 
-  // skip the header in the old file
-  fOld.position := SizeOf(DWORD) * 2;
-  fOld.ReadBuffer(cm, 1);
+    // skip the header in the old file
+    fOld.Position := SizeOf(dword) * 2;
+    fOld.readbuffer(cm, 1);
 
-  // now read all chunks and decrypt them
-  // store them all in one big chunk
-  While fOld.position + 4 < fOld.size Do
-  Begin
-    fOld.ReadBuffer(size, 4);
-    // make sure we do not go out of the file...
-    If fOld.position + size > fOld.size Then
-      Exit; // something went wrong... let the orginal file be as it was...
+    // now read all chunks and decrypt them
+    // store them all in one big chunk
+    while fOld.Position + 4 < fOld.Size do
+    begin
+      fOld.readbuffer(Size, 4);
+      // make sure we do not go out of the file...
+      if fOld.Position + Size > fOld.Size then
+        exit; // something went wrong... let the orginal file be as it was...
 
-    If size <> 0 Then
-    Begin
-      setLength(s2, size);
-      fOld.ReadBuffer(s2[1], size);
+      if Size <> 0 then
+      begin
+        SetLength(S2, Size);
+        fOld.readbuffer(S2[1], Size);
 
-      // decrypt the chunk
-      c := TAESCFB.Create(fKey);
-      try
-        s1 := c.DecryptPKCS7(s2, true);
-      Except
+        // decrypt the chunk
+        c := TAESCFB.Create(fKey);
+        try
+          S1 := c.DecryptPKCS7(S2, True);
+        except
+          c.Free;
+          exit; // something went wrong... leave the orginal file as it were. no repacking this time.
+        end;
         c.Free;
-        Exit; // something went wrong... leave the orginal file as it were. no repacking this time.
+
+        // decompress the chunk
+        case cm of
+          cmNone:
+            S2 := S1;
+          cmSynLZ1:
+            begin
+              SetLength(S2, SynLZdecompressdestlen(pAnsiChar(S1)));
+              Size := SynLZdecompress1(pAnsiChar(S1), length(S1), pAnsiChar(S2));
+              SetLength(S2, Size);
+            end;
+          cmSynLZ2:
+            begin
+              SetLength(S2, SynLZdecompressdestlen(pAnsiChar(S1)));
+              Size := SynLZdecompress2(pAnsiChar(S1), length(S1), pAnsiChar(S2));
+              SetLength(S2, Size);
+            end;
+        end;
+
+        // write it to the one big chunk
+        fChunk.writeBuffer(S2[1], length(S2));
+
+        if fChunk.Size > 50 * mb then
+          flushChunk;
       end;
-      c.free;
+    end;
 
-      // decompress the chunk
-      Case cm Of
-        cmNone:
-          s2 := s1;
-        cmSynLZ1:
-          Begin
-            setLength(s2, SynLZdecompressdestlen(pAnsiChar(s1)));
-            size := SynLZdecompress1(pAnsiChar(s1), length(s1), pAnsiChar(s2));
-            setLength(s2, size);
-          End;
-        cmSynLZ2:
-          Begin
-            setLength(s2, SynLZdecompressdestlen(pAnsiChar(s1)));
-            size := SynLZdecompress2(pAnsiChar(s1), length(s1), pAnsiChar(s2));
-            setLength(s2, size);
-          End;
-      End;
+    addRecompressSummary;
+    flushChunk;
 
-      // write it to the one big chunk
-      fChunk.writeBuffer(s2[1], length(s2));
+    fNew.Size := fNew.Position; // truncate
+    // if the orginal was better compressed... then no need to overwrite it
+    if fNew.Size < fOld.Size then
+      fNew.SaveToFile(fFilename);
+  end;
 
-      If fChunk.size > 50 * mb Then
-        flushChunk;
-    End;
-  End;
+  procedure TBlogArchiveRepacker.flushChunk;
+  var
+    S1, S2: rawByteString;
+    Size: dword;
+    c: TAESCFB;
+  begin
+    // chunk contains now all the decrypted log items from the
+    fChunk.Size := fChunk.Position; // trim it
+    SetLength(S1, fChunk.Size);
+    fChunk.Position := 0;
+    fChunk.readbuffer(S1[1], fChunk.Size);
+    fChunk.Size := 0; // free memory
 
-  addRecompressSummary;
-  flushChunk;
+    // now compress
+    SetLength(S2, SynLZcompressdestlen(length(S1)));
+    Size := SynLZcompress2(pAnsiChar(S1), length(S1), pAnsiChar(S2));
+    SetLength(S2, Size);
 
-  fNew.size := fNew.position; // truncate
-  // if the orginal was better compressed... then no need to overwrite it
-  If fNew.size < fOld.size Then
-    fNew.SaveToFile(fFileName);
-End;
+    // now encrypt
+    c := TAESCFB.Create(fKey);
+    S1 := c.encryptPKCS7(S2, True);
+    c.Free;
 
-Procedure TBlogArchiveRepacker.flushChunk;
-Var
-  s1, s2: rawByteString;
-  size: DWORD;
-  c: TAESCFB;
-Begin
-  // chunk contains now all the decrypted log items from the
-  fChunk.size := fChunk.position; // trim it
-  setLength(s1, fChunk.size);
-  fChunk.position := 0;
-  fChunk.ReadBuffer(s1[1], fChunk.size);
-  fChunk.size := 0; // free memory
+    Size := length(S1);
+    fNew.writeBuffer(Size, 4);
+    if Size <> 0 then
+      fNew.writeBuffer(S1[1], Size);
+  end;
 
-  // now compress
-  setLength(s2, SynLZcompressdestlen(length(s1)));
-  size := SynLZcompress2(pAnsiChar(s1), length(s1), pAnsiChar(s2));
-  setLength(s2, size);
+initialization
 
-  // now encrypt
-  c := TAESCFB.Create(fKey);
-  s1 := c.encryptPKCS7(s2, true);
-  c.free;
+finalization
+  FreeGlobalLogger;
 
-  size := length(s1);
-  fNew.writeBuffer(size, 4);
-  If size <> 0 Then
-    fNew.writeBuffer(s1[1], size);
-End;
+end.
 
-End.

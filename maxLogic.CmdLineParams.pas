@@ -72,7 +72,7 @@ type
     function has(const aSwitchNames: array of string; aIgnoreCase: boolean = True): boolean;
 
     property Count: integer read GetCount;
-    property Params: TStringList read GetParamList;
+    property params: TStringList read GetParamList;
     property SwitchPrefixes: TSwitchPrefixes read GetSwitchPrefixes write SetSwitchPrefixes;
   end;
 
@@ -114,7 +114,7 @@ type
     function has(const aSwitchNames: array of string; aIgnoreCase: boolean = True): boolean; overload;
 
     property Count: integer read GetCount;
-    property Params: TStringList read GetParamList;
+    property params: TStringList read GetParamList;
     property SwitchPrefixes: TSwitchPrefixes read GetSwitchPrefixes write SetSwitchPrefixes;
   end;
 
@@ -146,8 +146,8 @@ procedure TCmdLineParams.BuildFromString(const aCmdLineParams: string);
 begin
   // TStringList handles quoted parameters correctly when StrictDelimiter is true.
   fParams.StrictDelimiter := True;
-  fParams.Delimiter := ' ';
-  fParams.DelimitedText := aCmdLineParams;
+  fParams.delimiter := ' ';
+  fParams.delimitedText := aCmdLineParams;
   RebuildDic;
 end;
 
@@ -164,7 +164,7 @@ begin
 
   fParams := TStringList.Create;
   fParams.StrictDelimiter := True;
-  fParams.Delimiter := ' ';
+  fParams.delimiter := ' ';
 
   for var i := 1 to System.ParamCount do
     fParams.Add(System.ParamStr(i));

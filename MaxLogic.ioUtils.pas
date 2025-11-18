@@ -188,6 +188,12 @@ function GetSpecialWindowsFolder(aFolder: integer): String;
 
 function IsInPath(const aPath, aFileName: string): Boolean;
 
+function GetFileDate(out aCreateTime, aLastAccess, aLastWriteTime: TDateTime;  const aFileName: String): Boolean; overload;
+function GetFileDate(const aFileName: String): TDateTime; overload;
+
+// smark BOM detection. If no bom preset, checks if file is utf8.
+function LoadStrFromFile(const aFileName: string): String;
+
 implementation
 
 Uses
@@ -979,6 +985,62 @@ begin
   lPath := IncludeTrailingPathDelimiter(ExpandUNCFileName(NormalizePath(aPath)));
   fn := ExpandUNCFileName(NormalizePath(aFileName));
   Result := sameText(copy(fn, 1, length(lPath)), lPath)
+end;
+
+function GetFileDate(const aFileName: string): TDateTime;
+begin
+  if TFile.Exists(aFileName) then
+    Result := TFile.GetLastWriteTime(aFileName)
+  else
+    Result := 0;
+end;
+
+function GetFileDate(out aCreateTime, aLastAccess, aLastWriteTime: TDateTime;  const aFileName: String): boolean;
+begin
+  if not TFile.Exists(aFileName) then
+    Exit(false);
+  aCreateTime    := TFile.GetCreationTime(aFileName);
+  aLastAccess    := TFile.GetLastAccessTime(aFileName);
+  aLastWriteTime := TFile.GetLastWriteTime(aFileName);
+  Result:= True;
+end;
+
+function LoadStrFromFile(const aFileName: string): string;
+var
+  lBytes: TBytes;
+  lEncoding: TEncoding;
+  lOffset: Integer;
+begin
+  If not TFile.Exists(aFileName) then
+    exit('');
+
+    lBytes := TFile.ReadAllBytes(aFileName);
+
+  if Length(lBytes) = 0 then
+    Exit('');
+
+  // 1) Let RTL detect BOM and give us some encoding as a starting point
+  lEncoding := nil;
+  lOffset := TEncoding.GetBufferEncoding(lBytes, lEncoding);
+  // With ADefaultEncoding=nil this falls back to TEncoding.Default when no BOM
+
+  // 2) No BOM: decide between UTF-8 and Default using IsBufferValid
+  if lOffset = 0 then
+  begin
+    if TEncoding.UTF8.IsBufferValid(lBytes) then
+    begin
+      // BOM-less, but valid UTF-8 → treat as UTF-8
+      lEncoding := TEncoding.UTF8;
+      // lOffset stays 0 (no BOM bytes to skip)
+    end else begin
+      // Not valid UTF-8 → fall back to whatever GetBufferEncoding chose
+      // (normally TEncoding.Default). Just in case, guarantee non-nil:
+      if lEncoding = nil then
+        lEncoding := TEncoding.Default;
+    end;
+  end;
+
+  Result := lEncoding.GetString(lBytes, lOffset, Length(lBytes) - lOffset);
 end;
 
 End.

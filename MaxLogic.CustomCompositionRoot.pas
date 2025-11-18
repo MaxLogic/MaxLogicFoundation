@@ -1,4 +1,4 @@
-﻿unit MaxLogic.CustomCompositionRoot;
+﻿unit maxLogic.CustomCompositionRoot;
 
 {
   This unit provides a reusable foundation for setting up a Dependency Injection Composition Root using Spring4D.
@@ -35,15 +35,16 @@ The `TDependencyRegistry` pattern is most valuable and shines brightest in these
 
 }
 
+(** Remark:
+  if spring4D does not call your construcot, ensure your have the following declared:
+  {$RTTI EXPLICIT METHODS([vcPublic, vcPublished]) PROPERTIES([vcPublic, vcPublished])}
+**)
+
 interface
 
 uses
-  system.sysUtils, system.Classes, system.syncObjs, System.Rtti,
-  Spring, Spring.Container, Spring.Container.Common, Spring.Services,
-  Spring.Container.Injection,
-
-  System.Generics.Collections;
-
+  System.SysUtils, System.Classes, System.Rtti, System.generics.collections, System.TypInfo,
+  Spring, Spring.Container, Spring.Container.Common, Spring.Services;
 
 type
   // Forward declaration
@@ -56,11 +57,13 @@ type
   /// </summary>
   TDependencyRegistry = class
   private
-    fRequiredTypes: TDictionary<string, PTypeInfo>;
-    fLock: TCriticalSection;
+    fRequiredTypes: THashSet<PTypeInfo>;
+    fDirty: Boolean;
     class var fInstance: TDependencyRegistry;
     constructor Create;
     class destructor DestroyClass;
+    // Core scanner that works purely on TRttiType (no instance required)
+    procedure RegisterRequirementsFromRttiType(const aRttiType: TRttiType);
   public
     destructor Destroy; override;
 
@@ -74,7 +77,17 @@ type
     /// the interface specified by aTypeInfo. This should be called from the
     /// `initialization` section of units that contain classes with dependencies.
     /// </summary>
-    procedure RegisterRequirement(aTypeInfo: PTypeInfo);
+    procedure RegisterRequirement(aTypeInfo: PTypeInfo); overload;
+    procedure RegisterRequirement<T>; overload;
+
+    /// <summary>
+    ///   scan an object for [Inject] on fields/properties and register those dependencies
+    /// </summary>
+    procedure RegisterRequirementsFrom(aClass: TClass); overload;
+
+    // generic convenience
+    procedure RegisterRequirementsFrom<T: class>; overload;
+
 
     /// <summary>
     /// Returns an array of all unique interface types that have been registered
@@ -90,56 +103,62 @@ type
   TCustomCompositionRoot = class
   protected
     fContainer: TContainer;
+    procedure BeforeRegisterDependencies; virtual;
+    // Centralized method for registering all application dependencies.
+    procedure RegisterDependencies; virtual;
+    // called after RegisterDependencies + fContainer.Build
+    procedure AfterRegisterDependencies; virtual;
+
+    // Force a fast-fail if a required dependency cannot be resolved.
+    procedure ValidateDependencies; virtual;
   public
     // NOTE: if aContainer = nil, then the global container will be used
     constructor Create(aContainer: TContainer = nil);
     // Centralized method for registering all application dependencies.
-    procedure RegisterDependencies; virtual;
-
-    // Force a fast-fail if a required dependency cannot be resolved.
-    procedure ValidateDependencies; virtual;
+    procedure SetUp(aValidate: Boolean = True); virtual;
 
     // field injection good for legacy objects, that are not created by the container
-    procedure BuildUp(const AInstance: TObject);
+    procedure BuildUp(const AInstance: TObject; aOverwriteExisting: Boolean = false);
 
     property Container: TContainer read fContainer;
   end;
 
+  TContainerHelper = class helper for TContainer
+    // field injection good for legacy objects, that are not created by the container
+    procedure BuildUp(const AInstance: TObject; aOverwriteExisting: Boolean = false);
+  end;
+
 implementation
 
+{$IFDEF DEBUG}
+var fPrevInitProc : Procedure;
+procedure ValidateRegisteredDependencies;
+begin
+  if TDependencyRegistry.Instance.fDirty then
+    raise Exception.Create(TDependencyRegistry.UnitName + ': You have untested dependencies registered with '+TDependencyRegistry.className);
+  if Assigned(fPrevInitProc) then
+    fPrevInitProc ();
+end;
+{$ENDIF}
 
 { TDependencyRegistry }
 
 class function TDependencyRegistry.Instance: TDependencyRegistry;
-var
-  lInstance: TDependencyRegistry;
-  lSuccess: Boolean;
 begin
-  // This is a standard, simple singleton pattern. For multithreaded apps,
-  // a more robust double-checked locking pattern might be used, but for
-  // initialization code that runs on the main thread, this is sufficient.
-  if not Assigned(fInstance) then
-  begin
-    lInstance := TDependencyRegistry.Create;
-    TInterlocked.CompareExchange<TDependencyRegistry>(fInstance, lInstance, nil, lSuccess);
-    if not lSuccess then
-      lInstance.Free;
-  end;
+  if not assigned(fInstance) then
+    fInstance := TDependencyRegistry.Create;
   Result := fInstance;
 end;
 
 constructor TDependencyRegistry.Create;
 begin
   inherited Create;
-  fLock := TCriticalSection.Create;
-  // Use a dictionary to automatically handle duplicate registrations.
-  fRequiredTypes := TDictionary<string, PTypeInfo>.Create;
+  fRequiredTypes := THashSet<PTypeInfo>.Create;
 end;
 
 destructor TDependencyRegistry.Destroy;
 begin
   fRequiredTypes.Free;
-  fLock.Free;
   inherited;
 end;
 
@@ -148,98 +167,164 @@ begin
   FreeAndNil(fInstance);
 end;
 
+procedure TDependencyRegistry.RegisterRequirement<T>;
+begin
+  RegisterRequirement(TypeInfo(T));
+end;
+
 procedure TDependencyRegistry.RegisterRequirement(aTypeInfo: PTypeInfo);
 begin
-  if not Assigned(aTypeInfo) then
+  if not assigned(aTypeInfo) then
+    exit;
+  fDirty:= True;
+
+  // Using the type name as the key prevents duplicate entries.
+  fRequiredTypes.Add(aTypeInfo);
+end;
+
+
+
+procedure TDependencyRegistry.RegisterRequirementsFromRttiType(const aRttiType: TRttiType);
+var
+  lField: TRttiField;
+  lProp: TRttiProperty;
+  lAttr: TCustomAttribute;
+  lInject: InjectAttribute;
+  lServiceType: PTypeInfo;
+
+  function ServiceTypeFromAttrOrMember(const aAttr: InjectAttribute; const aMemberType: TRttiType): PTypeInfo;
+  begin
+    Result := nil;
+    if Assigned(aAttr) then
+      Result := aAttr.ServiceType; // may be nil
+    if (Result = nil) and Assigned(aMemberType) then
+      Result := aMemberType.Handle;
+  end;
+
+begin
+  if aRttiType = nil then
     Exit;
 
-  // Ensure thread-safety, as unit initialization order is not guaranteed
-  // and could theoretically happen across threads in some hosts.
-  fLock.Acquire;
+  // Fields with [Inject]
+  for lField in aRttiType.GetFields do
+  begin
+    lInject := nil;
+    for lAttr in lField.GetAttributes do
+      if lAttr is InjectAttribute then
+      begin
+        lInject := InjectAttribute(lAttr);
+        Break;
+      end;
+
+    if Assigned(lInject) then
+    begin
+      lServiceType := ServiceTypeFromAttrOrMember(lInject, lField.FieldType);
+      RegisterRequirement(lServiceType);
+    end;
+  end;
+
+  // Writable properties with [Inject]
+  for lProp in aRttiType.GetProperties do
+  begin
+    if not lProp.IsWritable then
+      Continue;
+
+    lInject := nil;
+    for lAttr in lProp.GetAttributes do
+      if lAttr is InjectAttribute then
+      begin
+        lInject := InjectAttribute(lAttr);
+        Break;
+      end;
+
+    if Assigned(lInject) then
+    begin
+      lServiceType := ServiceTypeFromAttrOrMember(lInject, lProp.PropertyType);
+      RegisterRequirement(lServiceType);
+    end;
+  end;
+end;
+
+procedure TDependencyRegistry.RegisterRequirementsFrom(aClass: TClass);
+var
+  lCtx: TRttiContext;
+  lType: TRttiType;
+begin
+  if not Assigned(aClass) then
+    Exit;
+
+  lCtx := TRttiContext.Create;
   try
-    // Using the type name as the key prevents duplicate entries.
-    fRequiredTypes.AddOrSetValue(aTypeInfo.Name, aTypeInfo);
+    lType := lCtx.GetType(aClass); // RTTI by class ref, no instance needed
+    RegisterRequirementsFromRttiType(lType);
   finally
-    fLock.Release;
+    lCtx.Free;
+  end;
+end;
+
+procedure TDependencyRegistry.RegisterRequirementsFrom<T>;
+var
+  lCtx: TRttiContext;
+  lType: TRttiType;
+begin
+  lCtx := TRttiContext.Create;
+  try
+    lType := lCtx.GetType(TypeInfo(T));
+    RegisterRequirementsFromRttiType(lType);
+  finally
+    lCtx.Free;
   end;
 end;
 
 function TDependencyRegistry.GetRequiredTypes: TArray<PTypeInfo>;
 begin
-  fLock.Acquire;
-  try
-    Result := fRequiredTypes.Values.ToArray;
-  finally
-    fLock.Release;
-  end;
+  Result := fRequiredTypes.ToArray;
 end;
 
 { TCustomCompositionRoot }
 
-procedure TCustomCompositionRoot.BuildUp(const AInstance: TObject);
-var
-  lContext: TRttiContext;
-  lType: TRttiType;
-  lField: TRttiField;
-  lAttribute: TCustomAttribute;
-  lServiceType: PTypeInfo;
-  lResolvedValue: TValue;
+procedure TCustomCompositionRoot.AfterRegisterDependencies;
 begin
-  if not Assigned(AInstance) then
-    Exit;
 
-  lContext := TRttiContext.Create;
-  try
-    lType := lContext.GetType(AInstance.ClassType);
-
-    // Iterate over all fields of the instance's class
-    for lField in lType.GetFields do
-    begin
-      // Check if the field has the [Inject] attribute
-      for lAttribute in lField.GetAttributes do
-      begin
-        if lAttribute is InjectAttribute then
-        begin
-          // We found a dependency. Let's resolve it.
-          lServiceType := lField.FieldType.Handle;
-          try
-            lResolvedValue := GlobalContainer.Resolve(lServiceType);
-            if not lResolvedValue.IsEmpty then
-            begin
-              // Inject the resolved service into the field.
-              lField.SetValue(AInstance, lResolvedValue);
-            end;
-          except
-            on E: Exception do
-              raise EContainerException.CreateFmt(
-                'BuildUp failed for type "%s". Could not resolve dependency for field "%s" (%s). Original Error: %s',
-                [AInstance.ClassName, lField.Name, lField.FieldType.Name, E.Message]
-              );
-          end;
-          // Found the [Inject] attribute, no need to check other attributes on this field
-          Break;
-        end;
-      end;
-    end;
-  finally
-    lContext.Free;
-  end;
 end;
 
+procedure TCustomCompositionRoot.BeforeRegisterDependencies;
+begin
+
+end;
+
+procedure TCustomCompositionRoot.BuildUp(const AInstance: TObject; aOverwriteExisting: Boolean = false);
+begin
+  fContainer.BuildUp(AInstance, aOverwriteExisting);
+end;
 
 constructor TCustomCompositionRoot.Create(aContainer: TContainer);
 begin
   inherited Create;
   if aContainer = nil then
-    fContainer:= GlobalContainer
+    fContainer := GlobalContainer
   else
-    fContainer:= aContainer;
+    fContainer := aContainer;
 end;
 
 procedure TCustomCompositionRoot.RegisterDependencies;
 begin
-  // This is the point where the DI container is finalized.
+
+end;
+
+procedure TCustomCompositionRoot.SetUp(aValidate: Boolean = True);
+begin
+  BeforeRegisterDependencies;
+  RegisterDependencies;
   fContainer.Build;
+
+  if aValidate then
+  begin
+    // Fail fast if anything is mis-registered or missing.
+    ValidateDependencies;
+  end;
+
+  AfterRegisterDependencies;
 end;
 
 procedure TCustomCompositionRoot.ValidateDependencies;
@@ -247,31 +332,185 @@ var
   lRequiredType: PTypeInfo;
   lTypeName: string;
   lServiceLocator: IServiceLocator;
+  lCtx: TRttiContext;
 begin
+  if not TDependencyRegistry.Instance.fDirty then
+    Exit;
+  TDependencyRegistry.Instance.fDirty:= False;
+
   lServiceLocator := TServiceLocatorAdapter.Create(fContainer);
 
-  for lRequiredType in TDependencyRegistry.Instance.GetRequiredTypes do
-  begin
-    lTypeName := lRequiredType.Name;
+  lCtx := TRttiContext.Create;
+  try
+    for lRequiredType in TDependencyRegistry.Instance.GetRequiredTypes do
+    begin
+      lTypeName := lCtx.GetType(lRequiredType).QualifiedName;
 
-    // 1. Check if the interface is registered using the correct method.
-    if not lServiceLocator.HasService(lRequiredType) then
-      raise EContainerException.CreateFmt(
-        'Startup Validation Failed: The required service "%s" is declared as a dependency but is not registered in the DI container.',
-        [lTypeName]
-      );
-
-    // 2. Try to actually resolve it. This part remains the same and is correct.
-    try
-      fContainer.Resolve(lRequiredType);
-    except
-      on E: Exception do
+      // 1. Check if the interface is registered using the correct method.
+      if not lServiceLocator.HasService(lRequiredType) then
         raise EContainerException.CreateFmt(
-          'Startup Validation Failed: Could not resolve the required service "%s". Check its own dependencies. Original Error: %s',
-          [lTypeName, E.Message]
-        );
+          'Startup Validation Failed: The required service "%s" is declared as a dependency but is not registered in the DI container.',
+          [lTypeName]
+          );
+
+      // 2. Try to actually resolve it. This part remains the same and is correct.
+      try
+        fContainer.Resolve(lRequiredType);
+      except
+        on e: Exception do
+          raise EContainerException.CreateFmt(
+            'Startup Validation Failed: Could not resolve the required service "%s". Check its own dependencies. Original Error: %s',
+            [lTypeName, e.Message]
+            );
+      end;
     end;
+  finally
+    lCtx.Free;
   end;
 end;
 
+{ TContainerHelper }
+
+
+procedure TContainerHelper.BuildUp(const AInstance: TObject; aOverwriteExisting: Boolean = false);
+var
+  lCtx: TRttiContext;
+  lType: TRttiType;
+  lField: TRttiField;
+  lProp: TRttiProperty;
+  lAttr: TCustomAttribute;
+  lInjectAttr: InjectAttribute;
+  lServiceType: PTypeInfo;
+
+  function IsUnset(const aValue: TValue): Boolean;
+  begin
+    // Treat Nil object/interface or empty value as "unset"
+    if aValue.IsEmpty then
+      Exit(True);
+    if aValue.Kind = tkClass then
+      Exit(aValue.AsObject = nil);
+    if aValue.Kind = tkInterface then
+      Exit(aValue.AsInterface = nil);
+    // for other kinds we don't inject here
+    Result := False;
+  end;
+
+
+  procedure InjectFieldIfNeeded(const aObj: TObject; const aField: TRttiField; const aServiceType: PTypeInfo);
+  var
+    lCurrent: TValue;
+  begin
+    lCurrent := aField.GetValue(aObj);
+    if aOverwriteExisting or IsUnset(lCurrent) then
+      aField.SetValue(aObj, Self.Resolve(aServiceType));
+  end;
+
+  procedure InjectPropIfNeeded(const aObj: TObject; const aProp: TRttiProperty; const aServiceType: PTypeInfo);
+  var
+    lCurrent: TValue;
+  begin
+    if not aProp.IsWritable then
+      Exit;
+    lCurrent := aProp.GetValue(aObj);
+    if aOverwriteExisting or IsUnset(lCurrent) then
+      aProp.SetValue(aObj, Self.Resolve(aServiceType));
+  end;
+
+
+begin
+  if not Assigned(AInstance) then
+  begin
+    exit;
+  end;
+
+  lCtx := TRttiContext.Create;
+  try
+    lType := lCtx.GetType(AInstance.ClassType);
+
+    // Fields with [Inject]
+    for lField in lType.GetFields do
+    begin
+      lInjectAttr := nil;
+      for lAttr in lField.GetAttributes do
+      begin
+        if lAttr is InjectAttribute then
+        begin
+          lInjectAttr := InjectAttribute(lAttr);
+          break;
+        end;
+      end;
+
+      if Assigned(lInjectAttr) then
+      begin
+        lServiceType := lInjectAttr.ServiceType;
+        if lServiceType = nil then
+        begin
+          lServiceType := lField.FieldType.Handle;
+        end;
+
+        try
+          InjectFieldIfNeeded(AInstance, lField, lServiceType);
+        except
+          on E: Exception do
+            raise EContainerException.CreateFmt(
+              'BuildUp failed for %s.%s (%s): %s',
+              [AInstance.ClassName, lField.Name, lField.FieldType.Name, E.Message]
+            );
+        end;
+      end;
+    end;
+
+    // Writable properties with [Inject]
+    for lProp in lType.GetProperties do
+    begin
+      if not lProp.IsWritable then
+      begin
+        continue;
+      end;
+
+      lInjectAttr := nil;
+      for lAttr in lProp.GetAttributes do
+      begin
+        if lAttr is InjectAttribute then
+        begin
+          lInjectAttr := InjectAttribute(lAttr);
+          break;
+        end;
+      end;
+
+      if Assigned(lInjectAttr) then
+      begin
+        lServiceType := lInjectAttr.ServiceType;
+        if lServiceType = nil then
+        begin
+          lServiceType := lProp.PropertyType.Handle;
+        end;
+
+        try
+          InjectPropIfNeeded(AInstance, lProp, lServiceType);
+        except
+          on E: Exception do
+            raise EContainerException.CreateFmt(
+              'BuildUp failed for %s.%s (%s): %s',
+              [AInstance.ClassName, lProp.Name, lProp.PropertyType.Name, E.Message]
+            );
+        end;
+      end;
+    end;
+
+  finally
+    lCtx.Free;
+  end;
+end;
+
+
+initialization
+
+  {$IFDEF DEBUG}
+  // defered test, will be called by Application.Initialize, just in ase the dependancies are not tested manually
+  fPrevInitProc:= InitProc;
+  InitProc := @ValidateRegisteredDependencies;
+  {$ENDIF}
+
 end.
+
