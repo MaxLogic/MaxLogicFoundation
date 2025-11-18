@@ -107,6 +107,7 @@ type
     // Search roots and custom roots
     [Test] procedure Search_XdgDirs_Multiple_OrderAndLoad;
     [Test] procedure Search_CustomRoots_Precision_And_Order;
+    [Test] procedure Search_CustomNamespace_OverridesDefault;
 
     // API consistency
     [Test] procedure API_AsDictionary_PreservesOriginalCasing;
@@ -1286,7 +1287,7 @@ begin
   TempBase := MakeTempDir('winprofile');
   try
     AppDataPath := BuildPath(TempBase, ['AppData']);
-    WriteText(BuildPath(AppDataPath, ['MaxLogic', '.env']), 'VALUE=appdata'#10);
+    WriteText(BuildPath(AppDataPath, ['maxlogic', '.env']), 'VALUE=appdata'#10);
     SavedAppData := GetEnvironmentVariable('APPDATA');
     SetEnvironmentVariable(PChar('APPDATA'), PChar(AppDataPath));
     DotEnv := TDotEnv.Create;
@@ -2634,6 +2635,66 @@ begin
     finally
       DotEnv.Free;
     end;
+  finally
+    RemoveDirRecursive(TempBase);
+  end;
+end;
+
+procedure TMaxLogicDotEnvTests.Search_CustomNamespace_OverridesDefault;
+const
+  CustomNs = 'acme';
+var
+  TempBase, ProjectDir: string;
+  DotEnv: TDotEnv;
+{$IFDEF MSWINDOWS}
+  AppDataPath, CustomDir, SavedAppData: string;
+{$ELSE}
+  HomeDir, CustomDir, SavedHome: string;
+{$ENDIF}
+begin
+  TempBase := MakeTempDir('custom-namespace');
+  try
+    ProjectDir := BuildPath(TempBase, ['project']);
+    TDirectory.CreateDirectory(ProjectDir);
+{$IFDEF MSWINDOWS}
+    AppDataPath := BuildPath(TempBase, ['AppData']);
+    CustomDir := BuildPath(AppDataPath, [CustomNs]);
+    TDirectory.CreateDirectory(CustomDir);
+    WriteText(BuildPath(CustomDir, ['.env']), 'VALUE=custom'#10);
+    SavedAppData := GetEnvironmentVariable('APPDATA');
+    SetEnvironmentVariable(PChar('APPDATA'), PChar(AppDataPath));
+    DotEnv := TDotEnv.Create;
+    try
+      DotEnv.EnvironmentNamespace := CustomNs;
+      DotEnv.LoadLayered(ProjectDir, [TDotEnvOption.SearchWindowsProfile]);
+      Assert.AreEqual('custom', CollectValue(DotEnv, 'VALUE'));
+    finally
+      DotEnv.Free;
+      if SavedAppData = '' then
+        SetEnvironmentVariable(PChar('APPDATA'), nil)
+      else
+        SetEnvironmentVariable(PChar('APPDATA'), PChar(SavedAppData));
+    end;
+{$ELSE}
+    HomeDir := BuildPath(TempBase, ['home']);
+    CustomDir := BuildPath(HomeDir, ['.config', CustomNs]);
+    TDirectory.CreateDirectory(CustomDir);
+    WriteText(BuildPath(CustomDir, ['.env']), 'VALUE=custom'#10);
+    SavedHome := GetEnvironmentVariable('HOME');
+    setenv(PAnsiChar(AnsiString('HOME')), PAnsiChar(AnsiString(HomeDir)), 1);
+    DotEnv := TDotEnv.Create;
+    try
+      DotEnv.EnvironmentNamespace := CustomNs;
+      DotEnv.LoadLayered(ProjectDir, [TDotEnvOption.SearchUserHome]);
+      Assert.AreEqual('custom', CollectValue(DotEnv, 'VALUE'));
+    finally
+      DotEnv.Free;
+      if SavedHome = '' then
+        unsetenv(PAnsiChar(AnsiString('HOME')))
+      else
+        setenv(PAnsiChar(AnsiString('HOME')), PAnsiChar(AnsiString(SavedHome)), 1);
+    end;
+{$ENDIF}
   finally
     RemoveDirRecursive(TempBase);
   end;

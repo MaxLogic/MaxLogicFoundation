@@ -17,14 +17,14 @@ const
 
  type
   TDotEnvOption = (
-    DoNotOverrideExisting,
-    CaseSensitiveKeys,
-    StrictUndefined,
-    AllowCommandSubst,
-    SearchUserHome,
-    SearchXDG,
-    SearchWindowsProfile,
-    StreamingEvaluation
+    DoNotOverrideExisting,    // Do not store keys already present in the process environment.
+    CaseSensitiveKeys,        // Force case-sensitive key comparisons, even on Windows.
+    StrictUndefined,          // Treat missing variables (without defaults) as fatal errors.
+    AllowCommandSubst,        // Enable $(...) command execution during value expansion.
+    SearchUserHome,           // Search the user home and ~/.config/<namespace> roots.
+    SearchXDG,                // Search XDG config locations (POSIX) using the namespace.
+    SearchWindowsProfile,     // Search %APPDATA%\<namespace>.
+    StreamingEvaluation       // Evaluate values as files are read instead of after merge.
   );
 
   TDotEnvOptions = set of TDotEnvOption;
@@ -154,12 +154,14 @@ const
       FDeferred: TDictionary<string, TRawAssignment>;
       FEvalStack: THashSet<string>;
       FDeferredActive: Boolean;
+      FEnvironmentNamespace: string;
 
     procedure InitDefaults;
     procedure ResetState;
     function DetermineCaseSensitive: Boolean;
     procedure EnsureValuesDictionary;
     function NormalizeKey(const aKey: string): string;
+    procedure SetEnvironmentNamespace(const aValue: string);
 
     procedure AddError(const aFilePath: string; aLine, aColumn: Integer; aKind: TDotEnvErrorKind;
       const aMsg: string; aFatal: Boolean);
@@ -214,25 +216,54 @@ const
     procedure EvaluateAfterMergeEntries(const aEntries: TList<TRawAssignment>);
     procedure EvaluateDeferredKey(const aNormalizedKey: string);
   public
+    /// <summary>Creates a dot-env loader with default file-size cap and parent search depth.</summary>
     constructor Create; overload;
+    /// <summary>Creates a dot-env loader with custom file-size and parent-depth settings.</summary>
+    /// <param name="aMaxFileSize">Maximum number of bytes allowed per .env file.</param>
+    /// <param name="aParentDepth">Maximum number of parent directories to crawl when searching.</param>
     constructor Create(aMaxFileSize: Int64; aParentDepth: Integer); overload;
+    /// <summary>Releases all resources held by the loader.</summary>
     destructor Destroy; override;
 
+    /// <summary>Loads layered .env files rooted at <paramref name="aBaseDir"/>.</summary>
+    /// <param name="aBaseDir">Directory whose layered files (.env, .env.local, .env.secret) form the highest-precedence root.</param>
+    /// <param name="aOptions">Flags controlling search roots, evaluation mode, and safety features.</param>
     procedure LoadLayered(const aBaseDir: string; const aOptions: TDotEnvOptions = []);
+    /// <summary>Loads the specified .env files in order without performing root expansion.</summary>
+    /// <param name="aFiles">Explicit file paths to load.</param>
+    /// <param name="aOptions">Flags controlling evaluation mode and safety features.</param>
     procedure LoadFiles(const aFiles: array of string; const aOptions: TDotEnvOptions = []);
 
+    /// <summary>Overrides the automatically computed search roots used by <see cref="LoadLayered" />.</summary>
+    /// <param name="aRoots">Exact root definitions in precedence order.</param>
     procedure SetSearchRoots(const aRoots: TArray<TSearchRoot>);
+    /// <summary>Returns the deterministic set of roots that would be considered for the given base directory.</summary>
+    /// <param name="aBaseDir">Directory used as the project root.</param>
+    /// <param name="aOptions">Search flags that influence which auxiliary roots are added.</param>
     class function DefaultSearchRoots(const aBaseDir: string; aOptions: TDotEnvOptions): TArray<TSearchRoot>;
 
+    /// <summary>Retrieves a value by key if it was stored during the last load.</summary>
+    /// <param name="aKey">Logical key to read.</param>
+    /// <param name="aValue">Receives the stored value when the function returns True.</param>
     function TryGetValue(const aKey: string; out aValue: string): Boolean;
+    /// <summary>Retrieves a value by key, returning <paramref name="aDefaultValue"/> when not present.</summary>
     function GetValue(const aKey: string; const aDefaultValue: string = ''): string;
+    /// <summary>Returns a snapshot dictionary of all stored key/value pairs (preserving winner casing).</summary>
     function AsDictionary: TDictionary<string, string>;
+    /// <summary>Expands a string as though it were loaded from a file, honoring built-ins and process values.</summary>
+    /// <param name="aText">The text to expand.</param>
+    /// <param name="aSourceFilePath">Optional file path used for CUR_DIR/CUR_FILE evaluation.</param>
     function Expand(const aText: string; const aSourceFilePath: string = ''): string;
 
+    /// <summary>Returns the list of structured errors emitted during the last load.</summary>
     function GetErrors: TArray<TDotEnvError>;
+    /// <summary>Returns the chronological trace describing which files were considered/loaded/skipped.</summary>
     function GetTrace: TArray<string>;
 
+    /// <summary>Callback invoked when no stored value, process environment variable, or built-in matches a symbol.</summary>
     property OnResolveSymbol: TOnResolveSymbol read FOnResolveSymbol write FOnResolveSymbol;
+    /// <summary>Namespace appended to shared search roots (e.g., ~/.config/&lt;namespace&gt;); set to empty to disable.</summary>
+    property EnvironmentNamespace: string read FEnvironmentNamespace write SetEnvironmentNamespace;
   end;
 
 implementation
@@ -949,6 +980,7 @@ begin
   FIncludeStack := TStack<string>.Create;
   FMaxFileSize := MAX_DOTENV_FILE_SIZE;
   FParentDepth := DEFAULT_PARENT_DEPTH;
+  FEnvironmentNamespace := 'maxlogic';
 end;
 
 procedure TDotEnv.ResetState;
@@ -2286,6 +2318,11 @@ begin
   FHasCustomRoots := Length(FCustomRoots) > 0;
 end;
 
+procedure TDotEnv.SetEnvironmentNamespace(const aValue: string);
+begin
+  FEnvironmentNamespace := aValue.Trim;
+end;
+
 function TDotEnv.ExpandRoots(const aBaseDir: string; const aOptions: TDotEnvOptions): TArray<TSearchRoot>;
 var
   lRoots: TList<TSearchRoot>;
@@ -2295,6 +2332,7 @@ var
   lParentPath: string;
   lDepth: Integer;
   lHomeDir: string;
+  lNamespace: string;
 {$IFNDEF MSWINDOWS}
   lXdgHome: string;
   lXdgDirs: string;
@@ -2305,6 +2343,13 @@ var
   function NormalizePathKey(const aPath: string): string;
   begin
     Result := TPath.GetFullPath(aPath);
+  end;
+
+  function AppendNamespace(const aBase: string): string;
+  begin
+    if lNamespace = '' then
+      Exit(aBase);
+    Result := TPath.Combine(aBase, lNamespace);
   end;
 
   procedure AddRoot(const aKind: TSearchRootKind; const aPath: string);
@@ -2332,6 +2377,8 @@ begin
     Result := Copy(FCustomRoots, 0, Length(FCustomRoots));
     Exit;
   end;
+
+  lNamespace := FEnvironmentNamespace;
 
   lRoots := TList<TSearchRoot>.Create;
   lSeen := TDictionary<string, Byte>.Create(TKeyComparer.Create(not IsWindowsPlatform));
@@ -2363,14 +2410,14 @@ begin
       if (lXdgHome = '') and (lHomeDir <> '') then
         lXdgHome := TPath.Combine(lHomeDir, '.config');
       if lXdgHome <> '' then
-        AddRoot(TSearchRootKind.srXDG, TPath.Combine(lXdgHome, 'maxlogic'));
+        AddRoot(TSearchRootKind.srXDG, AppendNamespace(lXdgHome));
       lXdgDirs := GetEnvironmentVariable('XDG_CONFIG_DIRS');
       if lXdgDirs = '' then
         lXdgDirs := '/etc/xdg';
       lParts := lXdgDirs.Split([':']);
       for lDirItem in lParts do
         if lDirItem.Trim <> '' then
-          AddRoot(TSearchRootKind.srXDG, TPath.Combine(lDirItem.Trim, 'maxlogic'));
+          AddRoot(TSearchRootKind.srXDG, AppendNamespace(lDirItem.Trim));
     end;
 {$ENDIF}
 
@@ -2380,7 +2427,7 @@ begin
       if lHomeDir <> '' then
       begin
         AddRoot(TSearchRootKind.srHome, lHomeDir);
-        AddRoot(TSearchRootKind.srHome, TPath.Combine(TPath.Combine(lHomeDir, '.config'), 'maxlogic'));
+        AddRoot(TSearchRootKind.srHome, AppendNamespace(TPath.Combine(lHomeDir, '.config')));
       end;
     end;
 
@@ -2389,7 +2436,7 @@ begin
     begin
       lParentPath := GetEnvironmentVariable('APPDATA');
       if lParentPath <> '' then
-        AddRoot(TSearchRootKind.srWinProfile, TPath.Combine(lParentPath, 'MaxLogic'));
+        AddRoot(TSearchRootKind.srWinProfile, AppendNamespace(lParentPath));
     end;
 {$ENDIF}
 

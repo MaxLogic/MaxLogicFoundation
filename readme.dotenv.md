@@ -89,15 +89,17 @@ In streaming mode, forward references are empty (or fatal under StrictUndefined)
 - Root precedence when combined (highest to lowest):
   - Project directory (BaseDir passed to LoadLayered)
   - Parent directories of BaseDir (nearest → farthest)
-  - POSIX XDG home (`$XDG_CONFIG_HOME/maxlogic`), then each entry from `$XDG_CONFIG_DIRS/maxlogic` in order
-  - User home (`~`), then `~/.config/maxlogic`
-  - Windows profile (`%APPDATA%\MaxLogic`)
+  - POSIX XDG home (`$XDG_CONFIG_HOME/<namespace>`), then each entry from `$XDG_CONFIG_DIRS/<namespace>` in order
+  - User home (`~`), then `~/.config/<namespace>`
+  - Windows profile (`%APPDATA%\<namespace>`)
+
+  *Default namespace is `maxlogic`. Override via `TDotEnv.EnvironmentNamespace`; set it to empty string to drop the subfolder entirely.*
 
 ### Search roots
 
-- `SearchUserHome`: include `~/.env*` and `~/.config/maxlogic/`.
-- `SearchXDG` (POSIX): include `$XDG_CONFIG_HOME/maxlogic` and each dir from `$XDG_CONFIG_DIRS/maxlogic` (fallbacks supported). The order of `$XDG_CONFIG_DIRS` is preserved; earlier entries have higher priority.
-- `SearchWindowsProfile` (Windows): include `%APPDATA%\MaxLogic`.
+- `SearchUserHome`: include `~/.env*` and `~/.config/<namespace>/`.
+- `SearchXDG` (POSIX): include `$XDG_CONFIG_HOME/<namespace>` and each dir from `$XDG_CONFIG_DIRS/<namespace>` (fallbacks supported). The order of `$XDG_CONFIG_DIRS` is preserved; earlier entries have higher priority.
+- `SearchWindowsProfile` (Windows): include `%APPDATA%\<namespace>`.
 - Custom roots: provide your own via `SetSearchRoots`.
 
 ```pascal
@@ -108,6 +110,10 @@ Roots[1].Kind := srCustom; Roots[1].Path := 'D:\ConfigB';
 DotEnv.SetSearchRoots(Roots);
 DotEnv.LoadLayered('C:\Project', []); // only your custom roots are used
 ```
+
+#### Customizing the namespace
+
+`TDotEnv.EnvironmentNamespace` controls the subfolder appended to shared roots (XDG, user home `.config`, Windows profile, etc.). It defaults to `maxlogic`. Assign a new value before loading to point the loader at a different namespace, or set it to `''` to use the base directories directly (e.g., `%APPDATA%` without a child folder).
 
 ### Evaluation modes
 
