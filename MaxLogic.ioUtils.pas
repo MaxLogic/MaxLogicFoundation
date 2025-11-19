@@ -1051,16 +1051,14 @@ var
   lP1, lP2: string;
 begin
   lP1:= aPath1.Trim;
-  lP1:= ifThen(lP1='', slash('.'), lP1);
-  lP1 := slash(TPath.GetFullPath(NormalizePath(lP1)));
-
   lP2:= aPath2.Trim;
-  lP2:= ifThen(lP2='', slash('.'), lP2);
-  lP2 := slash(TPath.GetFullPath(NormalizePath(lP2)));
 
   // Treat two empty/invalid-normalized paths as equal, anything else as unequal
   if (lP1 = '') or (lP2 = '') then
     Exit(lP1 = lP2); // true if both are empty, false otherwise
+
+  lP1 := slash(TPath.GetFullPath(NormalizePath(lP1)));
+  lP2 := slash(TPath.GetFullPath(NormalizePath(lP2)));
 
   // SameFileName uses AnsiCompareFileName under the hood:
   // - case-insensitive on Windows

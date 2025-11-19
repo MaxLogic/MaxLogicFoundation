@@ -210,6 +210,8 @@ var
   lDir, lCurDir: string;
 begin
   lDir := slash(ExpandFileName(aLogDir));
+  if aLogDir = '' then
+    raise Exception.Create('maxLogAsyncWriter.InitGlobalLogger: LogDir can not be empty');
   if fglGlobalLogger <> nil then
   begin
     lCurDir := slash(ExpandFileName(fglGlobalLogger.BLogDir));
@@ -217,7 +219,7 @@ begin
       FreeAndNil(fglGlobalLogger);
   end;
 
-  if fglGlobalLogger <> nil then
+  if fglGlobalLogger = nil then
     fglGlobalLogger := TMaxLogAsyncWriter.Create(aLogDir);
 
   Result := fglGlobalLogger;
