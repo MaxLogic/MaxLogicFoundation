@@ -244,6 +244,12 @@ const
     function TryGetValue(const aKey: string; out aValue: string): Boolean;
     /// <summary>Retrieves a value by key, returning <paramref name="aDefaultValue"/> when not present.</summary>
     function GetValue(const aKey: string; const aDefaultValue: string = ''): string;
+
+    // ensures proper directory separator ("\" on windows, "/" on Posix
+    // if aExpand = true -> expands relative paths to fill file name
+    function TryGetPath(const aKey: String; out aPath: String; aExpand: Boolean = True): Boolean;
+    function GetPath(const aKey: String; const aDefaultPath: String = ''; aExpand: Boolean = True): String;
+
     /// <summary>Returns a snapshot dictionary of all stored key/value pairs (preserving winner casing).</summary>
     function AsDictionary: TDictionary<string, string>;
     /// <summary>Expands a string as though it were loaded from a file, honoring built-ins and process values.</summary>
@@ -1121,6 +1127,18 @@ begin
   Result := FInitialEnv.ContainsKey(lLookup);
 end;
 
+function TDotEnv.TryGetPath(const aKey: String; out aPath: String;
+  aExpand: Boolean): Boolean;
+begin
+  Result:= TryGetValue(aKey, aPath);
+  if Result Then
+  begin
+    aPath:= MaxLogic.ioUtils.NormalizePath(aPath); // converts "bad" directory separator into "god" ones depending on platform
+    if aExpand then
+      aPath:= TPath.GetFullPath(aPath)
+  end;
+end;
+
 function TDotEnv.TryGetValue(const aKey: string; out aValue: string): Boolean;
 var
   lStored: TStoredValue;
@@ -1154,6 +1172,18 @@ end;
 function TDotEnv.GetErrors: TArray<TDotEnvError>;
 begin
   Result := FErrors.ToArray;
+end;
+
+function TDotEnv.GetPath(const aKey, aDefaultPath: String;
+  aExpand: Boolean): String;
+begin
+  if not TryGetPath(aKey, Result) then
+  begin
+    Result := aDefaultPath;
+    Result:= MaxLogic.ioUtils.NormalizePath(Result); // converts "bad" directory separator into "god" ones depending on platform
+    if aExpand then
+      Result:= TPath.GetFullPath(Result)
+  end;
 end;
 
 function TDotEnv.GetTrace: TArray<string>;
@@ -1854,10 +1884,12 @@ begin
   lPathToUse := aFilePath;
 
   // POSIX: allow case-insensitive match for ".env.secret"
+  {$IFNDEF MsWindows}
   if not TFile.Exists(lPathToUse) and SameText(TPath.GetFileName(lPathToUse), '.env.secret') then
   begin
     lDir := TPath.GetDirectoryName(lPathToUse);
-    try
+    if TDirectory.Exists(lDir) then
+    begin
       lItems := TDirectory.GetFiles(lDir);
       for lCandidate in lItems do
         if SameText(TPath.GetFileName(lCandidate), '.env.secret') then
@@ -1865,10 +1897,9 @@ begin
           lPathToUse := lCandidate;
           Break;
         end;
-    except
-      // ignore directory listing failures; fall back to original path
     end;
   end;
+  {$ENDIF}
 
   if TFile.Exists(lPathToUse) then
   begin
