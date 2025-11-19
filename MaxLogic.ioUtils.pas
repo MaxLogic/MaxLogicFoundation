@@ -194,6 +194,9 @@ function GetFileDate(const aFileName: String): TDateTime; overload;
 // smark BOM detection. If no bom preset, checks if file is utf8.
 function LoadStrFromFile(const aFileName: string): String;
 
+// normalizes the path, then compares
+function SamePath(const aPath1, aPath2: string): Boolean;
+
 implementation
 
 Uses
@@ -1041,6 +1044,23 @@ begin
   end;
 
   Result := lEncoding.GetString(lBytes, lOffset, Length(lBytes) - lOffset);
+end;
+
+function SamePath(const aPath1, aPath2: string): Boolean;
+var
+  lP1, lP2: string;
+begin
+  lP1 := slash(TPath.GetFullPath(NormalizePath(aPath1)));
+  lP2 := slash(TPath.GetFullPath(NormalizePath(aPath2)));
+
+  // Treat two empty/invalid-normalized paths as equal, anything else as unequal
+  if (lP1 = '') or (lP2 = '') then
+    Exit(lP1 = lP2); // true if both are empty, false otherwise
+
+  // SameFileName uses AnsiCompareFileName under the hood:
+  // - case-insensitive on Windows
+  // - case-sensitive on macOS / (effectively) POSIX
+  Result := SameFileName(lP1, lP2);
 end;
 
 End.

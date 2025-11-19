@@ -5,10 +5,7 @@ unit maxlogic.DotEnv;
 interface
 
 uses
-  System.SysUtils,
-  System.Classes,
-  System.Generics.Collections,
-  System.Generics.Defaults;
+  System.SysUtils, System.Classes, System.Generics.Collections, System.Generics.Defaults;
 
 const
   MAX_DOTENV_FILE_SIZE = 1024 * 1024; // 1 MB cap
@@ -272,17 +269,10 @@ uses
 {$IFDEF MSWINDOWS}
   Winapi.Windows,
 {$ELSE}
-  Posix.Stdlib,
-  Posix.Stdio,
-  Posix.SysStat,
-  Posix.Unistd,
-  Posix.Errno,
-  Posix.SysWait,
+  Posix.Stdlib, Posix.Stdio, Posix.SysStat, Posix.Unistd, Posix.Errno, Posix.SysWait,
 {$ENDIF}
-  System.StrUtils,
-  System.Character,
-  System.IOUtils,
-  System.Math;
+  System.StrUtils, System.Character, System.IOUtils, System.Math,
+  maxlogic.ioUtils;
 
 const
   LAYER_FILES: array[0..2] of string = ('.env', '.env.local', '.env.secret');
@@ -2394,8 +2384,8 @@ begin
       lCurrent := lBasePath;
       for lDepth := 1 to FParentDepth do
       begin
-        lParentPath := TPath.GetDirectoryName(lCurrent);
-        if (lParentPath = '') or SameFileName(lParentPath, lCurrent) then
+        lParentPath := TPath.GetDirectoryName(unSlash(lCurrent));
+        if (lParentPath = '') or MaxLogic.ioUtils.SamePath(lParentPath, lCurrent) then
           Break;
         AddRoot(TSearchRootKind.srParents, lParentPath);
         lCurrent := lParentPath;
