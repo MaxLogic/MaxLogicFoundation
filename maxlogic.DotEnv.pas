@@ -1854,10 +1854,12 @@ begin
   lPathToUse := aFilePath;
 
   // POSIX: allow case-insensitive match for ".env.secret"
+  {$IFNDEF MsWindows}
   if not TFile.Exists(lPathToUse) and SameText(TPath.GetFileName(lPathToUse), '.env.secret') then
   begin
     lDir := TPath.GetDirectoryName(lPathToUse);
-    try
+    if TDirectory.Exists(lDir) then
+    begin
       lItems := TDirectory.GetFiles(lDir);
       for lCandidate in lItems do
         if SameText(TPath.GetFileName(lCandidate), '.env.secret') then
@@ -1865,10 +1867,9 @@ begin
           lPathToUse := lCandidate;
           Break;
         end;
-    except
-      // ignore directory listing failures; fall back to original path
     end;
   end;
+  {$ENDIF}
 
   if TFile.Exists(lPathToUse) then
   begin
