@@ -1050,8 +1050,13 @@ function SamePath(const aPath1, aPath2: string): Boolean;
 var
   lP1, lP2: string;
 begin
-  lP1 := slash(TPath.GetFullPath(NormalizePath(aPath1)));
-  lP2 := slash(TPath.GetFullPath(NormalizePath(aPath2)));
+  lP1:= aPath1.Trim;
+  lP1:= ifThen(lP1='', slash('.'), lP1);
+  lP1 := slash(TPath.GetFullPath(NormalizePath(lP1)));
+
+  lP2:= aPath2.Trim;
+  lP2:= ifThen(lP2='', slash('.'), lP2);
+  lP2 := slash(TPath.GetFullPath(NormalizePath(lP2)));
 
   // Treat two empty/invalid-normalized paths as equal, anything else as unequal
   if (lP1 = '') or (lP2 = '') then
