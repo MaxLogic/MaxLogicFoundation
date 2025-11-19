@@ -129,6 +129,12 @@ type
     [Test] procedure Expressions_UnaryMinus_And_StringConcat;
     [Test] procedure Expressions_PathFunctions;
     [Test] procedure Expressions_Join_NoArgs_Error;
+
+    [Test] procedure Encoding_Unicode_Emojis;
+    [Test] procedure Interpolation_Default_Is_Literal_Not_Recursive;
+    [Test] procedure Interpolation_Default_With_Expression_Wrapper;
+    [Test] procedure Parsing_MixedLineEndings;
+    [Test] procedure Expressions_EmptyString_In_Math_Error;
   end;
 
 implementation
@@ -137,7 +143,7 @@ uses
 {$IFDEF MSWINDOWS}
   Winapi.Windows
 {$ELSE}
-  Posix.Stdlib, Posix.Stdio, Posix.SysStat, Posix.SysTypes, Posix.Unistd
+  Posix.Base, Posix.Stdlib, Posix.SysStat, Posix.Unistd
 {$ENDIF}
   ;
 
@@ -1254,7 +1260,7 @@ begin
     setenv(PAnsiChar(AnsiString('XDG_CONFIG_DIRS')), PAnsiChar(AnsiString('')), 1);
     DotEnv := TDotEnv.Create;
     try
-      DotEnv.LoadLayered(BuildPath(TempBase, ['proj']), [TDotEnvOption.SearchXDG]);
+      DotEnv.LoadLayered(BuildPath(TempBase, ['proj']), [TDotEnvOption.SearchUserConfig]);
       Assert.AreEqual('xdg', CollectValue(DotEnv, 'VALUE'));
     finally
       DotEnv.Free;
@@ -1292,7 +1298,7 @@ begin
     SetEnvironmentVariable(PChar('APPDATA'), PChar(AppDataPath));
     DotEnv := TDotEnv.Create;
     try
-      DotEnv.LoadLayered(BuildPath(TempBase, ['project']), [TDotEnvOption.SearchWindowsProfile]);
+      DotEnv.LoadLayered(BuildPath(TempBase, ['project']), [TDotEnvOption.SearchUserConfig]);
       Assert.AreEqual('appdata', CollectValue(DotEnv, 'VALUE'));
     finally
       DotEnv.Free;
@@ -1330,7 +1336,7 @@ begin
     {$ENDIF}
     DotEnv := TDotEnv.Create;
     try
-      DotEnv.LoadLayered(BuildPath(TempBase, ['project']), [TDotEnvOption.SearchUserHome]);
+      DotEnv.LoadLayered(BuildPath(TempBase, ['project']), [TDotEnvOption.SearchUserProfile]);
       Assert.AreEqual('project', CollectValue(DotEnv, 'VALUE'));
     finally
       DotEnv.Free;
@@ -2575,7 +2581,7 @@ begin
 
     DotEnv := TDotEnv.Create;
     try
-      DotEnv.LoadLayered(BuildPath(TempBase, ['proj']), [TDotEnvOption.SearchXDG]);
+      DotEnv.LoadLayered(BuildPath(TempBase, ['proj']), [TDotEnvOption.SearchUserConfig]);
       // Earlier dir in XDG_CONFIG_DIRS should win
       Assert.AreEqual('one', CollectValue(DotEnv, 'K'));
     finally
@@ -2666,7 +2672,7 @@ begin
     DotEnv := TDotEnv.Create;
     try
       DotEnv.EnvironmentNamespace := CustomNs;
-      DotEnv.LoadLayered(ProjectDir, [TDotEnvOption.SearchWindowsProfile]);
+      DotEnv.LoadLayered(ProjectDir, [TDotEnvOption.SearchUserConfig]);
       Assert.AreEqual('custom', CollectValue(DotEnv, 'VALUE'));
     finally
       DotEnv.Free;
@@ -2685,7 +2691,7 @@ begin
     DotEnv := TDotEnv.Create;
     try
       DotEnv.EnvironmentNamespace := CustomNs;
-      DotEnv.LoadLayered(ProjectDir, [TDotEnvOption.SearchUserHome]);
+      DotEnv.LoadLayered(ProjectDir, [TDotEnvOption.SearchUserConfig]);
       Assert.AreEqual('custom', CollectValue(DotEnv, 'VALUE'));
     finally
       DotEnv.Free;
@@ -3028,6 +3034,131 @@ begin
           Break;
         end;
       Assert.IsTrue(Found, 'DekParse fatal "join requires arguments" expected');
+    finally
+      DotEnv.Free;
+    end;
+  finally
+    RemoveDirRecursive(TempDir);
+  end;
+end;
+
+procedure TMaxLogicDotEnvTests.Encoding_Unicode_Emojis;
+var
+  TempDir, EnvFile: string;
+  DotEnv: TDotEnv;
+begin
+  TempDir := MakeTempDir('unicode');
+  try
+    EnvFile := BuildPath(TempDir, ['.env']);
+    // UTF-8 content with Emojis and accented characters
+    WriteText(EnvFile, 'MSG=🚀 Launching'#10'AUTHOR=René'#10);
+    DotEnv := TDotEnv.Create;
+    try
+      DotEnv.LoadFiles([EnvFile], []);
+      Assert.AreEqual('🚀 Launching', CollectValue(DotEnv, 'MSG'));
+      Assert.AreEqual('René', CollectValue(DotEnv, 'AUTHOR'));
+    finally
+      DotEnv.Free;
+    end;
+  finally
+    RemoveDirRecursive(TempDir);
+  end;
+end;
+
+procedure TMaxLogicDotEnvTests.Interpolation_Default_Is_Literal_Not_Recursive;
+var
+  TempDir, EnvFile: string;
+  DotEnv: TDotEnv;
+begin
+  TempDir := MakeTempDir('interp-default-lit');
+  try
+    EnvFile := BuildPath(TempDir, ['.env']);
+    WriteText(EnvFile, 'B=val'#10'A=${MISSING:-${B}}'#10);
+    DotEnv := TDotEnv.Create;
+    try
+      DotEnv.LoadFiles([EnvFile], []);
+      // By design, defaults are literal. It should NOT return "val", it should return "${B}"
+      Assert.AreEqual('${B}', CollectValue(DotEnv, 'A'));
+    finally
+      DotEnv.Free;
+    end;
+  finally
+    RemoveDirRecursive(TempDir);
+  end;
+end;
+
+procedure TMaxLogicDotEnvTests.Interpolation_Default_With_Expression_Wrapper;
+var
+  TempDir, EnvFile: string;
+  DotEnv: TDotEnv;
+begin
+  TempDir := MakeTempDir('interp-default-expr');
+  try
+    EnvFile := BuildPath(TempDir, ['.env']);
+    // Use 'env' function in expression to handle math with fallback
+    WriteText(EnvFile, 'B=2'#10'A=$[ 1 + ${MISSING:-1} ]'#10);
+    DotEnv := TDotEnv.Create;
+    try
+      DotEnv.LoadFiles([EnvFile], []);
+      Assert.AreEqual('2', CollectValue(DotEnv, 'A'));
+    finally
+      DotEnv.Free;
+    end;
+  finally
+    RemoveDirRecursive(TempDir);
+  end;
+end;
+
+procedure TMaxLogicDotEnvTests.Parsing_MixedLineEndings;
+var
+  TempDir, EnvFile: string;
+  DotEnv: TDotEnv;
+begin
+  TempDir := MakeTempDir('mixed-eol');
+  try
+    EnvFile := BuildPath(TempDir, ['.env']);
+    // A: LF, B: CRLF, C: CR (Mac Classic)
+    WriteText(EnvFile, 'A=1'#10'B=2'#13#10'C=3'#13'D=4'#10);
+    DotEnv := TDotEnv.Create;
+    try
+      DotEnv.LoadFiles([EnvFile], []);
+      Assert.AreEqual('1', CollectValue(DotEnv, 'A'));
+      Assert.AreEqual('2', CollectValue(DotEnv, 'B'));
+      Assert.AreEqual('3', CollectValue(DotEnv, 'C'));
+      Assert.AreEqual('4', CollectValue(DotEnv, 'D'));
+    finally
+      DotEnv.Free;
+    end;
+  finally
+    RemoveDirRecursive(TempDir);
+  end;
+end;
+
+procedure TMaxLogicDotEnvTests.Expressions_EmptyString_In_Math_Error;
+var
+  TempDir, EnvFile: string;
+  DotEnv: TDotEnv;
+  Errors: TArray<TDotEnvError>;
+  HasError: Boolean;
+  Err: TDotEnvError;
+begin
+  TempDir := MakeTempDir('expr-empty-math');
+  try
+    EnvFile := BuildPath(TempDir, ['.env']);
+    // Math on empty string should fail, not treat as zero
+    WriteText(EnvFile, 'EMPTY='''#10'VAL=$[ 5 + EMPTY ]'#10);
+    DotEnv := TDotEnv.Create;
+    try
+      DotEnv.LoadFiles([EnvFile], []);
+      Errors := DotEnv.GetErrors;
+      HasError := False;
+      for Err in Errors do
+        if (Err.Kind = TDotEnvErrorKind.DekParse) and Err.Fatal then
+        begin
+          HasError := True;
+          Break;
+        end;
+      Assert.IsTrue(HasError, 'Math operations on empty/non-numeric strings should be fatal');
     finally
       DotEnv.Free;
     end;

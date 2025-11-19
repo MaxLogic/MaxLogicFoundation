@@ -18,10 +18,9 @@ const
     CaseSensitiveKeys,        // Force case-sensitive key comparisons, even on Windows.
     StrictUndefined,          // Treat missing variables (without defaults) as fatal errors.
     AllowCommandSubst,        // Enable $(...) command execution during value expansion.
-    SearchUserHome,           // Search the user home and ~/.config/<namespace> roots.
-    SearchXDG,                // Search XDG config locations (POSIX) using the namespace.
-    SearchWindowsProfile,     // Search %APPDATA%\<namespace>.
-    StreamingEvaluation       // Evaluate values as files are read instead of after merge.
+    StreamingEvaluation,      // Evaluate values as files are read instead of after merge.
+    SearchUserProfile,        // Windows: %USERPROFILE% (C:\Users\<name>); POSIX: $HOME (/home/<name>).
+    SearchUserConfig          // Windows: %APPDATA%\<namespace>; POSIX: XDG config roots (namespace subdir).
   );
 
   TDotEnvOptions = set of TDotEnvOption;
@@ -394,6 +393,21 @@ begin
 {$ELSE}
   Result := False;
 {$ENDIF}
+end;
+
+function GetActualUserProfile: string;
+begin
+{$IFDEF MSWINDOWS}
+  Result := GetEnvironmentVariable('USERPROFILE');
+  if Result = '' then
+    Result := GetEnvironmentVariable('HOMEDRIVE') + GetEnvironmentVariable('HOMEPATH');
+  if Result = '' then
+    Result := TPath.GetHomePath;
+{$ELSE}
+  Result := TPath.GetHomePath;
+{$ENDIF}
+  if Result <> '' then
+    Result := TPath.GetFullPath(Result);
 end;
 
 { TDotEnv.TExprValue }
@@ -2392,10 +2406,20 @@ begin
       end;
     end;
 
-{$IFNDEF MSWINDOWS}
-    if TDotEnvOption.SearchXDG in aOptions then
+    if TDotEnvOption.SearchUserProfile in aOptions then
     begin
-      lHomeDir := TPath.GetHomePath;
+      lHomeDir := GetActualUserProfile;
+      AddRoot(TSearchRootKind.srHome, lHomeDir);
+    end;
+
+    if TDotEnvOption.SearchUserConfig in aOptions then
+    begin
+{$IFDEF MSWINDOWS}
+      lParentPath := GetEnvironmentVariable('APPDATA');
+      if lParentPath <> '' then
+        AddRoot(TSearchRootKind.srWinProfile, AppendNamespace(lParentPath));
+{$ELSE}
+      lHomeDir := GetActualUserProfile;
       lXdgHome := GetEnvironmentVariable('XDG_CONFIG_HOME');
       if (lXdgHome = '') and (lHomeDir <> '') then
         lXdgHome := TPath.Combine(lHomeDir, '.config');
@@ -2408,27 +2432,8 @@ begin
       for lDirItem in lParts do
         if lDirItem.Trim <> '' then
           AddRoot(TSearchRootKind.srXDG, AppendNamespace(lDirItem.Trim));
-    end;
 {$ENDIF}
-
-    if TDotEnvOption.SearchUserHome in aOptions then
-    begin
-      lHomeDir := TPath.GetHomePath;
-      if lHomeDir <> '' then
-      begin
-        AddRoot(TSearchRootKind.srHome, lHomeDir);
-        AddRoot(TSearchRootKind.srHome, AppendNamespace(TPath.Combine(lHomeDir, '.config')));
-      end;
     end;
-
-{$IFDEF MSWINDOWS}
-    if TDotEnvOption.SearchWindowsProfile in aOptions then
-    begin
-      lParentPath := GetEnvironmentVariable('APPDATA');
-      if lParentPath <> '' then
-        AddRoot(TSearchRootKind.srWinProfile, AppendNamespace(lParentPath));
-    end;
-{$ENDIF}
 
     Result := lRoots.ToArray;
   finally

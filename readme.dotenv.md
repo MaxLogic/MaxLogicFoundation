@@ -89,11 +89,10 @@ In streaming mode, forward references are empty (or fatal under StrictUndefined)
 - Root precedence when combined (highest to lowest):
   - Project directory (BaseDir passed to LoadLayered)
   - Parent directories of BaseDir (nearest → farthest)
-  - POSIX XDG home (`$XDG_CONFIG_HOME/<namespace>`), then each entry from `$XDG_CONFIG_DIRS/<namespace>` in order
-  - User home (`~`), then `~/.config/<namespace>`
-  - Windows profile (`%APPDATA%\<namespace>`)
+  - User config roots (enabled via `SearchUserConfig`): POSIX XDG config locations (`$XDG_CONFIG_HOME/<namespace>` plus each `$XDG_CONFIG_DIRS/<namespace>` entry) or Windows `%APPDATA%/<namespace>`
+  - User profile root (enabled via `SearchUserProfile`): `%USERPROFILE%` on Windows or `$HOME` on POSIX
 
-  *Default namespace is `maxlogic`. Override via `TDotEnv.EnvironmentNamespace`; set it to empty string to drop the subfolder entirely.*
+  *Default namespace is `maxlogic`. Override via `TDotEnv.EnvironmentNamespace`; set it to empty string to drop the subfolder entirely for config roots.*
 
 ### Search roots
 
@@ -113,7 +112,7 @@ DotEnv.LoadLayered('C:\Project', []); // only your custom roots are used
 
 #### Customizing the namespace
 
-`TDotEnv.EnvironmentNamespace` controls the subfolder appended to shared roots (XDG, user home `.config`, Windows profile, etc.). It defaults to `maxlogic`. Assign a new value before loading to point the loader at a different namespace, or set it to `''` to use the base directories directly (e.g., `%APPDATA%` without a child folder).
+`TDotEnv.EnvironmentNamespace` controls the subfolder appended to shared config roots (Windows `%APPDATA%` or POSIX XDG directories) when `SearchUserConfig` is enabled. It defaults to `maxlogic`. Assign a new value before loading to point the loader at a different namespace, or set it to `''` to use the base directories directly (e.g., `%APPDATA%` without a child folder). The user profile root added by `SearchUserProfile` always uses the profile directory itself and ignores the namespace.
 
 ### Evaluation modes
 
@@ -392,9 +391,8 @@ Option flags (combine as needed):
 - `CaseSensitiveKeys`: force case-sensitive keys on all platforms.
 - `StrictUndefined`: fatal error for unresolved `${NAME}` without default; key not stored. Hint suggests `${NAME:-fallback}`.
 - `AllowCommandSubst`: enable `$(...)` command execution.
-- `SearchUserHome`: add user home roots.
-- `SearchXDG`: add XDG roots (POSIX).
-- `SearchWindowsProfile`: add `%APPDATA%\MaxLogic`.
 - `StreamingEvaluation`: evaluate in read order; no re-evaluation after overrides.
+- `SearchUserProfile`: add the user profile directory (`%USERPROFILE%` or `$HOME`) to the search scope for `.env*` files.
+- `SearchUserConfig`: add OS config roots (`%APPDATA%/<namespace>` on Windows, `$XDG_CONFIG_HOME/<namespace>` plus `$XDG_CONFIG_DIRS/<namespace>` entries on POSIX) where the namespace is appended.
 
 With this foundation you can stage environment overrides, compose secrets securely, and keep developer, QA, and production configurations in sync without manual rewrites.
