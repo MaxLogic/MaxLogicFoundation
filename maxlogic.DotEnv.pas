@@ -24,6 +24,10 @@ const
   );
 
   TDotEnvOptions = set of TDotEnvOption;
+  TDotEnvOptionsHelper = record helper for TDotEnvOptions
+    class function Full: TDotEnvOptions; static;
+  end;
+
 
   TSearchRootKind = (srExplicit, srCWD, srParents, srHome, srXDG, srWinProfile, srCustom);
 
@@ -224,7 +228,12 @@ const
     /// <summary>Loads layered .env files rooted at <paramref name="aBaseDir"/>.</summary>
     /// <param name="aBaseDir">Directory whose layered files (.env, .env.local, .env.secret) form the highest-precedence root.</param>
     /// <param name="aOptions">Flags controlling search roots, evaluation mode, and safety features.</param>
-    procedure LoadLayered(const aBaseDir: string; const aOptions: TDotEnvOptions = []);
+    procedure LoadLayered(const aBaseDir: string; const aOptions: TDotEnvOptions = []); overload;
+    /// <summary>
+    ///   as LoadLayered - aBaseDir is the path to ParamStr(0)
+    /// </summary>
+    procedure LoadLayered(const aOptions: TDotEnvOptions = []); overload;
+
     /// <summary>Loads the specified .env files in order without performing root expansion.</summary>
     /// <param name="aFiles">Explicit file paths to load.</param>
     /// <param name="aOptions">Flags controlling evaluation mode and safety features.</param>
@@ -2347,6 +2356,11 @@ begin
   end;
 end;
 
+procedure TDotEnv.LoadLayered(const aOptions: TDotEnvOptions);
+begin
+  LoadLayered(ExtractFilePath(ParamStr(0)), aOptions)
+end;
+
 procedure TDotEnv.SetSearchRoots(const aRoots: TArray<TSearchRoot>);
 begin
   FCustomRoots := Copy(aRoots, 0, Length(aRoots));
@@ -2679,6 +2693,16 @@ begin
   finally
     lInst.Free;
   end;
+end;
+
+{ TDotEnvOptionsHelper }
+
+class function TDotEnvOptionsHelper.Full: TDotEnvOptions;
+begin
+  Result:= [
+    TDotEnvOption.AllowCommandSubst,        // Enable $(...) command execution during value expansion.
+    TDotEnvOption.SearchUserProfile,        // Windows: %USERPROFILE% (C:\Users\<name>); POSIX: $HOME (/home/<name>).
+    TDotEnvOption.SearchUserConfig];        // Windows: %APPDATA%\<namespace>; POSIX: XDG config roots (namespace subdir).
 end;
 
 end.

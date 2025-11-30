@@ -22,10 +22,12 @@ type
     /// Gets the total number of command line parameters stored.
     /// </summary>
     function GetCount: integer;
+
     /// <summary>
     /// Gets the list of command line parameters as a TStringList.
     /// </summary>
     function GetParamList: TStringList;
+
     /// <summary>
     /// Parses a command line string and populates the internal list.
     /// Handles quoted parameters using TStringList capabilities.
@@ -71,8 +73,15 @@ type
 
     function has(const aSwitchNames: array of string; aIgnoreCase: boolean = True): boolean;
 
+    function Clone: iCmdLineparams;
+    procedure Clear;
+
+    /// <summary>
+    ///   Add a param and rebuild the dictionaries
+    /// </summary>
+    procedure SetParam(const aName: String; const aValue: String = '');
+
     property Count: integer read GetCount;
-    property params: TStringList read GetParamList;
     property SwitchPrefixes: TSwitchPrefixes read GetSwitchPrefixes write SetSwitchPrefixes;
   end;
 
@@ -90,15 +99,24 @@ type
     procedure RebuildDic;
     function IsSwitch(const aCmdParam: string; out aParamWithoutPrefix: string): boolean; overload;
     function IsSwitch(const aCmdParam: string): boolean; overload;
-    function GetCount: integer;
-    function GetParamList: TStringList;
+    function GetCount: Integer;
     procedure SetSwitchPrefixes(const Value: TSwitchPrefixes);
     function GetSwitchPrefixes: TSwitchPrefixes;
   public
-    constructor Create;
+    // if aParams is nil, then the cm line is used to buld the params
+    // if aSwitchPrefixes = [] then the platform defaults are used
+    constructor Create(
+      aParams: TStringList = nil;
+      aSwitchPrefixes: TSwitchPrefixes = []);
     destructor Destroy; override;
 
     procedure BuildFromString(const aCmdLineParams: string);
+
+    function Clone: iCmdLineparams;
+    procedure Clear;
+    procedure SetParam(const aName: String; const aValue: String = '');
+    function GetParamList: TStringList;
+
     function find(const aSwitch: string; aIgnoreCase: boolean; out aIndex: integer): boolean; overload;
     function find(const aSwitch: string; aIgnoreCase: boolean): boolean; overload;
     function find(const aSwitch: string): boolean; overload;
@@ -114,7 +132,6 @@ type
     function has(const aSwitchNames: array of string; aIgnoreCase: boolean = True): boolean; overload;
 
     property Count: integer read GetCount;
-    property params: TStringList read GetParamList;
     property SwitchPrefixes: TSwitchPrefixes read GetSwitchPrefixes write SetSwitchPrefixes;
   end;
 
@@ -151,14 +168,31 @@ begin
   RebuildDic;
 end;
 
+procedure TCmdLineParams.Clear;
+begin
+  fParams.Clear;
+  RebuildDic;
+end;
+
+function TCmdLineParams.Clone: iCmdLineparams;
+var
+  lNew: TCmdLineParams;
+begin
+  lNew:= TCmdLineParams.Create(Self.fParams, Self.fSwitchPrefixes);
+  Result:= lNew;
+end;
+
 constructor TCmdLineParams.Create;
 begin
   inherited Create;
-  {$IFDEF MSWINDOWS}
-  self.fSwitchPrefixes := [spDash, spDoubleDash, spSlash];
-  {$ELSE}
-  self.fSwitchPrefixes := [spDash, spDoubleDash];
-  {$ENDIF}
+  if aSwitchPrefixes = [] then
+  begin
+    {$IFDEF MSWINDOWS}
+    self.fSwitchPrefixes := [spDash, spDoubleDash, spSlash];
+    {$ELSE}
+    self.fSwitchPrefixes := [spDash, spDoubleDash];
+    {$ENDIF}
+  end;
   fOrgCaseDic := TDictionary<string, integer>.Create;
   fLowerCaseDic := TDictionary<string, integer>.Create;
 
@@ -166,8 +200,12 @@ begin
   fParams.StrictDelimiter := True;
   fParams.delimiter := ' ';
 
-  for var i := 1 to System.ParamCount do
-    fParams.Add(System.ParamStr(i));
+  if aParams<>nil then
+    fParams.AddStrings(aParams)
+  else begin
+    for var i := 1 to System.ParamCount do
+      fParams.Add(System.ParamStr(i));
+  end;
 
   RebuildDic;
 end;
@@ -355,6 +393,12 @@ begin
   end;
   fOrgCaseDic.TrimExcess;
   fLowerCaseDic.TrimExcess;
+end;
+
+procedure TCmdLineParams.SetParam(const aName, aValue: String);
+begin
+  fParams.Values[aName]:= aValue;
+  RebuildDic;
 end;
 
 procedure TCmdLineParams.SetSwitchPrefixes(const Value: TSwitchPrefixes);
