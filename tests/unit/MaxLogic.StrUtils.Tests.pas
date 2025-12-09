@@ -948,7 +948,7 @@ end;
 
 procedure TMaxLogicStrUtilsTests.ParseStatement_BasicReplacement;
 const
-  LStatement = 'select :ID:,:Field2: from :t where :F1 = :V1';
+  LStatement = 'select :ID:,:Field2: from :t: where :F1: = :V1:';
 var
   lParams: TArray<string>;
   lResult: string;
@@ -978,7 +978,7 @@ end;
 
 procedure TMaxLogicStrUtilsTests.ParseStatement_CustomTokenCharacter;
 const
-  LStatement = 'Path ~~Root~~\~~Leaf~~';
+  LStatement = 'Path ~Root~\~Leaf~';
 var
   lParams: TArray<string>;
   lResult: string;
