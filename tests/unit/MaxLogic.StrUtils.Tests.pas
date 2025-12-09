@@ -81,13 +81,16 @@ type
     [Test] procedure ParseStatement_BasicReplacement;
     [Test] procedure ParseStatement_MissingTokensRemainUnchanged;
     [Test] procedure ParseStatement_CustomTokenCharacter;
+    [Test] procedure PrettyElapsed_Boundaries;
+    [Test] procedure FloatToHex_PaddingAndTrimming;
+    [Test] procedure TRegExHelper_AnonymousReplace;
   end;
 
 implementation
 
 uses
   System.SysUtils, System.Classes, System.Types, System.Character, System.Generics.Collections,
-  maxLogic.StrUtils
+  System.RegularExpressions, maxLogic.StrUtils
   {$IFDEF MSWINDOWS}, Winapi.Windows{$ENDIF};
 
 function CodePointsOf(const s: string): string;
@@ -989,6 +992,47 @@ begin
   ];
   lResult := ParseStatement(LStatement, lParams, '~');
   Assert.AreEqual('Path C:\temp', lResult);
+end;
+
+procedure TMaxLogicStrUtilsTests.PrettyElapsed_Boundaries;
+begin
+  Assert.AreEqual('750ms', PrettyElapsed(750));
+  Assert.AreEqual('1s 5ms', PrettyElapsed(1005));
+  Assert.AreEqual('1m 1s 0ms', PrettyElapsed(61000));
+  Assert.AreEqual('1h 1m 1s 0ms', PrettyElapsed(3661000));
+end;
+
+procedure TMaxLogicStrUtilsTests.FloatToHex_PaddingAndTrimming;
+var
+  lDefault, lTrimmed, lPadded, lNegative: string;
+begin
+  lDefault := floatToHex(0.0);
+  Assert.AreEqual('0000000000000000', lDefault);
+
+  lTrimmed := floatToHex(1.0, 4);
+  Assert.AreEqual('F03F', lTrimmed);
+
+  lPadded := floatToHex(1.0, 20);
+  Assert.AreEqual(20, lPadded.Length);
+  Assert.IsTrue(lPadded.EndsWith('F03F'));
+
+  lNegative := floatToHex(-2.5);
+  Assert.AreEqual('00000000000004C0', lNegative);
+end;
+
+procedure TMaxLogicStrUtilsTests.TRegExHelper_AnonymousReplace;
+var
+  lRegex: TRegEx;
+  lResult: string;
+begin
+  lRegex := TRegEx.Create('(\d+)');
+  lResult := lRegex.Replace(
+    'abc123def',
+    function(const aMatch: TMatch): string
+    begin
+      Result := '[' + aMatch.Value + ']';
+    end);
+  Assert.AreEqual('abc[123]def', lResult);
 end;
 
 initialization
