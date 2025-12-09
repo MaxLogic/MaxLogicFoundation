@@ -2,6 +2,7 @@ unit maxLogic.ProtectedMemory;
 
 {
   this is there to store really sensible data in the memory.
+  just "best-effort in-process hardening" nothing more.
 
   NOTE: after usage, always fill the data with zeroes
 
@@ -22,163 +23,170 @@ unit maxLogic.ProtectedMemory;
 interface
 
 uses
-  windows, classes, sysUtils, SecureString, SynCrypto;
+  Windows, Classes, SysUtils, SecureString, SynCrypto,
+  maxLogic.MachineFingerprint;
 
 type
   iProtectedMemory = interface
     ['{F73FE946-EE14-43A7-9BD0-72A5AA59A216}']
-    procedure retrive(var adata: rawByteString); OVERLOAD;
+    procedure retrieve(var aData: rawByteString); overload;
     // might be a bit slower, due to conversion from rawByteString to bytes
-    procedure retrive(var adata: TBytes); OVERLOAD;
-    procedure retrive(var adata: string); OVERLOAD;
-    procedure retrive(var i: integer); OVERLOAD;
-  END;
+    procedure retrieve(var aData: TBytes); overload;
+    procedure retrieve(var aData: string); overload;
+    procedure retrieve(var i: integer); overload;
+  end;
 
-  // factory functions
-  // NOTE: you should zero the input after calling one of the functions, so it will not remain in memory
-function newProtection(const str: rawByteString): iProtectedMemory; overload;
-function newProtection(const bytes: TBytes): iProtectedMemory; overload;
-function newProtection(buffer: pointer; BufferSize: integer): iProtectedMemory; overload;
+// factory functions
+// NOTE: you should zero the input after calling one of the functions, so it will not remain in memory
+function newProtection(const Str: rawByteString): iProtectedMemory; overload;
+function newProtection(const Bytes: TBytes): iProtectedMemory; overload;
+function newProtection(Buffer: Pointer; BufferSize: integer): iProtectedMemory; overload;
 function newProtection(const s: string): iProtectedMemory; overload;
 function newProtection(const i: integer): iProtectedMemory; overload;
 procedure ZeroBytes(var b: TBytes);
 
-procedure selfTest;
+{$IF defined(msWindows) AND defined(debug) AND (not defined(NoVcl))}
+procedure SelfTest;
+{$IFEND}
 
 implementation
 
 uses
-  pawel1, InternPwHolder, maxLogic.AESHelper, ioUtils,
-  SynLZ, SynCommons, diagnostics, clipBrd;
+  {$IF defined(msWindows) AND defined(debug) AND (not defined(NoVcl))}
+  ClipBrd,
+  {$IFEND}
+  InternPwHolder, maxLogic.AESHelper, IOUtils,
+  SynLZ, SynCommons, diagnostics;
 
 type
   TProtectedMemory = class(TInterfacedObject, iProtectedMemory)
   strict private
     fData: rawByteString;
-    fSeed: cardinal;
+    fSeed: Cardinal;
     fPasswordSalt: rawByteString;
-    procedure GetPassword(var pw: rawByteString); inline;
+    procedure GetPassword(var PW: rawByteString); inline;
   private
-    procedure DoProtect(const adata: rawByteString);
+    procedure DoProtect(const aData: rawByteString);
   public
     constructor Create;
-    destructor destroy; override;
+    destructor Destroy; override;
 
-    procedure retrive(var adata: rawByteString); OVERLOAD;
-    procedure retrive(var adata: TBytes); OVERLOAD;
-    procedure retrive(var adata: string); OVERLOAD;
-    procedure retrive(var i: integer); OVERLOAD;
+    procedure retrieve(var aData: rawByteString); overload;
+    procedure retrieve(var aData: TBytes); overload;
+    procedure retrieve(var aData: string); overload;
+    procedure retrieve(var i: integer); overload;
   end;
 
-procedure TProtectedMemory.retrive(var i: integer);
+procedure TProtectedMemory.retrieve(var i: integer);
 var
   s: rawByteString;
-  len: integer;
+  Len: integer;
 begin
-  retrive(s);
-  len := Length(s);
-  if len > 4 then
-    len := 4;
-  if len <> 0 then
-    move(s[1], i, len)
+  retrieve(s);
+  Len := length(s);
+  if Len > 4 then
+    Len := 4;
+  if Len <> 0 then
+    move(s[1], i, Len)
   else
     i := 0;
 end;
 
-procedure TProtectedMemory.retrive(var adata: string);
+procedure TProtectedMemory.retrieve(var aData: string);
 var
   s: rawByteString;
 begin
-  retrive(s);
-  adata := SynCommons.utf8ToString(s);
-  fillZero(s);
+  retrieve(s);
+  aData := SynCommons.UTF8ToString(s);
+  FillZero(s);
 end;
 
-procedure TProtectedMemory.retrive(var adata: TBytes);
-VAR
-  s: rawByteString;
-BEGIN
-  retrive(s);
-  RawByteStringToBytes(s, adata);
-  fillZero(s);
-END;
-
-procedure TProtectedMemory.retrive(var adata: rawByteString);
+procedure TProtectedMemory.retrieve(var aData: TBytes);
 var
-  pw: rawByteString;
+  s: rawByteString;
 begin
-  adata := '';
-  if Length(fData) = 0 then
+  retrieve(s);
+  RawByteStringToBytes(s, aData);
+  FillZero(s);
+end;
+
+procedure TProtectedMemory.retrieve(var aData: rawByteString);
+var
+  PW: rawByteString;
+begin
+  aData := '';
+  if length(fData) = 0 then
     exit();
 
   try
-    GetPassword(pw);
+    GetPassword(PW);
 
-    adata := SynCrypto.CryptDataForCurrentUser(fData, pw, false);
+    aData := SynCrypto.CryptDataForCurrentUser(fData, PW, False);
 
   finally
-    fillZero(pw);
+    FillZero(PW);
   end;
 end;
 
-procedure TProtectedMemory.DoProtect(const adata: rawByteString);
+procedure TProtectedMemory.DoProtect(const aData: rawByteString);
 var
-  pw: rawByteString;
+  PW: rawByteString;
 begin
-  fillZero(fData);
+  FillZero(fData);
   fData := '';
 
-  if Length(adata) = 0 then
+  if length(aData) = 0 then
     exit;
 
   try
-    GetPassword(pw);
+    GetPassword(PW);
 
-    fData := SynCrypto.CryptDataForCurrentUser(adata, pw, true);
+    fData := SynCrypto.CryptDataForCurrentUser(aData, PW, True);
 
   finally
-    fillZero(pw);
+    FillZero(PW);
   end;
 end;
 
-procedure TProtectedMemory.GetPassword(var pw: rawByteString);
+procedure TProtectedMemory.GetPassword(var PW: rawByteString);
 var
   s, g: string;
 begin
   g := '{8F423419-0713-4E9D-8656-A516BEF1C66C}';
-  s := pawel1.GenerateUniqueMachineIdEx + TInternPwHolder.generate(g, fSeed).data;
+  s := maxLogic.MachineFingerprint.GetMachineFingerprint(BytesOf('{76535522-4B82-431A-93BF-E8D60F899048}'))
+    + TInternPwHolder.generate(g, fSeed).data;
 
-  pw := fPasswordSalt + SynCommons.StringToUTF8(s);
+  PW := fPasswordSalt + SynCommons.StringToUTF8(s);
 
   ZeroString(g);
   ZeroString(s);
 end;
 
-function newProtection(const bytes: TBytes): iProtectedMemory;
-VAR
+function newProtection(const Bytes: TBytes): iProtectedMemory;
+var
   s: rawByteString;
-BEGIN
-  bytesToRawByteString(bytes, s);
-  result := newProtection(s);
-END;
+begin
+  BytesToRawByteString(Bytes, s);
+  Result := newProtection(s);
+end;
 
-function newProtection(const str: rawByteString): iProtectedMemory; overload;
+function newProtection(const Str: rawByteString): iProtectedMemory; overload;
 var
   p: TProtectedMemory;
 begin
   p := TProtectedMemory.Create;
-  p.DoProtect(str);
-  result := p;
+  p.DoProtect(Str);
+  Result := p;
 end;
 
 function newProtection(const i: integer): iProtectedMemory; overload;
 var
   r: rawByteString;
 begin
-  setLength(r, 4);
+  SetLength(r, 4);
   move(i, r[1], 4);
-  result := newProtection(r);
-  fillZero(r);
+  Result := newProtection(r);
+  FillZero(r);
 end;
 
 function newProtection(const s: string): iProtectedMemory;
@@ -193,28 +201,28 @@ begin
   else
     r := '';
 
-  result := newProtection(r);
+  Result := newProtection(r);
 end;
 
-function newProtection(buffer: pointer; BufferSize: integer): iProtectedMemory;
+function newProtection(Buffer: Pointer; BufferSize: integer): iProtectedMemory;
 var
-  bytes: TBytes;
+  Bytes: TBytes;
 begin
   if BufferSize = 0 then
   begin
-    bytes := [];
+    Bytes := [];
   end else begin
-    setLength(bytes, BufferSize);
-    move(buffer^, bytes[0], BufferSize);
+    SetLength(Bytes, BufferSize);
+    move(Buffer^, Bytes[0], BufferSize);
   end;
 
-  result := newProtection(bytes);
+  Result := newProtection(Bytes);
 end;
 
 procedure ZeroBytes(var b: TBytes);
 begin
-  if Length(b) <> 0 then
-    ZeroMemory(@b[0], Length(b));
+  if length(b) <> 0 then
+    ZeroMemory(@b[0], length(b));
 end;
 
 constructor TProtectedMemory.Create;
@@ -222,68 +230,72 @@ begin
   inherited Create;
 
   TAESPRNG.Main.FillRandom(@fSeed, 4);
-  setLength(fPasswordSalt, 64);
-  TAESPRNG.Main.FillRandom(@fPasswordSalt[1], Length(fPasswordSalt));
+  SetLength(fPasswordSalt, 64);
+  TAESPRNG.Main.FillRandom(@fPasswordSalt[1], length(fPasswordSalt));
 end;
 
-procedure selfTest;
+{$IF defined(msWindows) AND defined(debug) AND (not defined(NoVcl))}
+procedure SelfTest;
 const
   BufferSize = 1024 * 1024;
   InterationCount = 999;
 var
   p: iProtectedMemory;
-  bytes, b1, b2: TBytes;
-  x: integer;
-  firstTime: int64;
+  Bytes, b1, b2: TBytes;
+  X: integer;
+  firstTime: Int64;
   st: TStopWatch;
-  s1, s2: rawByteString;
+  S1, S2: rawByteString;
 begin
-  setLength(bytes, BufferSize);
-  TAESPRNG.Main.FillRandom(@bytes[0], BufferSize);
-  bytesToRawByteString(bytes, s1);
+  SetLength(Bytes, BufferSize);
+  TAESPRNG.Main.FillRandom(@Bytes[0], BufferSize);
+  BytesToRawByteString(Bytes, S1);
 
   st := TStopWatch.startNew;
-  for x := 0 to InterationCount do
+  for X := 0 to InterationCount do
   begin
-    s2 := copy(s1, 1, Length(s1));
-    p := newProtection(s2);
-    p.retrive(s2);
+    S2 := copy(S1, 1, length(S1));
+    p := newProtection(S2);
+    p.retrieve(S2);
 
-    if s1 <> s2 then
+    if S1 <> S2 then
       raise Exception.Create('failed to compare');
   end;
 
-  firstTime := st.elapsedMilliseconds;
+  firstTime := st.ElapsedMilliseconds;
 
   st := TStopWatch.startNew;
-  for x := 0 to InterationCount do
+  for X := 0 to InterationCount do
   begin
-    b1 := copy(bytes);
+    b1 := copy(Bytes);
     b2 := copy(b1);
 
-    if Length(b2) <> BufferSize then
+    if length(b2) <> BufferSize then
       raise Exception.Create('Error invalid size');
-    if not compareMem(@bytes[0], @b2[0], BufferSize) then
+    if not compareMem(@Bytes[0], @b2[0], BufferSize) then
       raise Exception.Create('failed to compare');
   end;
   st.stop;
-  clipBoard.asText := IntToStr(firstTime) + cr + IntToStr(st.elapsedMilliseconds);
+  ClipBoard.AsText := IntToStr(firstTime) + sLineBreak + IntToStr(st.ElapsedMilliseconds);
 
   beep;
 end;
+{$IFEND}
 
-destructor TProtectedMemory.destroy;
+destructor TProtectedMemory.Destroy;
 begin
   // burn the data
-  fillZero(fData);
+  FillZero(fData);
   fSeed := 0;
-  fillZero(fPasswordSalt);
+  FillZero(fPasswordSalt);
 
   inherited;
 end;
 
 initialization
-
-// selfTest;
+  {$IF defined(msWindows) AND defined(debug) AND (not defined(NoVcl))}
+  // selfTest;
+  {$IFEND}
 
 end.
+

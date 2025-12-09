@@ -56,7 +56,7 @@ public
   Function add(const values: array of T; StartIndex, ItemCount: integer): integer;
   overload;
 
-  { retrives two last added items. They are not removed from the buffer }
+  { Retrieves two last added items. They are not removed from the buffer }
   Function GetLastTwoItems: TArray<T>;
   Function TOArray: TArray<T>;
   procedure clear;
@@ -79,7 +79,7 @@ public
   property First: T read GetFirst write SetFirst;
   { determines the behavior when the buffer is full.
     bhAlwaysAdd: tells the ring buffer to add the new items and discard the first items in the buffer. This is good if you are storing the last vaalues,
-    bhKeepExistingItems: no new items will be added until there is some space in the ring buffer. You need to use on of the read functions to retrive the first items from the buffer and make room for more. This is good when you are buffering some important data to use like in multimedia bufers.
+    bhKeepExistingItems: no new items will be added until there is some space in the ring buffer. You need to use on of the read functions to Retrieve the first items from the buffer and make room for more. This is good when you are buffering some important data to use like in multimedia bufers.
     Default is bhAlwaysAdd }
   property Behavior: TBehavior read FBehavior write SetBehavior;
   end;

@@ -4,7 +4,8 @@ interface
 
 uses
   windows, classes, sysUtils, generics.collections,
-  Winapi.ShlObj, ioUtils, ComObj, ActiveX;
+  Winapi.ShlObj, ioUtils, ComObj, ActiveX,
+  MaxLogic.ioUtils;
 
 type
   // forward declaration
@@ -32,9 +33,6 @@ type
   end;
 
 implementation
-
-uses
-  pawel1;
 
 { TKnownFolders }
 
@@ -107,13 +105,12 @@ begin
   CoTaskMemFree(KFId);
 end;
 
-class
-  function TKnownFolders.GetDownloadsPath: string;
+class function TKnownFolders.GetDownloadsPath: string;
 var
   Default: string;
   FOLDERID_Downloads: TGUID;
 begin
-  default := pawel1.GetSpecialFolderPath(sfkCurUser_My_Documents);
+  default := MaxLogic.ioUtils.GetSpecialFolderPath(sfkCurUser_My_Documents);
 
   FOLDERID_Downloads := StringToGuid('{374DE290-123F-4565-9164-39C4925E467B}');
 

@@ -65,13 +65,14 @@ type
     function find(const aSwitch: string; var aValue: string; aIgnoreCase: boolean = True): boolean; overload;
     function find(const aSwitchAndAliases: TArray<string>; var aValue: string; aIgnoreCase: boolean = True): boolean; overload;
 
-    // retrives a value from a givem switch
+    // Retrieves a value from a givem switch
     function Get(const aSwitch: string; aDefault: string = ''; aIgnoreCase: boolean = True): string; overload;
     function Get(const aSwitchAndAliases: TArray<string>; aDefault: string = ''; aIgnoreCase: boolean = True): string; overload;
     function Get(const aSwitch: string; aDefault: integer; aIgnoreCase: boolean = True): integer; overload;
     function Get(const aSwitchAndAliases: TArray<string>; aDefault: integer; aIgnoreCase: boolean = True): integer; overload;
 
-    function has(const aSwitchNames: array of string; aIgnoreCase: boolean = True): boolean;
+    function has(const aSwitchNames: array of string; aIgnoreCase: boolean = True): boolean; overload;
+    function has(const aSwitchName: string; aIgnoreCase: boolean = True): Boolean; overload;
 
     function Clone: iCmdLineparams;
     procedure Clear;
@@ -123,13 +124,14 @@ type
     function find(const aSwitch: string; var aValue: string; aIgnoreCase: boolean = True): boolean; overload;
     function find(const aSwitchAndAliases: TArray<string>; var aValue: string; aIgnoreCase: boolean = True): boolean; overload;
 
-    // retrives a value from a givem switch
+    // Retrieves a value from a givem switch
     function Get(const aSwitch: string; aDefault: string = ''; aIgnoreCase: boolean = True): string; overload;
     function Get(const aSwitchAndAliases: TArray<string>; aDefault: string = ''; aIgnoreCase: boolean = True): string; overload;
     function Get(const aSwitch: string; aDefault: integer; aIgnoreCase: boolean = True): integer; overload;
     function Get(const aSwitchAndAliases: TArray<string>; aDefault: integer; aIgnoreCase: boolean = True): integer; overload;
 
     function has(const aSwitchNames: array of string; aIgnoreCase: boolean = True): boolean; overload;
+    function has(const aSwitchName: string; aIgnoreCase: boolean = True): Boolean; overload;
 
     property Count: integer read GetCount;
     property SwitchPrefixes: TSwitchPrefixes read GetSwitchPrefixes write SetSwitchPrefixes;
@@ -303,6 +305,11 @@ begin
 
   // Switch not found by any means
   Result := False;
+end;
+
+function TCmdLineParams.has(const aSwitchName: string; aIgnoreCase: boolean): Boolean;
+begin
+  Result:= find(aSwitchName, aIgnoreCase);
 end;
 
 function TCmdLineParams.has(const aSwitchNames: array of string; aIgnoreCase: boolean): boolean;

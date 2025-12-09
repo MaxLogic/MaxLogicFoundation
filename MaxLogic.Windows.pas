@@ -3,7 +3,7 @@ unit maxLogic.Windows;
 interface
 
 uses
-  Winapi.Windows, System.Classes, System.SysUtils, System.generics.collections;
+  winApi.Windows, System.Classes, System.SysUtils, System.generics.collections;
 
 type
   TSystemUser = record
@@ -13,16 +13,16 @@ type
     rawRow: string; // the sv row as a whole
   end;
 
-function retriveWindowsUsers: TArray<TSystemUser>;
+function RetrieveWindowsUsers: TArray<TSystemUser>;
 
 { Run a DOS program and retrieve its output dynamically while it is running. }
 function GetDosOutput(CommandLine: string; aWorkDir: string = 'C:\'): string;
 
 type
-  tStrProc = reference to procedure(const line: string);
+  TStrProc = reference to procedure(const line: string);
 // Capture console output in [Realtime] and return its char right away
 procedure CaptureConsoleOutput(const aExeFileName, AParameters: string;
-  OnLineReady: tStrProc; const aWorkingDir: string = '');
+  OnLineReady: TStrProc; const aWorkingDir: string = '');
 
 function GetFullProcessImageName(APid: dword): string;
 
@@ -33,12 +33,15 @@ function GetFullProcessImageName(APid: dword): string;
 /// </summary>
 function ProcessIsRunning(const aExeName: string; aCheckFullPath: boolean): boolean;
 
+// the appExeName can be either just the filename or a full file name, that is path + filename
+function CheckCountProcess(const AppExeName: string; ProcessIds: TList<THandle> = nil): integer;
+
 function QueryFullProcessImageName(
   hProcess: THandle;
   dwFlags: dword;
   lpExeName: PChar;
   out lpdwSize: dword
-  ): BOOL;
+  ): bool;
   stdcall external kernel32 Name 'QueryFullProcessImageNameW';
 
 function RunAsAdmin(hwnd: hwnd; FileName: string; Parameters: string): boolean;
@@ -50,11 +53,11 @@ implementation
 
 uses
   System.IOUtils, System.StrUtils, maxLogic.IOUtils, AutoFree,
-  ShellApi, TlHelp32;
+  ShellApi, TlHelp32, jclSysInfo;
 
-function retriveWindowsUsers: TArray<TSystemUser>;
+function RetrieveWindowsUsers: TArray<TSystemUser>;
 var
-  cmd: string;
+  Cmd: string;
   Row, l: TStringList;
   NodeIndex, NameIndex, SidIndex, X: integer;
   u: TSystemUser;
@@ -65,8 +68,8 @@ begin
   gc(l, TStringList.Create);
   gc(Row, TStringList.Create);
 
-  cmd := 'wmic.exe useraccount get name,sid /format:csv';
-  l.Text := GetDosOutput(cmd, getinstalldir);
+  Cmd := 'wmic.exe useraccount get name,sid /format:csv';
+  l.Text := GetDosOutput(Cmd, GetInstallDir);
 
   Row.StrictDelimiter := True;
   Row.delimiter := ',';
@@ -112,7 +115,7 @@ var
   pCommandLine: array[0..256] of AnsiChar;
   BytesRead: Cardinal;
   sCmd, WorkDir: string;
-  IsOk: boolean;
+  isOk: boolean;
 begin
   Result := '';
   with SecurityAttributes do
@@ -138,11 +141,11 @@ begin
 
     sCmd := 'cmd.exe /C ' + CommandLine;
     UniqueString(sCmd);
-    IsOk := CreateProcess(nil, PChar(sCmd), nil, nil,
+    isOk := CreateProcess(nil, PChar(sCmd), nil, nil,
       True, 0, nil, PChar(WorkDir), StartupInfo, ProcessInfo);
 
-    closeHandle(StdOutPipeWrite);
-    if IsOk then
+    CloseHandle(StdOutPipeWrite);
+    if isOk then
     try
       repeat
         // To read from the pipe, a process uses the read isOK in a call to the ReadFile function.
@@ -153,7 +156,7 @@ begin
         // When a process uses WriteFile to write to an anonymous pipe, the write operation is not completed until all bytes are
         // written. If the pipe buffer is full before all bytes are written, WriteFile does not return until another process
         // or thread uses ReadFile to make more buffer space available.
-        WasOK := Winapi.Windows.ReadFile(StdOutPipeRead, pCommandLine, 255, BytesRead, nil);
+        WasOK := winApi.Windows.ReadFile(StdOutPipeRead, pCommandLine, 255, BytesRead, nil);
         if BytesRead > 0 then
         begin
           pCommandLine[BytesRead] := #0;
@@ -162,11 +165,11 @@ begin
       until not WasOK or (BytesRead = 0);
       WaitForSingleObject(ProcessInfo.hProcess, INFINITE);
     finally
-      closeHandle(ProcessInfo.hThread);
-      closeHandle(ProcessInfo.hProcess);
+      CloseHandle(ProcessInfo.hThread);
+      CloseHandle(ProcessInfo.hProcess);
     end;
   finally
-    closeHandle(StdOutPipeRead);
+    CloseHandle(StdOutPipeRead);
   end;
   Result := Trim(Result);
 end;
@@ -174,7 +177,7 @@ end;
 // Capture console output in [Realtime] and return its char right away
 
 procedure CaptureConsoleOutput(const aExeFileName, AParameters: string;
-  OnLineReady: tStrProc; const aWorkingDir: string = '');
+  OnLineReady: TStrProc; const aWorkingDir: string = '');
 const
   CReadBuffer = 2400;
 var
@@ -208,7 +211,7 @@ begin
 
     WorkingDir := aWorkingDir;
     if WorkingDir = '' then
-      WorkingDir := getinstalldir;
+      WorkingDir := GetInstallDir;
 
     if CreateProcess(nil, PChar(sCmd), @SecurityAttributes,
       @SecurityAttributes, True,
@@ -228,12 +231,12 @@ begin
         until (dRead < CReadBuffer);
       until (dRunning <> WAIT_TIMEOUT);
 
-      closeHandle(ProcessInfo.hProcess);
-      closeHandle(ProcessInfo.hThread);
+      CloseHandle(ProcessInfo.hProcess);
+      CloseHandle(ProcessInfo.hThread);
     end;
 
-    closeHandle(hRead);
-    closeHandle(hWrite);
+    CloseHandle(hRead);
+    CloseHandle(hWrite);
   end;
 end;
 
@@ -248,7 +251,7 @@ begin
   if LProcess <> INVALID_HANDLE_VALUE then
   begin
     try
-      LSize := MAX_PATH;
+      LSize := max_path;
       LBuffer := GetMemory(LSize * SizeOf(char));
       try
         if QueryFullProcessImageName(LProcess, 0, LBuffer, LSize) then
@@ -259,7 +262,7 @@ begin
         FreeMemory(LBuffer);
       end;
     finally
-      closeHandle(LProcess);
+      CloseHandle(LProcess);
     end;
   end;
 end;
@@ -286,7 +289,7 @@ begin
     end;
     Result := False;
   finally
-    closeHandle(LSnapshot)
+    CloseHandle(LSnapshot)
   end;
 end;
 
@@ -304,7 +307,7 @@ var
 begin
   ZeroMemory(@sei, SizeOf(sei));
   sei.cbSize := SizeOf(TShellExecuteInfo);
-  sei.Wnd := hwnd;
+  sei.wnd := hwnd;
   sei.fMask := SEE_MASK_FLAG_DDEWAIT or SEE_MASK_FLAG_NO_UI;
   sei.lpVerb := PChar('runas');
   sei.lpFile := PChar(FileName); // PAnsiChar;
@@ -331,6 +334,33 @@ begin
 
   Result := (GetForegroundWindow = hwnd);
 end; { ForceForegroundWindow }
+
+function CheckCountProcess(const AppExeName: string; ProcessIds: TList<THandle> = nil): integer;
+var
+  FHandle: THandle;
+  l: TStringList;
+  UseFullPath: boolean;
+  fn: string;
+  X: integer;
+begin
+  Result := 0;
+
+  UseFullPath := pos('\', AppExeName) > 0;
+  fn := AnsiLowercase(AppExeName);
+
+  l := TStringList.Create;
+  jclSysInfo.RunningProcessesList(l, UseFullPath);
+
+  for X := 0 to l.Count - 1 do
+    if fn = AnsiLowercase(l[X]) then
+    begin
+      Result := Result + 1;
+      if assigned(ProcessIds) then
+        ProcessIds.Add(THandle(l.Objects[X]))
+    end;
+
+  l.Free;
+end;
 
 end.
 

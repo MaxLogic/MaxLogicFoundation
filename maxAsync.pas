@@ -33,7 +33,7 @@
   2018-11-26: added thread safe messageDlg method
   2018-10-06: fix small memory leach when closing the application
   2018-10-30: the SimpleAsyncCall has now a syncedAfterDone parameter that is just a proc you can pass that will be called after the thread went of. Not it will happen even if the initial thread proc raises an exception
-  2018-10-29: you can now retrive the task name using a threadId: TmaxAsyncGlobal.GetThreadName
+  2018-10-29: you can now Retrieve the task name using a threadId: TmaxAsyncGlobal.GetThreadName
   2018-04-30" added iUserData and TUserData
   2018-02-16: TasyncLoop: some class methods added
   2017-06-18: better compatibility with win64

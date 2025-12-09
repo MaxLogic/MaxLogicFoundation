@@ -158,7 +158,7 @@ type
 
     procedure asyncprocess;
     procedure compact(var Items: TItems);
-    function retriveItems(out Items: TItems): boolean;
+    function RetrieveItems(out Items: TItems): boolean;
     procedure OpenFile(FileName: string; var fh: TFileHolder);
     procedure AddLogItem(const LogItem: TLogItem);
     procedure CloseFiles(IgnoreDelay: boolean = False);
@@ -289,7 +289,7 @@ var
 begin
   while True do
   begin
-    retriveItems(Items);
+    RetrieveItems(Items);
     if length(Items) = 0 then
     begin
       if fTerminated then
@@ -443,7 +443,7 @@ begin
   {$ENDIF}
 end;
 
-function TMaxLogAsyncWriter.retriveItems(
+function TMaxLogAsyncWriter.RetrieveItems(
   out Items: TItems): boolean;
 begin
   Result := False;

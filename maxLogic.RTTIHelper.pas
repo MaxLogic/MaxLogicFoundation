@@ -23,7 +23,7 @@ Type
     class Function ReadObjectProperty(Const aInstance: Tobject; Const aPropName: String): Tobject;
     class Function ReadProperty(Const aInstance: Tobject; Const aPropName: String): String;
     class Function ReadProp(Const aInstance: Tobject; Const aPropName: String): TValue;
-    // retrives the name of the type of that property, like "string, "integer" or "TCustomImage"
+    // Retrieves the name of the type of that property, like "string, "integer" or "TCustomImage"
     class function GetPropertyTypeName(const aInstance: Tobject; const aPropName: String): String;
 
     class Procedure WriteProperty(Const aInstance: Tobject; Const aPropName, aValue: String); overload;

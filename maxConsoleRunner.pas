@@ -127,7 +127,7 @@ type
     destructor destroy; override;
 
     procedure StartReading(const aHandle: THandle);
-    procedure safeRetriveOutput(out aOutput: string);
+    procedure safeRetrieveOutput(out aOutput: string);
     procedure DoClosing;
   end;
 
@@ -366,7 +366,7 @@ procedure TmaxConsoleRunner.PullData;
 var
   s: String;
 begin
-  fPipeStdReadThread.safeRetriveOutput(s);
+  fPipeStdReadThread.safeRetrieveOutput(s);
 
   if s <> '' then
   begin
@@ -378,7 +378,7 @@ begin
 
   s := '';
 
-  fPipeErrorReadThread.safeRetriveOutput(s);
+  fPipeErrorReadThread.safeRetrieveOutput(s);
   if s <> '' then
   begin
     if assigned(FOnErrorDataRead) then
@@ -589,7 +589,7 @@ begin
   system.tmonitor.Enter(self);
 end;
 
-procedure TPipeThread.safeRetriveOutput(out aOutput: string);
+procedure TPipeThread.safeRetrieveOutput(out aOutput: string);
 var
   l2, l: TList<string>;
   x: Integer;

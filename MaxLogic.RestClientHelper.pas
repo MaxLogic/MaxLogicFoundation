@@ -67,7 +67,7 @@ Type
       const aContentType: String = 'application/json';
       Method: TRESTRequestMethod = TRESTRequestMethod.rmPOST); overload;
 
-    // retrive some responses from the JSONValue
+    // Retrieve some responses from the JSONValue
     Function TryGetJSONValue(const path: string; out Value: string): boolean;
 
     // deserializes the json response to an Object

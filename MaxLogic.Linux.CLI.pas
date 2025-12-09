@@ -26,7 +26,7 @@ Type
 
 /// <summary>
 /// executes a linux command.
-/// it will retrive the terminal output and call the aBufferReady each time we have a chunk of data
+/// it will Retrieve the terminal output and call the aBufferReady each time we have a chunk of data
 /// attention: THE LINES WILL END WITH #10, SO YOU MIGHT WANT TO CALL tRIMlEFT ON THE RESULT
 /// Returns the exit code or -1 if the process failed
 /// </summary>
@@ -35,7 +35,7 @@ function LinuxCmd(Const aCommand: String; aBufferReady: TStrProc; aBufferSize: i
 /// <summary>
 /// a simplified version of the above.
 /// best SUITED FOR COMMANDS THAT RETURN A SINGLE LINE AS OUTPUT
-/// Please note, that this might not be suiteable for commands that will retrive large amount of text
+/// Please note, that this might not be suiteable for commands that will Retrieve large amount of text
 /// attention: A right trim will be performed on the result to remove the trailing line break
 /// </summary>
 Function LinuxCmd(Const aCommand: String): String; Overload;

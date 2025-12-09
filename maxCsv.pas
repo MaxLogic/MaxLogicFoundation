@@ -783,7 +783,7 @@ begin
 
   end;
 
-  // if we are here, nothing was found, so retrive all
+  // if we are here, nothing was found, so Retrieve all
   Count := (fBuffer.Position - start);
   aValue := fBuffer.CopyRawByteString(start, Count);
   LineEndDetected := True;
@@ -841,7 +841,7 @@ begin
 
   end;
 
-  // if we are here, nothing was found, so retrive all
+  // if we are here, nothing was found, so Retrieve all
   Count := (fBuffer.Position - start) + 1;
   aValue := aValue + fBuffer.CopyRawByteString(start, Count);
   LineEndDetected := True;

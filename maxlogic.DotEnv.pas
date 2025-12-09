@@ -229,6 +229,7 @@ const
     /// <param name="aBaseDir">Directory whose layered files (.env, .env.local, .env.secret) form the highest-precedence root.</param>
     /// <param name="aOptions">Flags controlling search roots, evaluation mode, and safety features.</param>
     procedure LoadLayered(const aBaseDir: string; const aOptions: TDotEnvOptions = []); overload;
+
     /// <summary>
     ///   as LoadLayered - aBaseDir is the path to ParamStr(0)
     /// </summary>

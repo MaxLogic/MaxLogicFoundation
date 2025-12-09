@@ -229,7 +229,8 @@ type
 procedure Split(const line: string; delimiter: char; STRINGS: TStringList); overload;
 procedure Split(const line: string; delimiter: char; out STRINGS: TArray<string>); overload;
 function Split(delimiter: char; const line: string): TArray<string>; overload;
-
+Function splitstring(Const aText: String; aDelim: char; aPerformTrimOnParts: Boolean = False): TArray<String>; 
+  
 function SplitInHalfBy(const aText: string; aDelim: char; out aParts: TArray<string>): boolean; overload;
 function SplitInHalfBy(const aText: string; aDelim: char; out alLeft, alRight: string): boolean; overload;
 
@@ -285,6 +286,10 @@ function i2s(const i: integer): string; inline;
 // converts a double (its binary delphi representation) into a hex string
 // aMinLength: will add or remove leading '0' to match this len
 function floatToHex(const f: double; aMinLength: integer = SizeOf(double) * 2): string;
+
+// pretty print a size in bytes
+Function PrettyPrintSize(Const ByteCount: int64): String;
+Function MegaBytesToStr(Const MegaByteCount: extended): String;
 
 implementation
 
@@ -865,6 +870,14 @@ begin
   STRINGS := l.ToStringArray;
 end;
 
+Function splitstring(Const aText: String; aDelim: char; aPerformTrimOnParts: Boolean = False): TArray<String>; 
+begin
+  Result:= Split(aDelim, aText);
+  if aPerformTrimOnParts then
+    for var x := 0 to length(Result) -1 do
+      Result[x]:= Result[x].Trim;
+end;
+
 procedure Split(const line: string; delimiter: char; STRINGS: TStringList);
 var
   l: TStringList;
@@ -1272,6 +1285,47 @@ begin
   end;
   Result := s;
 end;
+
+Function PrettyPrintSize(Const ByteCount: int64): String;
+Const
+  n = 1 / (1024 * 1024);
+Begin
+  Result := MegaBytesToStr(ByteCount * n);
+End;
+
+Function MegaBytesToStr(Const MegaByteCount: extended): String;
+Const
+  nKb = 1024;
+  nbytes = 1024 * 1024;
+  nGb = 1 / 1024;
+  ntb = 1 / (1024 * 1024);
+  nPB = 1 / (1024 * 1024 * 1024);
+Var
+  f: extended;
+Begin
+
+  f := MegaByteCount * nPB;
+  If f >= 1 Then
+    Exit(fstr(f, 2, 2) + ' Petabyte');
+
+  f := MegaByteCount * ntb;
+  If f >= 1 Then
+    Exit(fstr(f, 2, 2) + ' TB');
+
+  f := MegaByteCount * nGb;
+  If f >= 1 Then
+    Exit(fstr(f, 2, 2) + ' GB');
+
+  If MegaByteCount >= 1 Then
+    Exit(fstr(MegaByteCount, 2, 2) + ' MB');
+
+  f := MegaByteCount * nKb;
+  If f >= 1 Then
+    Exit(fstr(f, 2, 2) + ' KB');
+
+  Result := IntToStr(round(MegaByteCount * nbytes)) + ' B';
+End;
+
 
 end.
 

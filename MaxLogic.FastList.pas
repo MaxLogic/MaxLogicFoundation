@@ -131,7 +131,7 @@ type
       function IndexOf(const Value: TValue; aOffset: integer = 0;
         aComparer: IComparer<TValue> = nil): integer;
 
-      { Allows us to retrive the min and max index of items with the same id
+      { Allows us to Retrieve the min and max index of items with the same id
         Note: aLeftIndex and aRightIndex will be the same if there is 1 or less items with the same id }
       function FindMinMaxIndex(const aId: TKey; out aLowIndex, aHighIndex: integer): boolean;
 
