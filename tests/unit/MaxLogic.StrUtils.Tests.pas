@@ -78,6 +78,9 @@ type
     [Test] procedure CharPosEx_SinglePositionRange;
     [Test] procedure StrToFloatWCC_PlusAndSpaces;
     [Test] procedure ExpandEnvVars_NestedValue_NoRecursion_Windows;
+    [Test] procedure ParseStatement_BasicReplacement;
+    [Test] procedure ParseStatement_MissingTokensRemainUnchanged;
+    [Test] procedure ParseStatement_CustomTokenCharacter;
   end;
 
 implementation
@@ -942,6 +945,51 @@ begin
   Assert.IsTrue(True, 'Skipped on non-Windows');
 end;
 {$ENDIF}
+
+procedure TMaxLogicStrUtilsTests.ParseStatement_BasicReplacement;
+const
+  LStatement = 'select :ID:,:Field2: from :t where :F1 = :V1';
+var
+  lParams: TArray<string>;
+  lResult: string;
+begin
+  lParams := [
+    'id', 'users.id',
+    'field2', 'users.name',
+    't', 'users',
+    'f1', 'users.id',
+    'v1', '42'
+  ];
+  lResult := ParseStatement(LStatement, lParams);
+  Assert.AreEqual('select users.id,users.name from users where users.id = 42', lResult);
+end;
+
+procedure TMaxLogicStrUtilsTests.ParseStatement_MissingTokensRemainUnchanged;
+const
+  LStatement = 'SELECT :Missing:, :Present:';
+var
+  lParams: TArray<string>;
+  lResult: string;
+begin
+  lParams := ['present', 'X'];
+  lResult := ParseStatement(LStatement, lParams);
+  Assert.AreEqual('SELECT :Missing:, X', lResult);
+end;
+
+procedure TMaxLogicStrUtilsTests.ParseStatement_CustomTokenCharacter;
+const
+  LStatement = 'Path ~~Root~~\~~Leaf~~';
+var
+  lParams: TArray<string>;
+  lResult: string;
+begin
+  lParams := [
+    'root', 'C:',
+    'leaf', 'temp'
+  ];
+  lResult := ParseStatement(LStatement, lParams, '~');
+  Assert.AreEqual('Path C:\temp', lResult);
+end;
 
 initialization
   TDUnitX.RegisterTestFixture(TMaxLogicStrUtilsTests);
