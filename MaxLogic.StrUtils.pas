@@ -291,6 +291,19 @@ function floatToHex(const f: double; aMinLength: integer = SizeOf(double) * 2): 
 Function PrettyPrintSize(Const ByteCount: int64): String;
 Function MegaBytesToStr(Const MegaByteCount: extended): String;
 
+{ This function will replace tokenized keywords (=words enclosed by the token char, like :myToken: by its parameters.  (*
+  like this:
+  ParseStatement ('SELECT :id:, :field2:, from :t WHERE :f1 = :v1', ['id, 'my_id_field',
+  'field2',  'my_field2_value,
+  't ',  'myTableName',
+  'f1 ', 'myf1Value',
+  'v1', '''myValue2 please note the quotes''']))
+  // this should be easier to read then a long statement with many string concatenations and value retriving code...
+  The params are case insensitive
+}
+Function ParseStatement(Const Statement: String; Const params: TArray<String>;
+  Const Token: char = ':'): String;
+
 implementation
 
 uses
@@ -1326,6 +1339,23 @@ Begin
   Result := IntToStr(round(MegaByteCount * nbytes)) + ' B';
 End;
 
+Function ParseStatement(Const Statement: String; Const params: TArray<String>; Const Token: char = ':'): String;
+Var
+  ParamCount: Integer;
+  x: Integer;
+  s, n, v: String;
+Begin
+  s := Statement;
+  ParamCount := Length(params) Div 2;
+  For x := 0 To ParamCount - 1 Do
+  Begin
+    n := params[x * 2];
+    v := params[x * 2 + 1];
+
+    s := StringReplace(s, Token + n + Token, v, [rfReplaceAll, rfIgnoreCase]);
+  End;
+
+  Result := s;
+End;
 
 end.
-
