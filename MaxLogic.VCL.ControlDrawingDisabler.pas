@@ -19,8 +19,7 @@ Type
       Count: Integer;
     End;
   Private
-    Class Function getOrCreateCounter(aControl: TWinControl)
-      : TDrawingDisablerFlag;
+    Class Function GetCounter(aControl: TWinControl; aCanCreate: Boolean = True): TDrawingDisablerFlag;
 
     // returns the value after the modification
     Class Function incCounter(aControl: TWinControl): Integer;
@@ -28,13 +27,13 @@ Type
   Public
     Class Procedure LockDrawing(aControl: TWinControl);
     Class Procedure UnLockDrawing(aControl: TWinControl);
+    Class function isLocked(aControl: TWinControl): Boolean;
   End;
 
 Implementation
 
 Class Procedure TControlDrawingDisabler.LockDrawing(aControl: TWinControl);
 Begin
-
   If assigned(aControl)
     And (Not (csDestroyingHandle In aControl.ControlState))
     And (Not (csDestroying In aControl.ComponentState))
@@ -63,39 +62,54 @@ Begin
   End;
 End;
 
-Class Function TControlDrawingDisabler.getOrCreateCounter(aControl: TWinControl)
-  : TDrawingDisablerFlag;
-Var
-  x: Integer;
+Class Function TControlDrawingDisabler.GetCounter(aControl: TWinControl; aCanCreate: Boolean): TDrawingDisablerFlag;
 Begin
+  Result:= nil;
   // most likely it is the last component in the list...
-  For x := aControl.ComponentCount - 1 Downto 0 Do
+  For var x := aControl.ComponentCount - 1 Downto 0 Do
     If aControl.Components[x] Is TDrawingDisablerFlag Then
     Begin
       exit(aControl.Components[x] As TDrawingDisablerFlag);
     End;
   // if we are here... nothing was found, so create a new one
-  result := TDrawingDisablerFlag.Create(aControl);
+  if aCanCreate then
+    result := TDrawingDisablerFlag.Create(aControl);
 End;
 
-Class Function TControlDrawingDisabler.incCounter
-  (aControl: TWinControl): Integer;
+Class Function TControlDrawingDisabler.incCounter(aControl: TWinControl): Integer;
 Var
-  Counter: TDrawingDisablerFlag;
+  lCounter: TDrawingDisablerFlag;
 Begin
-  Counter := getOrCreateCounter(aControl);
-  inc(Counter.Count);
-  result := Counter.Count;
+  lCounter := GetCounter(aControl);
+  inc(lCounter.Count);
+  result := lCounter.Count;
 End;
 
-Class Function TControlDrawingDisabler.decCounter
-  (aControl: TWinControl): Integer;
+class function TControlDrawingDisabler.isLocked(
+  aControl: TWinControl): Boolean;
 Var
-  Counter: TDrawingDisablerFlag;
+  lCounter: TDrawingDisablerFlag;
+begin
+  Result:= false;
+    If assigned(aControl)
+    And (Not (csDestroyingHandle In aControl.ControlState))
+    And (Not (csDestroying In aControl.ComponentState))
+    And (aControl.HandleAllocated)
+  Then
+  begin
+    lCounter := GetCounter(aControl);
+    Result:= Assigned(lCounter)
+      and (lCounter.Count > 0);
+  end;
+end;
+
+Class Function TControlDrawingDisabler.decCounter(aControl: TWinControl): Integer;
+Var
+  lCounter: TDrawingDisablerFlag;
 Begin
-  Counter := getOrCreateCounter(aControl);
-  dec(Counter.Count);
-  result := Counter.Count;
+  lCounter := GetCounter(aControl);
+  dec(lCounter.Count);
+  result := lCounter.Count;
 End;
 
 End.
