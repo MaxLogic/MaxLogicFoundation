@@ -1,115 +1,113 @@
-Unit MaxLogic.VCL.ControlDrawingDisabler;
+unit maxLogic.vcl.ControlDrawingDisabler;
 
 { Version: 1.02 }
-Interface
+interface
 
-Uses
-  windows, sysUtils, classes, controls, StdCtrls, messages;
+uses
+  Windows, SysUtils, Classes, Controls, StdCtrls, Messages;
 
-Type
+type
 
   // when adding or moving many controls on a form it is best to disable its drawing and realigning first, this class  are for that purpose
   // NOTE: it implements a counter, so you just need to ensure you call unLockDrawing for every call to LockDrawing
   // Threading note: no threading allowed, always run from the main vcl thread
 
-  TControlDrawingDisabler = Class
-  Private Type
-    TDrawingDisablerFlag = Class(TComponent)
-    Private
-      Count: Integer;
-    End;
-  Private
-    Class Function GetCounter(aControl: TWinControl; aCanCreate: Boolean = True): TDrawingDisablerFlag;
+  TControlDrawingDisabler = class
+  private type
+      TDrawingDisablerFlag = class(TComponent)
+      private
+        Count: integer;
+      end;
+  private
+    class function GetCounter(aControl: TWinControl; aCanCreate: boolean = True): TDrawingDisablerFlag;
 
     // returns the value after the modification
-    Class Function incCounter(aControl: TWinControl): Integer;
-    Class Function decCounter(aControl: TWinControl): Integer;
-  Public
-    Class Procedure LockDrawing(aControl: TWinControl);
-    Class Procedure UnLockDrawing(aControl: TWinControl);
-    Class function isLocked(aControl: TWinControl): Boolean;
-  End;
+    class function incCounter(aControl: TWinControl): integer;
+    class function decCounter(aControl: TWinControl): integer;
+  public
+    class procedure LockDrawing(aControl: TWinControl);
+    class procedure UnLockDrawing(aControl: TWinControl);
+    class function islocked(aControl: TWinControl): boolean;
+  end;
 
-Implementation
+implementation
 
-Class Procedure TControlDrawingDisabler.LockDrawing(aControl: TWinControl);
-Begin
-  If assigned(aControl)
-    And (Not (csDestroyingHandle In aControl.ControlState))
-    And (Not (csDestroying In aControl.ComponentState))
-    And (aControl.HandleAllocated)
-    And (incCounter(aControl) = 1)
-  Then
-  Begin
-    SendMessage(aControl.Handle, WM_SETREDRAW, Integer(False), 0);
+class procedure TControlDrawingDisabler.LockDrawing(aControl: TWinControl);
+begin
+  if assigned(aControl)
+    and (not (csDestroyingHandle in aControl.ControlState))
+    and (not (csDestroying in aControl.ComponentState))
+    and (aControl.HandleAllocated)
+    and (incCounter(aControl) = 1) then
+  begin
+    SendMessage(aControl.Handle, WM_SETREDRAW, integer(False), 0);
     aControl.DisableAlign;
-  End;
-End;
+  end;
+end;
 
-Class Procedure TControlDrawingDisabler.UnLockDrawing(aControl: TWinControl);
-Begin
-  If assigned(aControl)
-    And (Not (csDestroyingHandle In aControl.ControlState))
-    And (Not (csDestroying In aControl.ComponentState))
-    And (aControl.HandleAllocated)
-    And (decCounter(aControl) = 0)
-  Then
-  Begin
+class procedure TControlDrawingDisabler.UnLockDrawing(aControl: TWinControl);
+begin
+  if assigned(aControl)
+    and (not (csDestroyingHandle in aControl.ControlState))
+    and (not (csDestroying in aControl.ComponentState))
+    and (aControl.HandleAllocated)
+    and (decCounter(aControl) = 0) then
+  begin
     aControl.EnableAlign;
-    SendMessage(aControl.Handle, WM_SETREDRAW, Integer(true), 0);
-    aControl.invalidate;
-    RedrawWindow(aControl.Handle, Nil, 0, RDW_INVALIDATE Or RDW_UPDATENOW Or RDW_ALLCHILDREN);
-  End;
-End;
+    SendMessage(aControl.Handle, WM_SETREDRAW, integer(True), 0);
+    aControl.Invalidate;
+    RedrawWindow(aControl.Handle, nil, 0, RDW_INVALIDATE or RDW_UPDATENOW or RDW_ALLCHILDREN);
+  end;
+end;
 
-Class Function TControlDrawingDisabler.GetCounter(aControl: TWinControl; aCanCreate: Boolean): TDrawingDisablerFlag;
-Begin
-  Result:= nil;
+class function TControlDrawingDisabler.GetCounter(aControl: TWinControl; aCanCreate: boolean): TDrawingDisablerFlag;
+begin
+  Result := nil;
   // most likely it is the last component in the list...
-  For var x := aControl.ComponentCount - 1 Downto 0 Do
-    If aControl.Components[x] Is TDrawingDisablerFlag Then
-    Begin
-      exit(aControl.Components[x] As TDrawingDisablerFlag);
-    End;
+  for var X := aControl.ComponentCount - 1 downto 0 do
+    if aControl.Components[X] is TDrawingDisablerFlag then
+    begin
+      exit(aControl.Components[X] as TDrawingDisablerFlag);
+    end;
   // if we are here... nothing was found, so create a new one
   if aCanCreate then
-    result := TDrawingDisablerFlag.Create(aControl);
-End;
+    Result := TDrawingDisablerFlag.Create(aControl);
+end;
 
-Class Function TControlDrawingDisabler.incCounter(aControl: TWinControl): Integer;
-Var
-  lCounter: TDrawingDisablerFlag;
-Begin
-  lCounter := GetCounter(aControl);
-  inc(lCounter.Count);
-  result := lCounter.Count;
-End;
-
-class function TControlDrawingDisabler.isLocked(
-  aControl: TWinControl): Boolean;
-Var
+class function TControlDrawingDisabler.incCounter(aControl: TWinControl): integer;
+var
   lCounter: TDrawingDisablerFlag;
 begin
-  Result:= false;
-    If assigned(aControl)
-    And (Not (csDestroyingHandle In aControl.ControlState))
-    And (Not (csDestroying In aControl.ComponentState))
-    And (aControl.HandleAllocated)
-  Then
+  lCounter := GetCounter(aControl);
+  Inc(lCounter.Count);
+  Result := lCounter.Count;
+end;
+
+class function TControlDrawingDisabler.islocked(
+  aControl: TWinControl): boolean;
+var
+  lCounter: TDrawingDisablerFlag;
+begin
+  Result := False;
+  if assigned(aControl)
+    and (not (csDestroyingHandle in aControl.ControlState))
+    and (not (csDestroying in aControl.ComponentState))
+    and (aControl.HandleAllocated) then
   begin
     lCounter := GetCounter(aControl);
-    Result:= Assigned(lCounter)
+    Result := assigned(lCounter)
       and (lCounter.Count > 0);
   end;
 end;
 
-Class Function TControlDrawingDisabler.decCounter(aControl: TWinControl): Integer;
-Var
+class function TControlDrawingDisabler.decCounter(aControl: TWinControl): integer;
+var
   lCounter: TDrawingDisablerFlag;
-Begin
+begin
   lCounter := GetCounter(aControl);
-  dec(lCounter.Count);
-  result := lCounter.Count;
-End;
+  Dec(lCounter.Count);
+  Result := lCounter.Count;
+end;
 
-End.
+end.
+
