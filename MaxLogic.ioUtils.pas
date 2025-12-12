@@ -221,7 +221,9 @@ procedure readFromBytesAndIncOffset(var Buf; BuffSize: integer;
 procedure readFromBytes(var Buf; BufSize: integer; const Bytes: TBytes;
   offset: integer);
 procedure FillZeroBytes(var Bytes: TBytes);
-
+{$IFNDEF MsWIndows}
+procedure ZeroMemory(aPtr: Pointer; aSize: NativeInt); inline;
+{$ENDIF}
 
 implementation
 
@@ -1173,6 +1175,14 @@ begin
   if length(Bytes) <> 0 then
     ZeroMemory(@Bytes[0], length(Bytes));
 end;
+
+{$IFNDEF MsWIndows}
+procedure ZeroMemory(aPtr: Pointer; aSize: NativeInt); inline;
+begin
+  if (aPtr <> nil) and (aSize > 0) then
+    FillChar(aPtr^, aSize, 0);
+end;
+{$ENDIF}
 
 
 end.

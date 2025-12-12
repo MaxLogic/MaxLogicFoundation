@@ -86,14 +86,12 @@ Type
     Property LogType: TLogType Read GetLogType Write SetLogType;
     /// <summary>Formats the log entry into a string based on the specified kind.</summary>
     Function Text(aKind: TOutputFormatKind): String;
-    {$IFDEF MadExcept}
     /// <summary>Sets the call stack string (used for errors with MadExcept).</summary>
     procedure SetCallStack(const Value: String);
     /// <summary>Gets the call stack string.</summary>
     function GetCallStack: String;
     /// <summary>Gets or sets the call stack (relevant for errors when MadExcept is enabled).</summary>
     property CallStack: String read GetCallStack write SetCallStack;
-    {$ENDIF}
   End;
 
   /// <summary>
@@ -193,18 +191,14 @@ Type
     fTags: MaxLogic.FastList.TSortedList<String, String>;
     fThreadId: String;
     fLogType: TLogType;
-    {$IFDEF MadExcept}
     fCallStack: String;
-    {$ENDIF}
     Procedure Append(Var aText: String; Const aTagName, aTagValue: String);
     Procedure CaptureThreadId;
     // iLogEntry implementations
     Procedure SetLogType(Const Value: TLogType);
     Function GetLogType: TLogType;
-    {$IFDEF MadExcept}
     procedure SetCallStack(const Value: String);
     function GetCallStack: String;
-    {$ENDIF}
   Public
     constructor Create;
     destructor Destroy; override;
@@ -348,9 +342,7 @@ Uses
 
 const
   cTagMsg = 'MSG'; // Standard tag name for the main log message
-  {$IFDEF MadExcept}
   cCallStackTag = 'CallStack'; // Standard tag name for stack traces
-  {$ENDIF}
 
 Var
   glFormatSettings: TFormatSettings; // For consistent float/date formatting
@@ -554,7 +546,6 @@ begin
   end;
 end;
 
-{$IFDEF MadExcept}
 function TLogEntry.GetCallStack: String;
 begin
   Result := fCallStack;
@@ -564,7 +555,6 @@ procedure TLogEntry.SetCallStack(const Value: String);
 begin
   fCallStack := Value;
 end;
-{$ENDIF}
 
 Function TLogEntry.GetLogType: TLogType;
 begin
@@ -683,11 +673,11 @@ begin
         Append(Result, lTagName, lTagValue); // Append "tag": "value"
       end;
 
-      {$IFDEF MadExcept}
+
       // Add call stack last in JSON if available
       if fCallStack <> '' then
         Append(Result, cCallStackTag, fCallStack);
-      {$ENDIF}
+
       Result := '{' + Result + '}'; // Wrap in braces
     end;
     ofkPlainText, ofkPlainOnNextLine:
@@ -712,7 +702,7 @@ begin
           Result := Result + fTags[i]; // Message on same line
       end;
 
-      {$IFDEF MadExcept}
+
       // Append call stack on new lines if available
       if fCallStack <> '' then
       begin
@@ -720,7 +710,6 @@ begin
                   cCallStackTag + ':' + sLineBreak + // Add a label for the stack
                   fCallStack;
       end;
-      {$ENDIF}
     end;
   else // Should not happen
     Result := 'Unknown OutputFormatKind';
@@ -993,16 +982,15 @@ end;
 
 Procedure TMaxLog.add(aMsg: iLogEntry; aLogType: TLogType);
 begin
+  {$IFDEF MadExcept}
   // Automatically add stack trace for errors if enabled and MadExcept is defined
   if fAutoStackTraceForErrors and (aLogType = TLogType.Error) then
   begin
-    {$IFDEF MadExcept}
     if (aMsg.CallStack = '') then
-    begin
       aMsg.CallStack := MadStackTrace.StackTrace;
-    end;
-    {$ENDIF}
   end;
+  {$EndIf}
+
   // Set the log type on the entry before formatting
   aMsg.LogType := aLogType;
   // Format the entry and pass it to addRaw
