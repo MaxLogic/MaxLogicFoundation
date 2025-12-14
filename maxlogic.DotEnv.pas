@@ -5,7 +5,8 @@ unit maxlogic.DotEnv;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.Generics.Collections, System.Generics.Defaults;
+  System.SysUtils, System.Classes, System.Generics.Collections, System.Generics.Defaults,
+  maxLogic.StrUtils;
 
 const
   MAX_DOTENV_FILE_SIZE = 1024 * 1024; // 1 MB cap
@@ -76,16 +77,6 @@ const
         Line: Integer;
         RootIndex: Integer;
         FileOrder: Integer;
-      end;
-
-      TKeyComparer = class(TInterfacedObject, IEqualityComparer<string>)
-      private
-        FComparer: IEqualityComparer<string>;
-        FCaseSensitive: Boolean;
-      public
-        constructor Create(aCaseSensitive: Boolean);
-        function Equals(const aLeft, aRight: string): Boolean;
-        function GetHashCode(const aValue: string): Integer;
       end;
 
       TLayeredFile = record
@@ -935,33 +926,6 @@ begin
     raise Exception.CreateFmt('Unexpected token at position %d', [FPos]);
 end;
 
-{ TDotEnv.TKeyComparer }
-
-constructor TDotEnv.TKeyComparer.Create(aCaseSensitive: Boolean);
-begin
-  inherited Create;
-  FCaseSensitive := aCaseSensitive;
-  // Use default ordinal comparer; handle case-insensitive logic in Equals/GetHashCode
-  FComparer := TEqualityComparer<string>.Default;
-end;
-
-function TDotEnv.TKeyComparer.Equals(const aLeft, aRight: string): Boolean;
-begin
-  if FCaseSensitive then
-    Result := FComparer.Equals(aLeft, aRight)
-  else
-    Result := SameText(aLeft, aRight);
-end;
-
-function TDotEnv.TKeyComparer.GetHashCode(const aValue: string): Integer;
-begin
-  if FCaseSensitive then
-    Result := FComparer.GetHashCode(aValue)
-  else
-    // Hash on a normalized (lowercased) value to stay consistent with SameText equality
-    Result := TEqualityComparer<string>.Default.GetHashCode(aValue.ToLower);
-end;
-
 { TDotEnv }
 
 constructor TDotEnv.Create;
@@ -1007,11 +971,17 @@ procedure TDotEnv.ResetState;
 begin
   FErrors.Clear;
   FTrace.Clear;
+
+  if FValues <> nil then
+    FValues.Clear; // purge previous load winners before reusing the loader
+
   if FIncludeStack <> nil then
     FIncludeStack.Clear;
+
   // reset deferred evaluation state between loads
   FDeferredActive := False;
   FDeferred := nil;
+
   if FEvalStack <> nil then
     FEvalStack.Clear;
 end;
@@ -1035,13 +1005,13 @@ begin
   lDesired := DetermineCaseSensitive;
   if FValues = nil then
   begin
-    FValues := TDictionary<string, TStoredValue>.Create(TKeyComparer.Create(lDesired));
+    FValues := TDictionary<string, TStoredValue>.Create(TFastCaseAwareComparer.Create(lDesired));
     FCaseSensitiveCache := lDesired;
     Exit;
   end;
   if lDesired <> FCaseSensitiveCache then
   begin
-    lNewDict := TDictionary<string, TStoredValue>.Create(TKeyComparer.Create(lDesired));
+    lNewDict := TDictionary<string, TStoredValue>.Create(TFastCaseAwareComparer.Create(lDesired));
     for lPair in FValues do
       lNewDict.AddOrSetValue(NormalizeKey(lPair.Value.Key), lPair.Value);
     FValues.Free;
@@ -1094,7 +1064,7 @@ var
   lEqPos: Integer;
 {$ENDIF}
 begin
-  lComparer := TKeyComparer.Create(not IsWindowsPlatform);
+  lComparer := TFastCaseAwareComparer.Create(not IsWindowsPlatform);
   FInitialEnv := TDictionary<string, Byte>.Create(lComparer);
 {$IFDEF MSWINDOWS}
   lBlock := GetEnvironmentStringsW;
@@ -1173,7 +1143,7 @@ var
   lPair: TPair<string, TStoredValue>;
 begin
   EnsureValuesDictionary;
-  lDict := TDictionary<string, string>.Create(TKeyComparer.Create(DetermineCaseSensitive));
+  lDict := TDictionary<string, string>.Create(TFastCaseAwareComparer.Create(DetermineCaseSensitive));
   for lPair in FValues do
     lDict.AddOrSetValue(lPair.Value.Key, lPair.Value.Value);
   Result := lDict;
@@ -1616,7 +1586,7 @@ begin
     Exit;
   end;
   if FEvalStack = nil then
-    FEvalStack := THashSet<string>.Create(TKeyComparer.Create(DetermineCaseSensitive));
+    FEvalStack := THashSet<string>.Create(TFastCaseAwareComparer.Create(DetermineCaseSensitive));
   FEvalStack.Add(aNormalizedKey);
   lErrBefore := FErrors.Count;
   try
@@ -1650,14 +1620,14 @@ var
   lKeyList: TList<string>;
 begin
   EnsureValuesDictionary;
-  lWinners := TDictionary<string, TRawAssignment>.Create(TKeyComparer.Create(DetermineCaseSensitive));
+  lWinners := TDictionary<string, TRawAssignment>.Create(TFastCaseAwareComparer.Create(DetermineCaseSensitive));
   try
     // last-wins by precedence implied by aEntries order
     for lEntry in aEntries do
       lWinners.AddOrSetValue(NormalizeKey(lEntry.Key), lEntry);
 
     FDeferredActive := True;
-    FEvalStack := THashSet<string>.Create(TKeyComparer.Create(DetermineCaseSensitive));
+    FEvalStack := THashSet<string>.Create(TFastCaseAwareComparer.Create(DetermineCaseSensitive));
     FDeferred := lWinners;
     try
       // snapshot keys since EvaluateDeferredKey mutates FDeferred/lWinners
@@ -1691,7 +1661,7 @@ var
   lProcInfo: TProcessInformation;
   lBuffer: array[0..2047] of AnsiChar;
   lBytesRead: Cardinal;
-  lChunk: AnsiString;
+  lOut: TBytesStream;
   lCmdLine: string;
   lRaw: string;
   lPayload: string;
@@ -1722,6 +1692,8 @@ begin
   aErrMsg := '';
   Result := False;
 {$IFDEF MSWINDOWS}
+  lReadPipe := 0;
+  lWritePipe := 0;
   lNeedDeleteTemp := False;
   lSecurity := Default(TSecurityAttributes);
   lSecurity.nLength := SizeOf(lSecurity);
@@ -1809,14 +1781,22 @@ begin
     CloseHandle(lWritePipe);
     lWritePipe := 0;
     try
-      repeat
-        if not ReadFile(lReadPipe, lBuffer, SizeOf(lBuffer), lBytesRead, nil) then
-          Break;
-        if lBytesRead = 0 then
-          Break;
-        SetString(lChunk, PAnsiChar(@lBuffer[0]), lBytesRead);
-        aOutput := aOutput + string(lChunk);
-      until False;
+      lOut := TBytesStream.Create(nil); // accumulate stdout without quadratic string growth
+      try
+        repeat
+          if not ReadFile(lReadPipe, lBuffer, SizeOf(lBuffer), lBytesRead, nil) then
+            Break;
+          if lBytesRead = 0 then
+            Break;
+
+          lOut.WriteBuffer(lBuffer[0], lBytesRead);
+        until False;
+
+        aOutput := TEncoding.Default.GetString(lOut.Bytes, 0, lOut.Size);
+      finally
+        lOut.Free;
+      end;
+
       WaitForSingleObject(lProcInfo.hProcess, INFINITE);
       if not GetExitCodeProcess(lProcInfo.hProcess, lExitCode) then
         lExitCode := 1;
@@ -1830,19 +1810,22 @@ begin
     finally
       CloseHandle(lProcInfo.hThread);
       CloseHandle(lProcInfo.hProcess);
-      if lNeedDeleteTemp and (lTempScript <> '') then
-      begin
-        try
-          TFile.Delete(lTempScript);
-        except
-          // ignore cleanup failures
-        end;
-      end;
     end;
   finally
     if lWritePipe <> 0 then
       CloseHandle(lWritePipe);
-    CloseHandle(lReadPipe);
+
+    if lReadPipe <> 0 then
+      CloseHandle(lReadPipe);
+
+    if lNeedDeleteTemp and (lTempScript <> '') then
+    begin
+      try
+        TFile.Delete(lTempScript);
+      except
+        // ignore cleanup failures
+      end;
+    end;
   end;
 {$ELSE}
   lAccum := '';
@@ -2359,7 +2342,7 @@ end;
 
 procedure TDotEnv.LoadLayered(const aOptions: TDotEnvOptions);
 begin
-  LoadLayered(ExtractFilePath(ParamStr(0)), aOptions)
+  LoadLayered(ExtractFilePath(ParamStr(0)), aOptions);
 end;
 
 procedure TDotEnv.SetSearchRoots(const aRoots: TArray<TSearchRoot>);
@@ -2431,7 +2414,7 @@ begin
   lNamespace := FEnvironmentNamespace;
 
   lRoots := TList<TSearchRoot>.Create;
-  lSeen := TDictionary<string, Byte>.Create(TKeyComparer.Create(not IsWindowsPlatform));
+  lSeen := TDictionary<string, Byte>.Create(TFastCaseAwareComparer.Create(not IsWindowsPlatform));
   try
     lBasePath := aBaseDir;
     if lBasePath = '' then

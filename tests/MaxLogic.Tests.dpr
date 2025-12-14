@@ -21,7 +21,11 @@ uses
   MaxLogic.RichIniFiles.Tests in 'unit\MaxLogic.RichIniFiles.Tests.pas',
   maxLogic.StrUtils in '..\MaxLogic.StrUtils.pas',
   MaxLogic.PortableTimer.Tests in 'unit\MaxLogic.PortableTimer.Tests.pas',
-  MaxLogic.StrUtils.Tests in 'unit\MaxLogic.StrUtils.Tests.pas';
+  MaxLogic.StrUtils.Tests in 'unit\MaxLogic.StrUtils.Tests.pas',
+  MaxLogic.hash.FNV1a in '..\MaxLogic.hash.FNV1a.pas',
+  MaxLogic.hash.xxHash in '..\MaxLogic.hash.xxHash.pas',
+  MaxLogic.hash.Murmur in '..\MaxLogic.hash.Murmur.pas',
+  MaxLogic.Hash.Tests in 'unit\MaxLogic.Hash.Tests.pas';
 
 var
   Runner: ITestRunner;

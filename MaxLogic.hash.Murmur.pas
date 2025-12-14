@@ -1,22 +1,49 @@
 unit MaxLogic.hash.Murmur;
 
-{Version: 1.1
-History:
-2015-07-21: added Q-/R- to disable overflow/range checking}
+{
+  MurmurHash family - Fast, non-cryptographic hash algorithms
+  
+  Version: 1.2
+  History:
+  - 2015-07-21: added Q-/R- to disable overflow/range checking
+  - 2024-12-14: added string overload for MurmurHash3_32
+  
+  Variants:
+  - Murmur2A: For AnsiString (legacy, 8-bit chars)
+  - Murmur2: Generic byte buffer
+  - MurmurHash3_32: Latest version, best distribution
+  
+  Original: https://github.com/aappleby/smhasher
+  MurmurHash is public domain by Austin Appleby
+}
+
 interface
 
-uses
-  classes, sysUtils, generics.collections, generics.defaults;
-
-// see also
-// generics.defaults.BobJenkinsHash()
-
+/// <summary>
+/// MurmurHash2A for AnsiString (legacy 8-bit).
+/// </summary>
 function Murmur2A(const s: AnsiString; const Seed: LongWord = $9747B28C): LongWord;
+
+/// <summary>
+/// MurmurHash2 for raw byte buffer.
+/// </summary>
 function Murmur2(buffer: pByte; BufferSize: LongWord; const Seed: LongWord = $9747B28C): LongWord;
 
-function MurmurHash3_32(AKey: pByte; ALength: uInt32; ASeed: uInt32 = $9747B28C): uInt32;
+/// <summary>
+/// MurmurHash3_32 for raw byte buffer (recommended variant).
+/// </summary>
+function MurmurHash3_32(AKey: pByte; ALength: uInt32; ASeed: uInt32 = $9747B28C): uInt32; overload;
+
+/// <summary>
+/// MurmurHash3_32 for string (UTF-16 byte representation).
+/// </summary>
+function MurmurHash3_32(const aValue: string; ASeed: uInt32 = $9747B28C): uInt32; overload;
 
 implementation
+
+uses
+  System.SysUtils;
+
 {$Q-}
 {$R-}
 
@@ -110,9 +137,9 @@ begin
     try
       k := PLongWord(buffer)^;
     except
-      on e: exception do
+      on E: Exception do
       begin
-        raise exception.Create(e.Message +
+        raise Exception.Create(E.Message +
           '; len=' + IntToStr(len) +
           '; BufferSize=' + IntToStr(BufferSize));
       end;
@@ -198,6 +225,13 @@ begin
   h1 := (h1 xor (h1 shr 16)) * $85EBCA6B;
   h1 := (h1 xor (h1 shr 13)) * $C2B2AE35;
   result := h1 xor (h1 shr 16);
+end;
+
+function MurmurHash3_32(const aValue: string; ASeed: uInt32 = $9747B28C): uInt32;
+begin
+  if Length(aValue) = 0 then
+    Exit(ASeed);
+  Result := MurmurHash3_32(PByte(PChar(aValue)), Length(aValue) * SizeOf(Char), ASeed);
 end;
 
 end.

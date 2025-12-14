@@ -48,6 +48,23 @@ type
 
     [Test] procedure StrCmpLogical_Windows;
 
+    [Test] procedure FastComparer_CaseInsensitiveEquality;
+    [Test] procedure FastComparer_CaseSensitiveDistinguishes;
+    [Test] procedure FastComparer_PerformanceVsTIStringComparer;
+    [Test] procedure FastComparer_PerformanceVsOrdinalComparer;
+    [Test] procedure FastComparer_EmptyStrings;
+    [Test] procedure FastComparer_SingletonStrings;
+    [Test] procedure FastComparer_UnicodeEdgeCases;
+    [Test] procedure FastComparer_LongStrings;
+    [Test] procedure FastComparer_HashCollisionResistance;
+    [Test] procedure FastComparer_MixedAsciiUnicode;
+    [Test] procedure FastComparer_CaseFoldingEdgeCases;
+    [Test] procedure FastComparer_SurrogatePairs;
+    [Test] procedure FastComparer_NullCharHandling;
+    [Test] procedure FastComparer_DictionaryIntegration;
+    [Test] procedure FastComparer_HashBoundaryCoverage;
+    [Test] procedure FastComparer_VeryLargeInput;
+
     // Additional tests
     [Test] procedure Utf8Truncate_ZeroAndNegative_ReturnsEmpty;
     [Test] procedure ExpandEnvVars_CustomTokens_Windows;
@@ -89,9 +106,13 @@ type
 implementation
 
 uses
-  System.SysUtils, System.Classes, System.Types, System.Character, System.Generics.Collections,
-  System.RegularExpressions, maxLogic.StrUtils
+  System.SysUtils, System.Classes, System.Types, System.Diagnostics, System.Character,
+  System.Generics.Collections, System.Generics.Defaults, System.RegularExpressions, maxLogic.StrUtils
   {$IFDEF MSWINDOWS}, Winapi.Windows{$ENDIF};
+
+function IsDUnitXSilent: Boolean; forward;
+procedure LogPerfMessage(const aMessage: string); forward;
+function TicksToMicroseconds(const aTicks: Int64): Double; forward;
 
 function CodePointsOf(const s: string): string;
 var
@@ -121,6 +142,126 @@ begin
   end;
 end;
 
+procedure TMaxLogicStrUtilsTests.FastComparer_PerformanceVsOrdinalComparer;
+const
+  cIterations = 200000;
+var
+  lFastComparer: IEqualityComparer<string>;
+  lRtlComparer: IEqualityComparer<string>;
+  lKeys: TArray<string>;
+  lIndex: Integer;
+  lStopwatch: TStopwatch;
+  lFastTicks, lRtlTicks: Int64;
+  lAccumulator: Integer;
+  lRatio: Double;
+  lMessage: string;
+begin
+  lFastComparer := TFastCaseAwareComparer.Ordinal;
+  lRtlComparer := TStringComparer.Ordinal;
+
+  SetLength(lKeys, cIterations);
+  for lIndex := 0 to High(lKeys) do
+    lKeys[lIndex] := Format('Key%.8x_Value%.8x', [lIndex, (lIndex shl 1) xor lIndex]);
+
+  lAccumulator := 0;
+  lStopwatch := TStopwatch.StartNew;
+  for lIndex := 0 to High(lKeys) do
+    lAccumulator := lAccumulator xor lFastComparer.GetHashCode(lKeys[lIndex]);
+  lFastTicks := lStopwatch.ElapsedTicks;
+  if lFastTicks = 0 then
+    lFastTicks := 1;
+
+  lStopwatch := TStopwatch.StartNew;
+  for lIndex := 0 to High(lKeys) do
+    lAccumulator := lAccumulator xor lRtlComparer.GetHashCode(lKeys[lIndex]);
+  lRtlTicks := lStopwatch.ElapsedTicks;
+  if lRtlTicks = 0 then
+    lRtlTicks := 1;
+
+  lRatio := lRtlTicks / lFastTicks;
+  lMessage := Format('TFastCaseAwareComparer (ordinal) vs TStringComparer.Ordinal: ratio=%.2fx (fast=%.0f μs, rtl=%.0f μs)',
+    [lRatio, TicksToMicroseconds(lFastTicks), TicksToMicroseconds(lRtlTicks)]);
+
+  if lRatio > 1 then
+    LogPerfMessage(lMessage);
+
+  Assert.IsTrue(lRatio > 1,
+    Format('TFastCaseAwareComparer ordinal slower or equal (ratio=%.2fx, fast=%.0f μs, rtl=%.0f μs)',
+      [lRatio, TicksToMicroseconds(lFastTicks), TicksToMicroseconds(lRtlTicks)]));
+
+  Assert.AreNotEqual(-1, lAccumulator);
+end;
+
+{ Fast comparer tests }
+
+procedure TMaxLogicStrUtilsTests.FastComparer_CaseInsensitiveEquality;
+var
+  lComparer: IEqualityComparer<string>;
+begin
+  lComparer := TFastCaseAwareComparer.OrdinalIgnoreCase;
+  Assert.IsTrue(lComparer.Equals('Key42', 'kEy42'));
+  Assert.AreEqual(lComparer.GetHashCode('Key42'), lComparer.GetHashCode('kEy42'));
+end;
+
+procedure TMaxLogicStrUtilsTests.FastComparer_CaseSensitiveDistinguishes;
+var
+  lComparer: IEqualityComparer<string>;
+begin
+  lComparer := TFastCaseAwareComparer.Ordinal;
+  Assert.IsFalse(lComparer.Equals('Env', 'env'));
+  Assert.AreNotEqual(lComparer.GetHashCode('Env'), lComparer.GetHashCode('env'));
+end;
+
+procedure TMaxLogicStrUtilsTests.FastComparer_PerformanceVsTIStringComparer;
+const
+  cIterations = 200000;
+var
+  lFastComparer: IEqualityComparer<string>;
+  lRtlComparer: IEqualityComparer<string>;
+  lKeys: TArray<string>;
+  lIndex: Integer;
+  lStopwatch: TStopwatch;
+  lFastTicks, lRtlTicks: Int64;
+  lAccumulator: Integer;
+  lRatio: Double;
+  lMessage: string;
+begin
+  lFastComparer := TFastCaseAwareComparer.OrdinalIgnoreCase;
+  lRtlComparer := TIStringComparer.Ordinal;
+
+  SetLength(lKeys, cIterations);
+  for lIndex := 0 to High(lKeys) do
+    lKeys[lIndex] := Format('Key%.8x_Value%.8x', [lIndex, (lIndex shl 5) xor lIndex]);
+
+  lAccumulator := 0;
+  lStopwatch := TStopwatch.StartNew;
+  for lIndex := 0 to High(lKeys) do
+    lAccumulator := lAccumulator xor lFastComparer.GetHashCode(lKeys[lIndex]);
+  lFastTicks := lStopwatch.ElapsedTicks;
+  if lFastTicks = 0 then
+    lFastTicks := 1;
+
+  lStopwatch := TStopwatch.StartNew;
+  for lIndex := 0 to High(lKeys) do
+    lAccumulator := lAccumulator xor lRtlComparer.GetHashCode(lKeys[lIndex]);
+  lRtlTicks := lStopwatch.ElapsedTicks;
+  if lRtlTicks = 0 then
+    lRtlTicks := 1;
+
+  lRatio := lRtlTicks / lFastTicks;
+  lMessage := Format('TFastCaseAwareComparer vs TIStringComparer.Ordinal: ratio=%.2fx (fast=%.0f μs, rtl=%.0f μs)',
+    [lRatio, TicksToMicroseconds(lFastTicks), TicksToMicroseconds(lRtlTicks)]);
+
+  if lRatio > 1 then
+    LogPerfMessage(lMessage);
+
+  Assert.IsTrue(lRatio > 1,
+    Format('TFastCaseAwareComparer slower or equal (ratio=%.2fx, fast=%.0f μs, rtl=%.0f μs)',
+      [lRatio, TicksToMicroseconds(lFastTicks), TicksToMicroseconds(lRtlTicks)]));
+
+  Assert.AreNotEqual(-1, lAccumulator);
+end;
+
 function Utf8HexOf(const s: string): string;
 var
   bytes: TBytes;
@@ -140,6 +281,30 @@ function ExpectGotMsg(const Expected, Actual: string): string;
 begin
   Result := Format('Expected "%s" [CP %s | UTF8 %s] but got "%s" [CP %s | UTF8 %s]',
     [Expected, CodePointsOf(Expected), Utf8HexOf(Expected), Actual, CodePointsOf(Actual), Utf8HexOf(Actual)]);
+end;
+
+function IsDUnitXSilent: Boolean;
+var
+  lValue: string;
+begin
+  lValue := GetEnvironmentVariable('DUNITX_SILENT');
+  Result := SameText(lValue, '1') or SameText(lValue, 'true') or SameText(lValue, 'yes');
+end;
+
+procedure LogPerfMessage(const aMessage: string);
+begin
+  if IsDUnitXSilent then
+    Exit;
+  System.Writeln;
+  System.Writeln(aMessage);
+  System.Writeln;
+end;
+
+function TicksToMicroseconds(const aTicks: Int64): Double;
+begin
+  if aTicks <= 0 then
+    Exit(0);
+  Result := (aTicks / TStopwatch.Frequency) * 1E6;
 end;
 
 { ReplacePlaceholder tests }
@@ -511,7 +676,8 @@ begin
     procedure
     begin
       StrToFloatWCC('123x');
-    end, EConvertError);
+    end,
+    EConvertError);
 
   // TryStrToFloatWCC returns False
   Assert.IsFalse(TryStrToFloatWCC('123x', d));
@@ -521,7 +687,8 @@ begin
     procedure
     begin
       StrToFloatWCC('');
-    end, EConvertError);
+    end,
+    EConvertError);
   Assert.IsFalse(TryStrToFloatWCC('', d));
   Assert.AreEqual(42.5, StrToFLoatWccDef('', 42.5), 1e-12);
 end;
@@ -1033,6 +1200,272 @@ begin
       Result := '[' + aMatch.Value + ']';
     end);
   Assert.AreEqual('abc[123]def', lResult);
+end;
+
+procedure TMaxLogicStrUtilsTests.FastComparer_EmptyStrings;
+var
+  lComparer: IEqualityComparer<string>;
+begin
+  lComparer := TFastCaseAwareComparer.OrdinalIgnoreCase;
+  Assert.IsTrue(lComparer.Equals('', ''));
+  Assert.AreEqual(lComparer.GetHashCode(''), lComparer.GetHashCode(''));
+
+  lComparer := TFastCaseAwareComparer.Ordinal;
+  Assert.IsTrue(lComparer.Equals('', ''));
+  Assert.AreEqual(lComparer.GetHashCode(''), lComparer.GetHashCode(''));
+end;
+
+procedure TMaxLogicStrUtilsTests.FastComparer_SingletonStrings;
+var
+  lComparer: IEqualityComparer<string>;
+begin
+  lComparer := TFastCaseAwareComparer.OrdinalIgnoreCase;
+  Assert.IsTrue(lComparer.Equals('a', 'A'));
+  Assert.AreEqual(lComparer.GetHashCode('a'), lComparer.GetHashCode('A'));
+  Assert.IsTrue(lComparer.Equals('Z', 'z'));
+
+  lComparer := TFastCaseAwareComparer.Ordinal;
+  Assert.IsFalse(lComparer.Equals('a', 'A'));
+  Assert.AreNotEqual(lComparer.GetHashCode('a'), lComparer.GetHashCode('A'));
+end;
+
+procedure TMaxLogicStrUtilsTests.FastComparer_UnicodeEdgeCases;
+var
+  lComparer: IEqualityComparer<string>;
+  lHash1, lHash2: Integer;
+begin
+  lComparer := TFastCaseAwareComparer.OrdinalIgnoreCase;
+
+  // Greek small/upper omega pair – exercise non-ASCII path, hashes must match
+  Assert.IsTrue(
+    lComparer.Equals('Ω', 'ω'),
+    'OrdinalIgnoreCase should treat Greek omega Ω/ω as equal');
+
+  lHash1 := lComparer.GetHashCode('Ω');
+  lHash2 := lComparer.GetHashCode('ω');
+  Assert.AreEqual(
+    lHash1, lHash2,
+    Format('Hash mismatch for Ω vs ω (case-insensitive). Hash1=%d, Hash2=%d',
+      [lHash1, lHash2]));
+
+  // Case-sensitive comparer must still distinguish them
+  lComparer := TFastCaseAwareComparer.Ordinal;
+  Assert.IsFalse(
+    lComparer.Equals('Ω', 'ω'),
+    'Ordinal (case-sensitive) must distinguish Ω vs ω');
+end;
+
+procedure TMaxLogicStrUtilsTests.FastComparer_LongStrings;
+var
+  lComparer: IEqualityComparer<string>;
+  lLongStr1, lLongStr2: string;
+begin
+  lLongStr1 := StringOfChar('a', 300);
+  lLongStr2 := StringOfChar('A', 300);
+
+  lComparer := TFastCaseAwareComparer.OrdinalIgnoreCase;
+  Assert.IsTrue(lComparer.Equals(lLongStr1, lLongStr2));
+  Assert.AreEqual(lComparer.GetHashCode(lLongStr1), lComparer.GetHashCode(lLongStr2));
+
+  lLongStr2 := lLongStr2 + 'B';
+  Assert.IsFalse(lComparer.Equals(lLongStr1, lLongStr2));
+
+  lComparer := TFastCaseAwareComparer.Ordinal;
+  Assert.IsFalse(lComparer.Equals(lLongStr1, StringOfChar('A', 300)));
+end;
+
+procedure TMaxLogicStrUtilsTests.FastComparer_HashCollisionResistance;
+var
+  lComparer: IEqualityComparer<string>;
+  lHash1, lHash2, lHash3: Integer;
+begin
+  lComparer := TFastCaseAwareComparer.Ordinal;
+  
+  lHash1 := lComparer.GetHashCode('abc');
+  lHash2 := lComparer.GetHashCode('abd');
+  lHash3 := lComparer.GetHashCode('cba');
+  
+  Assert.AreNotEqual(lHash1, lHash2);
+  Assert.AreNotEqual(lHash1, lHash3);
+  Assert.AreNotEqual(lHash2, lHash3);
+
+  lComparer := TFastCaseAwareComparer.OrdinalIgnoreCase;
+  lHash1 := lComparer.GetHashCode('Key123');
+  lHash2 := lComparer.GetHashCode('Key124');
+  lHash3 := lComparer.GetHashCode('Key223');
+  
+  Assert.AreNotEqual(lHash1, lHash2);
+  Assert.AreNotEqual(lHash1, lHash3);
+end;
+
+procedure TMaxLogicStrUtilsTests.FastComparer_MixedAsciiUnicode;
+var
+  lComparer: IEqualityComparer<string>;
+begin
+  lComparer := TFastCaseAwareComparer.OrdinalIgnoreCase;
+  
+  Assert.IsTrue(lComparer.Equals('Test123', 'test123'));
+  Assert.IsTrue(lComparer.Equals('αβγ123', 'ΑΒΓ123'));
+  Assert.IsTrue(lComparer.Equals('Hello世界', 'HELLO世界'));
+  
+  Assert.AreEqual(lComparer.GetHashCode('Test123'), lComparer.GetHashCode('TEST123'));
+  Assert.AreEqual(lComparer.GetHashCode('αβγ123'), lComparer.GetHashCode('ΑΒΓ123'));
+
+  lComparer := TFastCaseAwareComparer.Ordinal;
+  Assert.IsFalse(lComparer.Equals('Hello世界', 'HELLO世界'));
+end;
+
+procedure TMaxLogicStrUtilsTests.FastComparer_CaseFoldingEdgeCases;
+var
+  lComparer: IEqualityComparer<string>;
+  lOrdinalComparer: TCustomComparer<string>;
+  lOddLeft, lOddRightEqual, lOddRightMismatch: string;
+  lSharpLeft, lSharpRight: string;
+  lOrdinalIsEqual: Boolean;
+begin
+  lComparer := TFastCaseAwareComparer.OrdinalIgnoreCase;
+
+  lOddLeft := 'OddLené';
+  lOddRightEqual := 'ODDLENÉ';
+  Assert.IsTrue(lComparer.Equals(lOddLeft, lOddRightEqual));
+  Assert.AreEqual(lComparer.GetHashCode(lOddLeft), lComparer.GetHashCode(lOddRightEqual));
+
+  lOddRightMismatch := 'ODDLENÊ';
+  Assert.IsFalse(lComparer.Equals(lOddLeft, lOddRightMismatch));
+
+  lSharpLeft := 'Straße';
+  lSharpRight := 'STRASSE';
+  lOrdinalComparer := TStringComparer.OrdinalIgnoreCase;
+  lOrdinalIsEqual := lOrdinalComparer.Compare(lSharpLeft, lSharpRight) = 0;
+  Assert.AreEqual(
+    lOrdinalIsEqual,
+    lComparer.Equals(lSharpLeft, lSharpRight),
+    'Ordinal ignore-case semantics must match TStringComparer.OrdinalIgnoreCase');
+  Assert.IsFalse(
+    lOrdinalIsEqual,
+    'Pure ordinal folding keeps ß distinct from SS; locale-aware callers must use TIStringComparer.');
+end;
+
+procedure TMaxLogicStrUtilsTests.FastComparer_SurrogatePairs;
+var
+  lComparer: IEqualityComparer<string>;
+  lLower, lUpper: string;
+begin
+  lLower := '😀foo';
+  lUpper := '😀FOO';
+
+  lComparer := TFastCaseAwareComparer.OrdinalIgnoreCase;
+  Assert.IsTrue(lComparer.Equals(lLower, lUpper));
+  Assert.AreEqual(lComparer.GetHashCode(lLower), lComparer.GetHashCode(lUpper));
+
+  lComparer := TFastCaseAwareComparer.Ordinal;
+  Assert.IsFalse(lComparer.Equals(lLower, lUpper));
+end;
+
+procedure TMaxLogicStrUtilsTests.FastComparer_NullCharHandling;
+var
+  lComparer: IEqualityComparer<string>;
+  lLower, lUpper: string;
+begin
+  lLower := 'abc'#0'def';
+  lUpper := 'ABC'#0'DEF';
+
+  lComparer := TFastCaseAwareComparer.OrdinalIgnoreCase;
+  Assert.IsTrue(lComparer.Equals(lLower, lUpper));
+  Assert.AreEqual(lComparer.GetHashCode(lLower), lComparer.GetHashCode(lUpper));
+
+  lComparer := TFastCaseAwareComparer.Ordinal;
+  Assert.IsFalse(lComparer.Equals(lLower, lUpper));
+end;
+
+procedure TMaxLogicStrUtilsTests.FastComparer_DictionaryIntegration;
+var
+  lDict: TDictionary<string, Integer>;
+  lValue: Integer;
+begin
+  lDict := TDictionary<string, Integer>.Create(TFastCaseAwareComparer.OrdinalIgnoreCase);
+  try
+    lDict.Add('Header', 1);
+    lDict.Add('token', 2);
+
+    Assert.IsTrue(lDict.TryGetValue('HEADER', lValue));
+    Assert.AreEqual(1, lValue);
+    Assert.IsTrue(lDict.TryGetValue('TOKEN', lValue));
+    Assert.AreEqual(2, lValue);
+
+    lDict['HEADER'] := 10;
+    Assert.IsTrue(lDict.TryGetValue('header', lValue));
+    Assert.AreEqual(10, lValue);
+  finally
+    lDict.Free;
+  end;
+
+  lDict := TDictionary<string, Integer>.Create(TFastCaseAwareComparer.Ordinal);
+  try
+    lDict.Add('Key', 1);
+    Assert.IsFalse(lDict.ContainsKey('key'));
+    lDict.Add('key', 2);
+    Assert.AreEqual(2, lDict['key']);
+  finally
+    lDict.Free;
+  end;
+end;
+
+procedure TMaxLogicStrUtilsTests.FastComparer_HashBoundaryCoverage;
+var
+  lComparer: IEqualityComparer<string>;
+  s15, s16, s17: string;
+  h15a, h15b, h16, h17: Integer;
+begin
+  lComparer := TFastCaseAwareComparer.Ordinal;
+  s15 := StringOfChar('a', 15);
+  s16 := StringOfChar('a', 16);
+  s17 := StringOfChar('a', 17);
+
+  h15a := lComparer.GetHashCode(s15);
+  h15b := lComparer.GetHashCode(s15);
+  h16 := lComparer.GetHashCode(s16);
+  h17 := lComparer.GetHashCode(s17);
+
+  Assert.AreEqual(h15a, h15b, 'Hash must be stable for identical input');
+  Assert.AreNotEqual(h15a, h16, 'Different lengths around 16-byte boundary must hash differently');
+  Assert.AreNotEqual(h16, h17, 'Slightly longer inputs must hash differently');
+
+  lComparer := TFastCaseAwareComparer.OrdinalIgnoreCase;
+  Assert.AreEqual(
+    lComparer.GetHashCode(StringOfChar('A', 32)),
+    lComparer.GetHashCode(StringOfChar('a', 32)),
+    'Case folding should not alter 4-lane hashing determinism');
+end;
+
+procedure TMaxLogicStrUtilsTests.FastComparer_VeryLargeInput;
+const
+  cLength = 200000;
+var
+  lComparerCI, lComparerOrd: IEqualityComparer<string>;
+  lBuilder: TStringBuilder;
+  lLarge, lLargeUpper: string;
+  i: Integer;
+begin
+  lBuilder := TStringBuilder.Create(cLength);
+  try
+    for i := 0 to Pred(cLength) do
+      if (i and 1) = 0 then
+        lBuilder.Append(Char(Ord('a') + (i mod 26)))
+      else
+        lBuilder.Append(Char($03B1 + (i mod 4))); // α..δ
+    lLarge := lBuilder.ToString;
+  finally
+    lBuilder.Free;
+  end;
+  lLargeUpper := lLarge.ToUpper;
+
+  lComparerCI := TFastCaseAwareComparer.OrdinalIgnoreCase;
+  Assert.IsTrue(lComparerCI.Equals(lLarge, lLargeUpper));
+  Assert.AreEqual(lComparerCI.GetHashCode(lLarge), lComparerCI.GetHashCode(lLargeUpper));
+
+  lComparerOrd := TFastCaseAwareComparer.Ordinal;
+  Assert.IsFalse(lComparerOrd.Equals(lLarge, lLargeUpper));
 end;
 
 initialization

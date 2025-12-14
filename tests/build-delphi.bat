@@ -121,7 +121,7 @@ set "OUTLOG=%LOGDIR%out_%TS%.log"
 set "ERRLOG=%LOGDIR%errors_%TS%.log"
 
 rem ---- 4) Build
-set "ARGS=/t:Build /p:Config=%BUILD_CONFIG% /p:Platform=%BUILD_PLATFORM% /p:DCC_Quiet=true /p:DCC_UseMSBuildExternally=true /p:DCC_UseResponseFile=1 /p:DCC_UseCommandFile=1 /nologo /v:m /fl"
+set "ARGS=/t:Build /p:Config=%BUILD_CONFIG% /p:Platform=%BUILD_PLATFORM% /p:DCC_Quiet=true /p:DCC_UseMSBuildExternally=true /p:DCC_UseResponseFile=1 /p:DCC_UseCommandFile=1 /nologo /v:m /fl /m"
 set "ARGS=%ARGS% /flp:logfile=%FULLLOG%;verbosity=normal"
 set "ARGS=%ARGS% /flp1:logfile=%ERRLOG%;errorsonly;verbosity=quiet"
 
