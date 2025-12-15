@@ -68,7 +68,8 @@ Global sections are supported (`aSection = ''`) and never emit headers on save. 
 
 ## Persistence semantics
 
-- Loading detects BOM and newline style once, normalizes keys/sections through `TStringComparer`/`TIStringComparer`, and tracks dirty state.
+- Loading detects BOM and newline style once, normalizes section/key tokens through `TFastCaseAwareComparer.Ordinal` /
+  `TFastCaseAwareComparer.OrdinalIgnoreCase`, and tracks dirty state.
 - Writes mutate the in-memory AST and mark affected lines “dirty”; untouched lines are emitted verbatim.
 - `SaveToFile` resolves the outgoing encoding/newline according to the option set, writes to a temporary file in the destination folder, then replaces the target atomically.
 
@@ -76,12 +77,23 @@ Global sections are supported (`aSection = ''`) and never emit headers on save. 
 
 - Inline (same-line) comments remain unsupported; the parser keeps them as part of the value.
 - Multi-line values require the provided helper codecs (`WriteMultilineString` / `ReadMultilineString`).
-- Options are immutable after construction; create a fresh instance if you need different comparers or comment behavior.
+- Options are set at construction time in the current public API; create a fresh instance if we need different comparers or comment behavior.
 
 ## Testing & benchmarks
 
 - Unit tests: `tests/unit/MaxLogic.RichIniFiles.Tests.pas` (registered in `tests/MaxLogic.Tests.dpr`). Run them via `./tests/build-tests.sh` followed by `./tests/MaxLogic.Tests.exe`.
-- Benchmarks: `benchmarks/MaxLogic.RichIniBenchmark.dpr` compares `TRichIniFile`, `TMemIniFile`, and `TIniFile` across load/read/write/save workloads. Build with `./tests/build-delphi.sh ../benchmarks/MaxLogic.RichIniBenchmark.dproj` and run the produced executable to inspect throughput.
+- Benchmarks: `benchmarks/MaxLogic.RichIniBenchmark.dpr` compares `TRichIniFile`, `TMemIniFile`, and `TIniFile` across load/read/write/save workloads and multiple INI sizes (Tiny/Small/Medium/Large). Build with `./tests/build-delphi.sh benchmarks/MaxLogic.RichIniBenchmark.dproj` and run `benchmarks/Win32/MaxLogic.RichIniBenchmark.exe` (CLI: `--iterations=N`, `--warmup=N`).
+
+## Performance notes (what the benchmark shows)
+
+Observations from our benchmark runs (15 iterations, warmup=3) with INIs in the ~2 KB → ~160 KB range:
+
+- **Load:** `TRichIniFile` is typically ~1.5×–2× slower than `TMemIniFile` because we build a richer model (preserve ordering, comments, duplicates).
+- **Read:** `TRichIniFile` is typically ~2×–4× faster than `TMemIniFile` for repeated `ReadString` calls (dictionary lookup dominates).
+- **Write (in-memory):** `WriteString` is effectively O(1) and very cheap; absolute timings are tiny and can be noisy.
+- **Save:** for small INIs, total save time is often dominated by our atomic-save path (temp file + replace + flush), so it looks almost “flat” across Tiny/Small/Medium sizes and has higher variance. As the file grows, the gap vs `TMemIniFile.UpdateFile` narrows.
+
+Rule of thumb: if our workload is “load once, read many keys”, `TRichIniFile` typically breaks even after only a handful of reads. If our workload is “write + save in a tight loop”, `TMemIniFile` will usually stay faster.
 
 ## When to choose TRichIniFile
 
@@ -92,4 +104,4 @@ Pick `TRichIniFile` when you need any of:
 - Comment ownership that survives edits without manual bookkeeping.
 - Atomic saves to avoid partial writes or file corruption on failure.
 
-Stick to `TIniFile` or `TMemIniFile` when you only need quick key/value access and do not care about formatting or duplicates.
+Stick to `TIniFile` or `TMemIniFile` when we only need quick key/value access and do not care about formatting or duplicates (or when we need to save extremely frequently and want the lowest possible save latency).
