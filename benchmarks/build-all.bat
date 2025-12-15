@@ -13,7 +13,7 @@ if not exist "%BUILD_SCRIPT%" (
 
 set "EXITCODE=0"
 for %%P in (*.dproj) do (
-  call "%BUILD_SCRIPT%" "%%P"
+  call "%BUILD_SCRIPT%" "%%~fP"
   if errorlevel 1 (
     set "EXITCODE=1"
     goto :done
