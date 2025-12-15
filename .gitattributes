@@ -11,7 +11,6 @@
 
 
 # Then normalize:
-#
 # ```bash
 # git add .gitattributes
 # git add --renormalize .
