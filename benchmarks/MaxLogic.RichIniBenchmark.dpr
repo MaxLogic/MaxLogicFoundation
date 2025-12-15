@@ -23,8 +23,15 @@ type
 
   TDataset = record
     FileName: string;
+    FileSizeBytes: Int64;
     Keys: TArray<TKeyInfo>;
     Lines: TArray<string>;
+  end;
+
+  TDatasetSpec = record
+    Name: string;
+    Sections: Integer;
+    KeysPerSection: Integer;
   end;
 
   TMetric = record
@@ -121,6 +128,25 @@ begin
   end;
 end;
 
+function FormatBytes(const aBytes: Int64): string;
+const
+  cKB = 1024;
+  cMB = 1024 * 1024;
+begin
+  if aBytes < cKB then
+    Exit(IntToStr(aBytes) + ' B');
+  if aBytes < cMB then
+    Exit(FormatFloat('0.0', aBytes / cKB) + ' KB');
+  Result := FormatFloat('0.00', aBytes / cMB) + ' MB';
+end;
+
+function MakeDatasetSpec(const aName: string; const aSections, aKeysPerSection: Integer): TDatasetSpec;
+begin
+  Result.Name := aName;
+  Result.Sections := aSections;
+  Result.KeysPerSection := aKeysPerSection;
+end;
+
 function PrepareDataset(const aSections, aKeysPerSection: Integer): TDataset;
 var
   lSectionIndex: Integer;
@@ -161,6 +187,11 @@ begin
     lLines.Free;
     lKeyList.Free;
   end;
+
+  if (Result.FileName <> '') and TFile.Exists(Result.FileName) then
+    Result.FileSizeBytes := TFile.GetSize(Result.FileName)
+  else
+    Result.FileSizeBytes := 0;
 end;
 
 procedure CleanupDataset(const aDataset: TDataset);
@@ -748,8 +779,11 @@ end;
 
 var
   lDataset: TDataset;
+  lSpec: TDatasetSpec;
   lResults: TArray<TBenchmarkResult>;
   lStringResults: TArray<TBenchmarkResult>;
+  lSpecs: TArray<TDatasetSpec>;
+  i: Integer;
 begin
   try
     Iterations := GetIntParam('iterations', Iterations);
@@ -759,20 +793,33 @@ begin
     if WarmupIterations < 0 then
       WarmupIterations := 0;
 
-    lDataset := PrepareDataset(200, 50);
-    try
-      SetLength(lResults, 3);
-      lResults[0] := BenchmarkRichIni(lDataset);
-      lResults[1] := BenchmarkMemIni(lDataset);
-      lResults[2] := BenchmarkIniFile(lDataset);
-      PrintResults('File-based dataset', lResults);
+    lSpecs := [
+      MakeDatasetSpec('Tiny', 10, 10),
+      MakeDatasetSpec('Small', 20, 20),
+      MakeDatasetSpec('Medium', 50, 20),
+      MakeDatasetSpec('Large', 200, 50)
+    ];
 
-      SetLength(lStringResults, 2);
-      lStringResults[0] := BenchmarkRichIniFromStrings(lDataset);
-      lStringResults[1] := BenchmarkMemIniFromStrings(lDataset);
-      PrintResults('TStringList-based dataset', lStringResults);
-    finally
-      CleanupDataset(lDataset);
+    for i := 0 to High(lSpecs) do
+    begin
+      lSpec := lSpecs[i];
+      lDataset := PrepareDataset(lSpec.Sections, lSpec.KeysPerSection);
+      try
+        SetLength(lResults, 3);
+        lResults[0] := BenchmarkRichIni(lDataset);
+        lResults[1] := BenchmarkMemIni(lDataset);
+        lResults[2] := BenchmarkIniFile(lDataset);
+        PrintResults(Format('File-based dataset (%s: %d x %d, %s)',
+          [lSpec.Name, lSpec.Sections, lSpec.KeysPerSection, FormatBytes(lDataset.FileSizeBytes)]), lResults);
+
+        SetLength(lStringResults, 2);
+        lStringResults[0] := BenchmarkRichIniFromStrings(lDataset);
+        lStringResults[1] := BenchmarkMemIniFromStrings(lDataset);
+        PrintResults(Format('TStringList-based dataset (%s: %d x %d, %s)',
+          [lSpec.Name, lSpec.Sections, lSpec.KeysPerSection, FormatBytes(lDataset.FileSizeBytes)]), lStringResults);
+      finally
+        CleanupDataset(lDataset);
+      end;
     end;
     // Readln;
   except
