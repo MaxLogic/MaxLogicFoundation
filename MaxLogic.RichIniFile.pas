@@ -155,14 +155,21 @@ type
     property HeaderLine: TRichIniSectionLine read fHeaderLine write fHeaderLine;
   end;
 
-type
-  TRichIniFile = class
-  private
-    fFileName: string;
-    fOptions: TRichIniOptions;
-    fLines: TObjectList<TRichIniLine>;
-    fSections: TObjectList<TRichIniSectionBlock>;
-    fSectionMap: TObjectDictionary<string, TObjectList<TRichIniSectionBlock>>;
+	type
+	  TRichIniFile = class
+	  private type
+	      TRichIniParseState = record
+	        CurrentBlock: TRichIniSectionBlock;
+	        PendingComments: TList<TRichIniCommentLine>;
+	        LastContentLine: TRichIniLine;
+	      end;
+	  private
+	    fFileName: string;
+	    fOptions: TRichIniOptions;
+	    fLines: TObjectList<TRichIniLine>;
+	    fSections: TObjectList<TRichIniSectionBlock>;
+	    fSectionMap: TObjectDictionary<string, TObjectList<TRichIniSectionBlock>>;
+    fComparer: IEqualityComparer<string>;
     fDirty: Boolean;
     fDetectedNewline: string;
     fSourceEncoding: TEncoding;
@@ -181,6 +188,8 @@ type
     function KeyToken(const aKey: string): string; inline;
     procedure AddLineToDocument(aLine: TRichIniLine);
     procedure AttachPendingComments(const aOwner: TRichIniLine; const aPending: TList<TRichIniCommentLine>);
+    procedure ProcessLine(const aLine: string; var aState: TRichIniParseState);
+    procedure ParseLines(const aLines: TArray<string>);
     procedure ParseText(const aText: string);
     function DetectNewline(const aText: string): string;
     function ResolveLoadEncoding(const aBuffer: TBytes; out aEncoding: TEncoding; out aHasBom: Boolean): string;
@@ -433,6 +442,7 @@ begin
   fFileName := aFileName;
   fOptions := aOptions;
   EnsureOptionsDefaults;
+  fComparer := nil;
   fLines := TObjectList<TRichIniLine>.Create(True);
   fSections := TObjectList<TRichIniSectionBlock>.Create(True);
   fSectionMap := TObjectDictionary<string, TObjectList<TRichIniSectionBlock>>.Create([doOwnsValues], CurrentComparer);
@@ -440,14 +450,12 @@ begin
 end;
 
 constructor TRichIniFile.CreateFromStrings(const aLines: TArray<string>; const aOptions: TRichIniOptions);
-var
-  lText: string;
-  i: Integer;
 begin
   inherited Create;
   fFileName := '';
   fOptions := aOptions;
   EnsureOptionsDefaults;
+  fComparer := nil;
   fLines := TObjectList<TRichIniLine>.Create(True);
   fSections := TObjectList<TRichIniSectionBlock>.Create(True);
   fSectionMap := TObjectDictionary<string, TObjectList<TRichIniSectionBlock>>.Create([doOwnsValues], CurrentComparer);
@@ -455,18 +463,8 @@ begin
   fHasSource := False;
   fSourceEncoding := TEncoding.UTF8;
   fSourceBom := False;
-  fDetectedNewline := '';
-  lText := '';
-  for i := 0 to High(aLines) do
-  begin
-    if i > 0 then
-      lText := lText + sLineBreak;
-    lText := lText + aLines[i];
-  end;
-  ParseText(lText);
-  fDetectedNewline := DetectNewline(lText);
-  if fDetectedNewline = '' then
-    fDetectedNewline := PlatformNewline;
+  fDetectedNewline := PlatformNewline;
+  ParseLines(aLines);
   fSourceEncoding := TEncoding.UTF8;
   fSourceBom := False;
   fHasSource := True;
@@ -497,6 +495,184 @@ begin
   for lComment in aPending do
     aOwner.AttachComment(lComment);
   aPending.Clear;
+end;
+
+procedure TRichIniFile.ProcessLine(const aLine: string; var aState: TRichIniParseState);
+var
+  lLineLen: Integer;
+  lTrimStart: Integer;
+  lTrimEnd: Integer;
+  lTrimLength: Integer;
+  lPrefix: string;
+  lPrefixLen: Integer;
+  lCommentTextStart: Integer;
+  lCommentText: string;
+  lComment: TRichIniCommentLine;
+  lSectionName: string;
+  lSectionStart: Integer;
+  lSectionEnd: Integer;
+  lClosingPos: Integer;
+  lSectionLine: TRichIniSectionLine;
+  lDelimiterPos: Integer;
+  lKeyStart: Integer;
+  lKeyEnd: Integer;
+  lValueStart: Integer;
+  lValueEnd: Integer;
+  lKeyText: string;
+  lValueText: string;
+  lKeyLine: TRichIniKeyLine;
+  lLine: TRichIniLine;
+  i: Integer;
+begin
+  lLineLen := Length(aLine);
+  lTrimStart := 1;
+  while (lTrimStart <= lLineLen) and CharInSet(aLine[lTrimStart], [' ', #9]) do
+    Inc(lTrimStart);
+  if lTrimStart > lLineLen then
+  begin
+    lLine := TRichIniLine.Create(lkBlank, aLine);
+    lLine.SectionBlock := aState.CurrentBlock;
+    AddLineToDocument(lLine);
+    Exit;
+  end;
+
+  lTrimEnd := lLineLen;
+  while (lTrimEnd >= lTrimStart) and CharInSet(aLine[lTrimEnd], [' ', #9]) do
+    Dec(lTrimEnd);
+  lTrimLength := lTrimEnd - lTrimStart + 1;
+
+  for i := 0 to High(fOptions.CommentPrefixes) do
+  begin
+    lPrefix := fOptions.CommentPrefixes[i];
+    lPrefixLen := Length(lPrefix);
+    if (lPrefixLen > 0) and (lTrimLength >= lPrefixLen) and
+       (StrLComp(PChar(@aLine[lTrimStart]), PChar(lPrefix), lPrefixLen) = 0) then
+    begin
+      lCommentTextStart := lTrimStart + lPrefixLen;
+      while (lCommentTextStart <= lLineLen) and CharInSet(aLine[lCommentTextStart], [' ', #9]) do
+        Inc(lCommentTextStart);
+      if lCommentTextStart <= lLineLen then
+        lCommentText := Copy(aLine, lCommentTextStart, lLineLen - lCommentTextStart + 1)
+      else
+        lCommentText := '';
+      if lTrimStart > 1 then
+        lComment := TRichIniCommentLine.Create(aLine, Copy(aLine, 1, lTrimStart - 1), lPrefix, lCommentText)
+      else
+        lComment := TRichIniCommentLine.Create(aLine, '', lPrefix, lCommentText);
+      lComment.SectionBlock := aState.CurrentBlock;
+      AddLineToDocument(lComment);
+      case fOptions.CommentOwnership of
+        coAttachToNext:
+          aState.PendingComments.Add(lComment);
+        coAttachToPrev:
+          if aState.LastContentLine <> nil then
+            aState.LastContentLine.AttachComment(lComment);
+      end;
+      Exit;
+    end;
+  end;
+
+  if aLine[lTrimStart] = '[' then
+  begin
+    lClosingPos := 0;
+    for i := lTrimStart + 1 to lLineLen do
+      if aLine[i] = ']' then
+      begin
+        lClosingPos := i;
+        Break;
+      end;
+    if (lClosingPos > lTrimStart) or
+       ((lClosingPos = 0) and (fOptions.AcceptMissingBracket = mbAcceptAsSection)) then
+    begin
+      lSectionStart := lTrimStart + 1;
+      if lClosingPos > lTrimStart then
+        lSectionEnd := lClosingPos - 1
+      else
+        lSectionEnd := lLineLen;
+      while (lSectionStart <= lSectionEnd) and CharInSet(aLine[lSectionStart], [' ', #9]) do
+        Inc(lSectionStart);
+      while (lSectionEnd >= lSectionStart) and CharInSet(aLine[lSectionEnd], [' ', #9]) do
+        Dec(lSectionEnd);
+      if lSectionStart <= lSectionEnd then
+        lSectionName := Copy(aLine, lSectionStart, lSectionEnd - lSectionStart + 1)
+      else
+        lSectionName := '';
+      aState.CurrentBlock := CreateSectionBlock(lSectionName, False);
+      lSectionLine := TRichIniSectionLine.Create(lSectionName, aLine);
+      lSectionLine.SectionBlock := aState.CurrentBlock;
+      aState.CurrentBlock.HeaderLine := lSectionLine;
+      AddLineToDocument(lSectionLine);
+      AttachPendingComments(lSectionLine, aState.PendingComments);
+      aState.LastContentLine := lSectionLine;
+      Exit;
+    end;
+  end;
+
+  lDelimiterPos := 0;
+  for i := lTrimStart to lLineLen do
+    if aLine[i] = fOptions.KeyValueDelimiter then
+    begin
+      lDelimiterPos := i;
+      Break;
+    end;
+
+  if lDelimiterPos > 0 then
+    lKeyEnd := lDelimiterPos - 1
+  else
+    lKeyEnd := lTrimEnd;
+  lKeyStart := lTrimStart;
+  while (lKeyStart <= lKeyEnd) and CharInSet(aLine[lKeyStart], [' ', #9]) do
+    Inc(lKeyStart);
+  while (lKeyEnd >= lKeyStart) and CharInSet(aLine[lKeyEnd], [' ', #9]) do
+    Dec(lKeyEnd);
+  if lKeyStart <= lKeyEnd then
+    lKeyText := Copy(aLine, lKeyStart, lKeyEnd - lKeyStart + 1)
+  else
+    lKeyText := '';
+
+  if lDelimiterPos > 0 then
+  begin
+    lValueStart := lDelimiterPos + 1;
+    while (lValueStart <= lLineLen) and CharInSet(aLine[lValueStart], [' ', #9]) do
+      Inc(lValueStart);
+    lValueEnd := lLineLen;
+    while (lValueEnd >= lValueStart) and CharInSet(aLine[lValueEnd], [' ', #9]) do
+      Dec(lValueEnd);
+    if lValueStart <= lValueEnd then
+      lValueText := Copy(aLine, lValueStart, lValueEnd - lValueStart + 1)
+    else
+      lValueText := '';
+  end else
+    lValueText := '';
+
+  lKeyLine := TRichIniKeyLine.Create(lKeyText, lValueText, KeyToken(lKeyText), fOptions.KeyValueDelimiter, aLine);
+  lKeyLine.SectionBlock := aState.CurrentBlock;
+  aState.CurrentBlock.AddKeyLine(lKeyLine);
+  AddLineToDocument(lKeyLine);
+  AttachPendingComments(lKeyLine, aState.PendingComments);
+  aState.LastContentLine := lKeyLine;
+end;
+
+procedure TRichIniFile.ParseLines(const aLines: TArray<string>);
+var
+  lState: TRichIniParseState;
+  i: Integer;
+begin
+  if fSections.Count = 0 then
+    CreateGlobalSection;
+
+  if (fLines <> nil) and (fLines.Capacity < fLines.Count + Length(aLines)) then
+    fLines.Capacity := fLines.Count + Length(aLines);
+
+  lState.CurrentBlock := fSections[0];
+  lState.PendingComments := TList<TRichIniCommentLine>.Create;
+  try
+    lState.LastContentLine := nil;
+    for i := 0 to High(aLines) do
+      ProcessLine(aLines[i], lState);
+  finally
+    lState.PendingComments.Free;
+  end;
 end;
 
 procedure TRichIniFile.ClearDocument;
@@ -601,10 +777,14 @@ end;
 
 function TRichIniFile.CurrentComparer: IEqualityComparer<string>;
 begin
-  if fOptions.CaseSensitivity = csCaseInsensitive then
-    Result := TFastCaseAwareComparer.OrdinalIgnoreCase
-  else
-    Result := TFastCaseAwareComparer.Ordinal;
+  if fComparer = nil then
+  begin
+    if fOptions.CaseSensitivity = csCaseInsensitive then
+      fComparer := TFastCaseAwareComparer.OrdinalIgnoreCase
+    else
+      fComparer := TFastCaseAwareComparer.Ordinal;
+  end;
+  Result := fComparer;
 end;
 
 function TRichIniFile.TokensEqual(const aLeft, aRight: string): Boolean;
@@ -684,6 +864,7 @@ begin
   if fOptions.CaseSensitivity = aValue then
     Exit;
   fOptions.CaseSensitivity := aValue;
+  fComparer := nil;
   RebuildDictionaries;
 end;
 
@@ -1061,195 +1242,47 @@ end;
 
 procedure TRichIniFile.ParseText(const aText: string);
 var
-  lCurrentBlock: TRichIniSectionBlock;
-  lPendingComments: TList<TRichIniCommentLine>;
-  lLastContentLine: TRichIniLine;
   lLength: Integer;
   lIndex: Integer;
   lLineStart: Integer;
   lLineText: string;
   lEstimatedLines: Integer;
-
-  procedure ProcessLine(const aLine: string);
-  var
-    lLineLen: Integer;
-    lTrimStart: Integer;
-    lTrimEnd: Integer;
-    lTrimLength: Integer;
-    lLeadingWhitespace: string;
-    lPrefix: string;
-    lPrefixLen: Integer;
-    lCommentTextStart: Integer;
-    lCommentText: string;
-    lComment: TRichIniCommentLine;
-    lSectionName: string;
-    lSectionStart: Integer;
-    lSectionEnd: Integer;
-    lClosingPos: Integer;
-    lSectionLine: TRichIniSectionLine;
-    lDelimiterPos: Integer;
-    lKeyStart: Integer;
-    lKeyEnd: Integer;
-    lValueStart: Integer;
-    lValueEnd: Integer;
-    lKeyText: string;
-    lValueText: string;
-    lKeyLine: TRichIniKeyLine;
-    lLine: TRichIniLine;
-    i: Integer;
-  begin
-    lLineLen := Length(aLine);
-    lTrimStart := 1;
-    while (lTrimStart <= lLineLen) and CharInSet(aLine[lTrimStart], [' ', #9]) do
-      Inc(lTrimStart);
-    if lTrimStart > lLineLen then
-    begin
-      lLine := TRichIniLine.Create(lkBlank, aLine);
-      lLine.SectionBlock := lCurrentBlock;
-      AddLineToDocument(lLine);
-      Exit;
-    end;
-
-    lTrimEnd := lLineLen;
-    while (lTrimEnd >= lTrimStart) and CharInSet(aLine[lTrimEnd], [' ', #9]) do
-      Dec(lTrimEnd);
-    lTrimLength := lTrimEnd - lTrimStart + 1;
-    lLeadingWhitespace := Copy(aLine, 1, lTrimStart - 1);
-
-    for i := 0 to High(fOptions.CommentPrefixes) do
-    begin
-      lPrefix := fOptions.CommentPrefixes[i];
-      lPrefixLen := Length(lPrefix);
-      if (lPrefixLen > 0) and (lTrimLength >= lPrefixLen) and
-         (StrLComp(PChar(@aLine[lTrimStart]), PChar(lPrefix), lPrefixLen) = 0) then
-      begin
-        lCommentTextStart := lTrimStart + lPrefixLen;
-        while (lCommentTextStart <= lLineLen) and CharInSet(aLine[lCommentTextStart], [' ', #9]) do
-          Inc(lCommentTextStart);
-        if lCommentTextStart <= lLineLen then
-          lCommentText := Copy(aLine, lCommentTextStart, lLineLen - lCommentTextStart + 1)
-        else
-          lCommentText := '';
-        lComment := TRichIniCommentLine.Create(aLine, lLeadingWhitespace, lPrefix, lCommentText);
-        lComment.SectionBlock := lCurrentBlock;
-        AddLineToDocument(lComment);
-        case fOptions.CommentOwnership of
-          coAttachToNext:
-            lPendingComments.Add(lComment);
-          coAttachToPrev:
-            if lLastContentLine <> nil then
-              lLastContentLine.AttachComment(lComment);
-        end;
-        Exit;
-      end;
-    end;
-
-    if aLine[lTrimStart] = '[' then
-    begin
-      lClosingPos := 0;
-      for i := lTrimStart + 1 to lLineLen do
-        if aLine[i] = ']' then
-        begin
-          lClosingPos := i;
-          Break;
-        end;
-      if (lClosingPos > lTrimStart) or
-         ((lClosingPos = 0) and (fOptions.AcceptMissingBracket = mbAcceptAsSection)) then
-      begin
-        lSectionStart := lTrimStart + 1;
-        if lClosingPos > lTrimStart then
-          lSectionEnd := lClosingPos - 1
-        else
-          lSectionEnd := lLineLen;
-        while (lSectionStart <= lSectionEnd) and CharInSet(aLine[lSectionStart], [' ', #9]) do
-          Inc(lSectionStart);
-        while (lSectionEnd >= lSectionStart) and CharInSet(aLine[lSectionEnd], [' ', #9]) do
-          Dec(lSectionEnd);
-        if lSectionStart <= lSectionEnd then
-          lSectionName := Copy(aLine, lSectionStart, lSectionEnd - lSectionStart + 1)
-        else
-          lSectionName := '';
-        lCurrentBlock := CreateSectionBlock(lSectionName, False);
-        lSectionLine := TRichIniSectionLine.Create(lSectionName, aLine);
-        lSectionLine.SectionBlock := lCurrentBlock;
-        lCurrentBlock.HeaderLine := lSectionLine;
-        AddLineToDocument(lSectionLine);
-        AttachPendingComments(lSectionLine, lPendingComments);
-        lLastContentLine := lSectionLine;
-        Exit;
-      end;
-    end;
-
-    lDelimiterPos := 0;
-    for i := lTrimStart to lLineLen do
-      if aLine[i] = fOptions.KeyValueDelimiter then
-      begin
-        lDelimiterPos := i;
-        Break;
-      end;
-
-    if lDelimiterPos > 0 then
-      lKeyEnd := lDelimiterPos - 1
-    else
-      lKeyEnd := lTrimEnd;
-    lKeyStart := lTrimStart;
-    while (lKeyStart <= lKeyEnd) and CharInSet(aLine[lKeyStart], [' ', #9]) do
-      Inc(lKeyStart);
-    while (lKeyEnd >= lKeyStart) and CharInSet(aLine[lKeyEnd], [' ', #9]) do
-      Dec(lKeyEnd);
-    if lKeyStart <= lKeyEnd then
-      lKeyText := Copy(aLine, lKeyStart, lKeyEnd - lKeyStart + 1)
-    else
-      lKeyText := '';
-
-    if lDelimiterPos > 0 then
-    begin
-      lValueStart := lDelimiterPos + 1;
-      while (lValueStart <= lLineLen) and CharInSet(aLine[lValueStart], [' ', #9]) do
-        Inc(lValueStart);
-      lValueEnd := lLineLen;
-      while (lValueEnd >= lValueStart) and CharInSet(aLine[lValueEnd], [' ', #9]) do
-        Dec(lValueEnd);
-      if lValueStart <= lValueEnd then
-        lValueText := Copy(aLine, lValueStart, lValueEnd - lValueStart + 1)
-      else
-        lValueText := '';
-    end else
-      lValueText := '';
-
-    lKeyLine := TRichIniKeyLine.Create(lKeyText, lValueText, KeyToken(lKeyText), fOptions.KeyValueDelimiter, aLine);
-    lKeyLine.SectionBlock := lCurrentBlock;
-    lCurrentBlock.AddKeyLine(lKeyLine);
-    AddLineToDocument(lKeyLine);
-    AttachPendingComments(lKeyLine, lPendingComments);
-    lLastContentLine := lKeyLine;
-  end;
+  lSampleLen: Integer;
+  lSampleLines: Integer;
+  lState: TRichIniParseState;
 
 begin
   if fSections.Count = 0 then
     CreateGlobalSection;
-  lCurrentBlock := fSections[0];
-  lPendingComments := TList<TRichIniCommentLine>.Create;
+  lState.CurrentBlock := fSections[0];
+  lState.PendingComments := TList<TRichIniCommentLine>.Create;
   try
-    lLastContentLine := nil;
+    lState.LastContentLine := nil;
     lLength := Length(aText);
     lEstimatedLines := 0;
     if lLength > 0 then
     begin
-      lEstimatedLines := 1;
+      lSampleLen := lLength;
+      if lSampleLen > 4096 then
+        lSampleLen := 4096;
+      lSampleLines := 1;
       lIndex := 1;
-      while lIndex <= lLength do
+      while lIndex <= lSampleLen do
       begin
         if aText[lIndex] = #10 then
-          Inc(lEstimatedLines)
+          Inc(lSampleLines)
         else if aText[lIndex] = #13 then
         begin
-          Inc(lEstimatedLines);
-          if (lIndex < lLength) and (aText[lIndex + 1] = #10) then
+          Inc(lSampleLines);
+          if (lIndex < lSampleLen) and (aText[lIndex + 1] = #10) then
             Inc(lIndex);
         end;
         Inc(lIndex);
       end;
+      if lSampleLen < lLength then
+        lEstimatedLines := ((Int64(lLength) * lSampleLines) div lSampleLen) + 1
+      else
+        lEstimatedLines := lSampleLines;
     end;
     if (lEstimatedLines > 0) and (fLines.Capacity < fLines.Count + lEstimatedLines) then
       fLines.Capacity := fLines.Count + lEstimatedLines;
@@ -1265,7 +1298,7 @@ begin
           Inc(lIndex);
         Inc(lIndex);
         lLineStart := lIndex;
-        ProcessLine(lLineText);
+        ProcessLine(lLineText, lState);
       end else
         Inc(lIndex);
     end;
@@ -1273,10 +1306,10 @@ begin
     begin
       lLineText := Copy(aText, lLineStart, lLength - lLineStart + 1);
       if (lLineText <> '') or (lLength = 0) then
-        ProcessLine(lLineText);
+        ProcessLine(lLineText, lState);
     end;
   finally
-    lPendingComments.Free;
+    lState.PendingComments.Free;
   end;
 end;
 
@@ -1403,6 +1436,7 @@ var
   lPreamble: TBytes;
   lBytes: TBytes;
   lDirectory: string;
+  lCapacity: Integer;
 
   function RenderLine(const aLine: TRichIniLine): string;
   var
@@ -1448,7 +1482,15 @@ begin
   ResolveSaveEncoding(lEncoding, lWriteBom);
   lNewline := ResolveNewline;
 
-  lBuilder := TStringBuilder.Create;
+  lCapacity := 0;
+  for lLine in fLines do
+    Inc(lCapacity, Length(lLine.RawText));
+  if fLines.Count > 1 then
+    Inc(lCapacity, (fLines.Count - 1) * Length(lNewline));
+  if lCapacity < 0 then
+    lCapacity := 0;
+
+  lBuilder := TStringBuilder.Create(lCapacity);
   try
     for i := 0 to fLines.Count - 1 do
     begin
