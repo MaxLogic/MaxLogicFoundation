@@ -5,6 +5,7 @@ interface
 uses
   System.Classes,
   System.Generics.Collections,
+  System.Generics.Defaults,
   System.SysUtils;
 
 type
@@ -139,6 +140,8 @@ type
     fHeaderLine: TRichIniSectionLine;
     fKeyMap: TObjectDictionary<string, TObjectList<TRichIniKeyLine>>;
     fKeyOrder: TList<TRichIniKeyLine>;
+    constructor CreateWithComparer(const aName, aLookupName: string; const aNoHeader: Boolean;
+      const aComparer: IEqualityComparer<string>);
   public
     constructor Create(const aName, aLookupName: string; const aNoHeader: Boolean);
     destructor Destroy; override;
@@ -165,6 +168,10 @@ type
     fSourceEncoding: TEncoding;
     fSourceBom: Boolean;
     fHasSource: Boolean;
+    function CurrentComparer: IEqualityComparer<string>; inline;
+    function TokensEqual(const aLeft, aRight: string): Boolean; inline;
+    procedure RebuildDictionaries;
+    procedure SetCaseSensitivity(const aValue: TCaseSensitivity);
     procedure EnsureOptionsDefaults;
     procedure ClearDocument;
     procedure CreateGlobalSection;
@@ -246,7 +253,8 @@ type
 implementation
 
 uses
-  System.IOUtils
+  System.IOUtils,
+  MaxLogic.StrUtils
   {$IFDEF MSWINDOWS}, Winapi.Windows{$ENDIF};
 
 const
@@ -365,11 +373,17 @@ end;
 
 constructor TRichIniSectionBlock.Create(const aName, aLookupName: string; const aNoHeader: Boolean);
 begin
+  CreateWithComparer(aName, aLookupName, aNoHeader, TFastCaseAwareComparer.Ordinal);
+end;
+
+constructor TRichIniSectionBlock.CreateWithComparer(const aName, aLookupName: string; const aNoHeader: Boolean;
+  const aComparer: IEqualityComparer<string>);
+begin
   inherited Create;
   fName := aName;
   fLookupName := aLookupName;
   fNoHeader := aNoHeader;
-  fKeyMap := TObjectDictionary<string, TObjectList<TRichIniKeyLine>>.Create([doOwnsValues]);
+  fKeyMap := TObjectDictionary<string, TObjectList<TRichIniKeyLine>>.Create([doOwnsValues], aComparer);
   fKeyOrder := TList<TRichIniKeyLine>.Create;
 end;
 
@@ -421,7 +435,7 @@ begin
   EnsureOptionsDefaults;
   fLines := TObjectList<TRichIniLine>.Create(True);
   fSections := TObjectList<TRichIniSectionBlock>.Create(True);
-  fSectionMap := TObjectDictionary<string, TObjectList<TRichIniSectionBlock>>.Create([doOwnsValues]);
+  fSectionMap := TObjectDictionary<string, TObjectList<TRichIniSectionBlock>>.Create([doOwnsValues], CurrentComparer);
   ClearDocument;
 end;
 
@@ -436,7 +450,7 @@ begin
   EnsureOptionsDefaults;
   fLines := TObjectList<TRichIniLine>.Create(True);
   fSections := TObjectList<TRichIniSectionBlock>.Create(True);
-  fSectionMap := TObjectDictionary<string, TObjectList<TRichIniSectionBlock>>.Create([doOwnsValues]);
+  fSectionMap := TObjectDictionary<string, TObjectList<TRichIniSectionBlock>>.Create([doOwnsValues], CurrentComparer);
   ClearDocument;
   fHasSource := False;
   fSourceEncoding := TEncoding.UTF8;
@@ -512,7 +526,7 @@ var
   lToken: string;
 begin
   lToken := SectionToken(aSection);
-  Result := TRichIniSectionBlock.Create(aSection, lToken, aNoHeader);
+  Result := TRichIniSectionBlock.CreateWithComparer(aSection, lToken, aNoHeader, CurrentComparer);
   fSections.Add(Result);
   GetOrCreateSectionList(lToken).Add(Result);
 end;
@@ -552,18 +566,12 @@ end;
 
 function TRichIniFile.SectionToken(const aSection: string): string;
 begin
-  if fOptions.CaseSensitivity = csCaseInsensitive then
-    Result := AnsiLowerCase(aSection)
-  else
-    Result := aSection;
+  Result := aSection;
 end;
 
 function TRichIniFile.KeyToken(const aKey: string): string;
 begin
-  if fOptions.CaseSensitivity = csCaseInsensitive then
-    Result := AnsiLowerCase(aKey)
-  else
-    Result := aKey;
+  Result := aKey;
 end;
 
 function TRichIniFile.GetLineCount: Integer;
@@ -589,6 +597,94 @@ begin
     Result := fSections.Count
   else
     Result := 0;
+end;
+
+function TRichIniFile.CurrentComparer: IEqualityComparer<string>;
+begin
+  if fOptions.CaseSensitivity = csCaseInsensitive then
+    Result := TFastCaseAwareComparer.OrdinalIgnoreCase
+  else
+    Result := TFastCaseAwareComparer.Ordinal;
+end;
+
+function TRichIniFile.TokensEqual(const aLeft, aRight: string): Boolean;
+begin
+  Result := CurrentComparer.Equals(aLeft, aRight);
+end;
+
+procedure TRichIniFile.RebuildDictionaries;
+var
+  lNewMap: TObjectDictionary<string, TObjectList<TRichIniSectionBlock>>;
+  lBlock: TRichIniSectionBlock;
+  lToken: string;
+  lList: TObjectList<TRichIniSectionBlock>;
+  lNewKeyMap: TObjectDictionary<string, TObjectList<TRichIniKeyLine>>;
+  lKeyLine: TRichIniKeyLine;
+  lKeyToken: string;
+  lKeyList: TObjectList<TRichIniKeyLine>;
+begin
+  if (fSections = nil) or (fSectionMap = nil) then
+    Exit;
+
+  for lBlock in fSections do
+  begin
+    if lBlock = nil then
+      Continue;
+
+    lNewKeyMap := TObjectDictionary<string, TObjectList<TRichIniKeyLine>>.Create([doOwnsValues], CurrentComparer);
+    try
+      for lKeyLine in lBlock.fKeyOrder do
+      begin
+        if lKeyLine = nil then
+          Continue;
+        lKeyToken := KeyToken(lKeyLine.Key);
+        lKeyLine.LookupKey := lKeyToken;
+        if not lNewKeyMap.TryGetValue(lKeyToken, lKeyList) then
+        begin
+          lKeyList := TObjectList<TRichIniKeyLine>.Create(False);
+          lNewKeyMap.Add(lKeyToken, lKeyList);
+        end;
+        lKeyList.Add(lKeyLine);
+      end;
+
+      lBlock.fKeyMap.Free;
+      lBlock.fKeyMap := lNewKeyMap;
+      lNewKeyMap := nil;
+    finally
+      lNewKeyMap.Free;
+    end;
+  end;
+
+  lNewMap := TObjectDictionary<string, TObjectList<TRichIniSectionBlock>>.Create([doOwnsValues], CurrentComparer);
+  try
+    for lBlock in fSections do
+    begin
+      if lBlock = nil then
+        Continue;
+      lToken := SectionToken(lBlock.Name);
+      lBlock.LookupName := lToken;
+      if not lNewMap.TryGetValue(lToken, lList) then
+      begin
+        lList := TObjectList<TRichIniSectionBlock>.Create(False);
+        lNewMap.Add(lToken, lList);
+      end;
+      lList.Add(lBlock);
+    end;
+
+    fSectionMap.Free;
+    fSectionMap := lNewMap;
+    lNewMap := nil;
+  finally
+    lNewMap.Free;
+  end;
+end;
+
+procedure TRichIniFile.SetCaseSensitivity(const aValue: TCaseSensitivity);
+begin
+  if fOptions.CaseSensitivity = aValue then
+    Exit;
+  fOptions.CaseSensitivity := aValue;
+  RebuildDictionaries;
 end;
 
 function TRichIniFile.FindSectionList(const aSection: string): TObjectList<TRichIniSectionBlock>;
@@ -698,8 +794,8 @@ begin
   begin
     if (lLine.Kind <> lkKeyValue) or (lLine.SectionBlock = nil) then
       Continue;
-    if (lLine.SectionBlock.LookupName = lSectionToken) and
-       (TRichIniKeyLine(lLine).LookupKey = lKeyToken) then
+    if TokensEqual(lLine.SectionBlock.LookupName, lSectionToken) and
+       TokensEqual(TRichIniKeyLine(lLine).LookupKey, lKeyToken) then
     begin
       Inc(lCount);
       if lCount = aKeyIndex then
@@ -1438,7 +1534,7 @@ var
   lBlock: TRichIniSectionBlock;
   lName: string;
 begin
-  lSeen := TDictionary<string, Boolean>.Create;
+  lSeen := TDictionary<string, Boolean>.Create(CurrentComparer);
   lNames := TList<string>.Create;
   try
     for lBlock in fSections do
@@ -1484,10 +1580,10 @@ begin
   lPrimary := lList[0];
 
   lOrder := TList<string>.Create;
-  lIndexMap := TDictionary<string, Integer>.Create;
-  lKeyText := TDictionary<string, string>.Create;
-  lValueMap := TDictionary<string, string>.Create;
-  lCommentMap := TDictionary<string, string>.Create;
+  lIndexMap := TDictionary<string, Integer>.Create(CurrentComparer);
+  lKeyText := TDictionary<string, string>.Create(CurrentComparer);
+  lValueMap := TDictionary<string, string>.Create(CurrentComparer);
+  lCommentMap := TDictionary<string, string>.Create(CurrentComparer);
   lBlocksToRemove := TList<TRichIniSectionBlock>.Create;
   lSectionToken := SectionToken(aSection);
   try
@@ -1497,7 +1593,7 @@ begin
     for lLine in fLines do
     begin
       if (lLine.Kind <> lkKeyValue) or (lLine.SectionBlock = nil) or
-         (lLine.SectionBlock.LookupName <> lSectionToken) then
+         (not TokensEqual(lLine.SectionBlock.LookupName, lSectionToken)) then
         Continue;
       lToken := TRichIniKeyLine(lLine).LookupKey;
       if lIndexMap.TryGetValue(lToken, lIdx) then
@@ -1522,7 +1618,7 @@ begin
         Continue;
       end;
       lLine := fLines[i];
-      if (lLine.SectionBlock = nil) or (lLine.SectionBlock.LookupName <> lSectionToken) then
+      if (lLine.SectionBlock = nil) or (not TokensEqual(lLine.SectionBlock.LookupName, lSectionToken)) then
       begin
         Dec(i);
         Continue;
@@ -1589,8 +1685,8 @@ begin
     for lLine in fLines do
     begin
       if (lLine.Kind = lkKeyValue) and (lLine.SectionBlock <> nil) and
-         (lLine.SectionBlock.LookupName = lSectionToken) and
-         (TRichIniKeyLine(lLine).LookupKey = lKeyToken) then
+         TokensEqual(lLine.SectionBlock.LookupName, lSectionToken) and
+         TokensEqual(TRichIniKeyLine(lLine).LookupKey, lKeyToken) then
         lMatches.Add(TRichIniKeyLine(lLine));
     end;
     for lLine in lMatches do
@@ -1624,7 +1720,7 @@ begin
   try
     lSectionToken := SectionToken(aSection);
     for lBlock in fSections do
-      if (lBlock <> nil) and (lBlock.LookupName = lSectionToken) then
+      if (lBlock <> nil) and TokensEqual(lBlock.LookupName, lSectionToken) then
         lBlocks.Add(lBlock);
 
     if lBlocks.Count = 0 then
@@ -1764,8 +1860,8 @@ begin
     if fLines = nil then
       Exit;
     lOrder := TList<string>.Create;
-    lIndexMap := TDictionary<string, Integer>.Create;
-    lMap := TDictionary<string, TRichIniKeyLine>.Create;
+    lIndexMap := TDictionary<string, Integer>.Create(CurrentComparer);
+    lMap := TDictionary<string, TRichIniKeyLine>.Create(CurrentComparer);
     try
       lSectionList := FindSectionList(aSection);
       if lSectionList <> nil then
@@ -1806,7 +1902,7 @@ begin
   aStrings.BeginUpdate;
   try
     aStrings.Clear;
-    lSeen := TDictionary<string, Boolean>.Create;
+    lSeen := TDictionary<string, Boolean>.Create(CurrentComparer);
     try
       for lBlock in fSections do
       begin
@@ -1845,8 +1941,8 @@ begin
     if fLines = nil then
       Exit;
     lOrder := TList<string>.Create;
-    lIndexMap := TDictionary<string, Integer>.Create;
-    lMap := TDictionary<string, TRichIniKeyLine>.Create;
+    lIndexMap := TDictionary<string, Integer>.Create(CurrentComparer);
+    lMap := TDictionary<string, TRichIniKeyLine>.Create(CurrentComparer);
     try
       lSectionList := FindSectionList(aSection);
       if lSectionList <> nil then
@@ -1906,7 +2002,7 @@ begin
     if lSectionList <> nil then
       for lBlock in lSectionList do
         for lKeyLine in lBlock.KeyOrder do
-          if lKeyLine.LookupKey = lKeyToken then
+          if TokensEqual(lKeyLine.LookupKey, lKeyToken) then
             lValues.Add(lKeyLine.Value);
     aValues := lValues.ToArray;
   finally
