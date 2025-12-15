@@ -500,12 +500,14 @@ end;
 procedure TRichIniFile.ProcessLine(const aLine: string; var aState: TRichIniParseState);
 var
   lLineLen: Integer;
+  lP: PChar;
   lTrimStart: Integer;
   lTrimEnd: Integer;
   lTrimLength: Integer;
   lPrefix: string;
   lPrefixLen: Integer;
   lCommentTextStart: Integer;
+  lLeadingWs: string;
   lCommentText: string;
   lComment: TRichIniCommentLine;
   lSectionName: string;
@@ -525,8 +527,9 @@ var
   i: Integer;
 begin
   lLineLen := Length(aLine);
+  lP := PChar(aLine);
   lTrimStart := 1;
-  while (lTrimStart <= lLineLen) and CharInSet(aLine[lTrimStart], [' ', #9]) do
+  while (lTrimStart <= lLineLen) and ((lP[lTrimStart - 1] = ' ') or (lP[lTrimStart - 1] = #9)) do
     Inc(lTrimStart);
   if lTrimStart > lLineLen then
   begin
@@ -537,7 +540,7 @@ begin
   end;
 
   lTrimEnd := lLineLen;
-  while (lTrimEnd >= lTrimStart) and CharInSet(aLine[lTrimEnd], [' ', #9]) do
+  while (lTrimEnd >= lTrimStart) and ((lP[lTrimEnd - 1] = ' ') or (lP[lTrimEnd - 1] = #9)) do
     Dec(lTrimEnd);
   lTrimLength := lTrimEnd - lTrimStart + 1;
 
@@ -546,17 +549,21 @@ begin
     lPrefix := fOptions.CommentPrefixes[i];
     lPrefixLen := Length(lPrefix);
     if (lPrefixLen > 0) and (lTrimLength >= lPrefixLen) and
-       (StrLComp(PChar(@aLine[lTrimStart]), PChar(lPrefix), lPrefixLen) = 0) then
+       (lP[lTrimStart - 1] = lPrefix[1]) and
+       (StrLComp(lP + (lTrimStart - 1), PChar(lPrefix), lPrefixLen) = 0) then
     begin
       lCommentTextStart := lTrimStart + lPrefixLen;
-      while (lCommentTextStart <= lLineLen) and CharInSet(aLine[lCommentTextStart], [' ', #9]) do
+      while (lCommentTextStart <= lLineLen) and ((lP[lCommentTextStart - 1] = ' ') or (lP[lCommentTextStart - 1] = #9)) do
         Inc(lCommentTextStart);
       if lCommentTextStart <= lLineLen then
-        lCommentText := Copy(aLine, lCommentTextStart, lLineLen - lCommentTextStart + 1)
+        SetString(lCommentText, lP + (lCommentTextStart - 1), lLineLen - lCommentTextStart + 1)
       else
         lCommentText := '';
       if lTrimStart > 1 then
-        lComment := TRichIniCommentLine.Create(aLine, Copy(aLine, 1, lTrimStart - 1), lPrefix, lCommentText)
+      begin
+        SetString(lLeadingWs, lP, lTrimStart - 1);
+        lComment := TRichIniCommentLine.Create(aLine, lLeadingWs, lPrefix, lCommentText);
+      end
       else
         lComment := TRichIniCommentLine.Create(aLine, '', lPrefix, lCommentText);
       lComment.SectionBlock := aState.CurrentBlock;
@@ -572,11 +579,11 @@ begin
     end;
   end;
 
-  if aLine[lTrimStart] = '[' then
+  if lP[lTrimStart - 1] = '[' then
   begin
     lClosingPos := 0;
     for i := lTrimStart + 1 to lLineLen do
-      if aLine[i] = ']' then
+      if lP[i - 1] = ']' then
       begin
         lClosingPos := i;
         Break;
@@ -589,12 +596,12 @@ begin
         lSectionEnd := lClosingPos - 1
       else
         lSectionEnd := lLineLen;
-      while (lSectionStart <= lSectionEnd) and CharInSet(aLine[lSectionStart], [' ', #9]) do
+      while (lSectionStart <= lSectionEnd) and ((lP[lSectionStart - 1] = ' ') or (lP[lSectionStart - 1] = #9)) do
         Inc(lSectionStart);
-      while (lSectionEnd >= lSectionStart) and CharInSet(aLine[lSectionEnd], [' ', #9]) do
+      while (lSectionEnd >= lSectionStart) and ((lP[lSectionEnd - 1] = ' ') or (lP[lSectionEnd - 1] = #9)) do
         Dec(lSectionEnd);
       if lSectionStart <= lSectionEnd then
-        lSectionName := Copy(aLine, lSectionStart, lSectionEnd - lSectionStart + 1)
+        SetString(lSectionName, lP + (lSectionStart - 1), lSectionEnd - lSectionStart + 1)
       else
         lSectionName := '';
       aState.CurrentBlock := CreateSectionBlock(lSectionName, False);
@@ -610,7 +617,7 @@ begin
 
   lDelimiterPos := 0;
   for i := lTrimStart to lLineLen do
-    if aLine[i] = fOptions.KeyValueDelimiter then
+    if lP[i - 1] = fOptions.KeyValueDelimiter then
     begin
       lDelimiterPos := i;
       Break;
@@ -621,25 +628,25 @@ begin
   else
     lKeyEnd := lTrimEnd;
   lKeyStart := lTrimStart;
-  while (lKeyStart <= lKeyEnd) and CharInSet(aLine[lKeyStart], [' ', #9]) do
+  while (lKeyStart <= lKeyEnd) and ((lP[lKeyStart - 1] = ' ') or (lP[lKeyStart - 1] = #9)) do
     Inc(lKeyStart);
-  while (lKeyEnd >= lKeyStart) and CharInSet(aLine[lKeyEnd], [' ', #9]) do
+  while (lKeyEnd >= lKeyStart) and ((lP[lKeyEnd - 1] = ' ') or (lP[lKeyEnd - 1] = #9)) do
     Dec(lKeyEnd);
   if lKeyStart <= lKeyEnd then
-    lKeyText := Copy(aLine, lKeyStart, lKeyEnd - lKeyStart + 1)
+    SetString(lKeyText, lP + (lKeyStart - 1), lKeyEnd - lKeyStart + 1)
   else
     lKeyText := '';
 
   if lDelimiterPos > 0 then
   begin
     lValueStart := lDelimiterPos + 1;
-    while (lValueStart <= lLineLen) and CharInSet(aLine[lValueStart], [' ', #9]) do
+    while (lValueStart <= lLineLen) and ((lP[lValueStart - 1] = ' ') or (lP[lValueStart - 1] = #9)) do
       Inc(lValueStart);
     lValueEnd := lLineLen;
-    while (lValueEnd >= lValueStart) and CharInSet(aLine[lValueEnd], [' ', #9]) do
+    while (lValueEnd >= lValueStart) and ((lP[lValueEnd - 1] = ' ') or (lP[lValueEnd - 1] = #9)) do
       Dec(lValueEnd);
     if lValueStart <= lValueEnd then
-      lValueText := Copy(aLine, lValueStart, lValueEnd - lValueStart + 1)
+      SetString(lValueText, lP + (lValueStart - 1), lValueEnd - lValueStart + 1)
     else
       lValueText := '';
   end else
