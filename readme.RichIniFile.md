@@ -76,7 +76,8 @@ Global sections are supported (`aSection = ''`) and never emit headers on save. 
 ## Limitations
 
 - Inline (same-line) comments remain unsupported; the parser keeps them as part of the value.
-- Multi-line values require the provided helper codecs (`WriteMultilineString` / `ReadMultilineString`).
+- INI values are single-line by nature; for multi-line text we use the built-in helpers `WriteMultilineString` / `ReadMultilineString`.
+  These methods store line breaks inside the value using a simple escape format: newlines become `\n` and literal backslashes become `\\`.
 - Options are set at construction time in the current public API; create a fresh instance if we need different comparers or comment behavior.
 
 ## Testing & benchmarks
