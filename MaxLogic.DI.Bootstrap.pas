@@ -1,6 +1,7 @@
 ﻿unit MaxLogic.DI.Bootstrap;
 
-{
+{$REGION 'docu'}
+(**
   This unit provides a reusable foundation for setting up a Dependency Injection Composition Root using Spring4D.
 
   Key Components:
@@ -42,12 +43,14 @@ The `TDependencyRegistry` pattern is most valuable and shines brightest in these
 *   **High-Reliability Systems:** In applications where runtime failures are unacceptable, this startup validation provides a critical layer of defense against configuration errors.
 *   **Teams with Varying Skill Levels:** It creates a simple, easy-to-follow pattern ("If your class needs a service, add it to the registry in the `initialization` section"). This reduces the mental overhead for developers and makes it less likely they will forget a crucial step.
 
-}
 
-(** Remark:
+
+Remark:
   if spring4D does not call your constructors , ensure your have the following declared:
   {$RTTI EXPLICIT METHODS([vcPublic, vcPublished]) PROPERTIES([vcPublic, vcPublished])}
 **)
+
+{$ENDREGION 'docu'}
 
 interface
 
@@ -56,6 +59,25 @@ uses
   Spring, Spring.Container, Spring.Container.Common, Spring.Services;
 
 type
+
+  TValidationMode = (vmRegisteredOnly, vmResolveAtStartup, vmIgnore);
+
+
+  { Put this on ctor parameters, fields, or properties
+  Usage:
+    constructor TSomeService.Create(
+      [DIRequire] Logger: ILogger;                           // just must be registered
+      [DIRequire(vmResolveAtStartup)] Repo: IUserRepository;  // must be resolvable at startup
+      const TenantId: Integer                                // runtime param => NOT annotated
+    );
+  }
+  DIRequireAttribute = class(TCustomAttribute)
+  public
+    Mode: TValidationMode;
+    constructor Create(aMode: TValidationMode = vmRegisteredOnly);
+  end;
+
+
   // Forward declaration
   TDependencyRegistry = class;
   TDICompositionRoot = class;
@@ -66,7 +88,7 @@ type
   /// </summary>
   TDependencyRegistry = class
   private
-    fRequiredTypes: THashSet<PTypeInfo>;
+    fRequired: TDictionary<PTypeInfo, TValidationMode>;
     fDirty: Boolean;
     class var fInstance: TDependencyRegistry;
     constructor Create;
@@ -86,30 +108,30 @@ type
     /// the interface specified by aTypeInfo. This should be called from the
     /// `initialization` section of units that contain classes with dependencies.
     /// </summary>
-    procedure RegisterRequirement(aTypeInfo: PTypeInfo); overload;
+    procedure RegisterRequirement(aTypeInfo: PTypeInfo; aMode: TValidationMode = vmRegisteredOnly); overload;
     procedure RegisterRequirement<T>; overload;
 
     /// <summary>
-    /// Scans the given class type for [Inject]-decorated fields and properties
+    /// Scans the given class type for [Inject]-and/or [DIRequire] decorated fields and properties
     /// and registers their service types as requirements.
     /// </summary>
     procedure RegisterRequirementsFrom(aClass: TClass); overload;
 
-    /// Generic convenience overload that scans type T for [Inject] fields
+    /// Generic convenience overload that scans type T for [Inject] and [DIRequire]fields
     procedure RegisterRequirementsFrom<T: class>; overload;
-
 
     /// <summary>
     /// Returns an array of all unique interface types that have been registered
     /// as requirements for the application.
     /// </summary>
     function GetRequiredTypes: TArray<PTypeInfo>;
+    function GetMode(aTypeInfo: PTypeInfo): TValidationMode;
 
-/// <summary>
-/// Returns the list of required service types as a JSON array of strings.
-/// Useful for generating "live architecture" docs."
-/// </summary>
-function DumpRequiredTypesToJson: string;
+    /// <summary>
+    /// Returns the list of required service types as a JSON array of strings.
+    /// Useful for generating "live architecture" docs."
+    /// </summary>
+    function DumpRequiredTypesToJson: string;
 
 
     /// <summary>
@@ -172,11 +194,51 @@ function DumpRequiredTypesToJson: string;
   end;
 
   TContainerHelper = class helper for TContainer
-    // Field/property injection for legacy objects that are not created by the container.
+    // lField/property injection for legacy objects that are not created by the container.
     procedure BuildUp(const AInstance: TObject; aOverwriteExisting: Boolean = false);
   end;
 
 implementation
+
+{ helper methods }
+
+
+function GetValidationMode(const aAttributes: TArray<TCustomAttribute>; out aReq: DIRequireAttribute): TValidationMode;
+begin
+  aReq:= nil;
+  Result:= vmRegisteredOnly;
+  for var attr  in aAttributes do
+    if attr is DIRequireAttribute then
+    begin
+      aReq := DIRequireAttribute(attr);
+      Result:= aReq.Mode;
+      Break;
+    end;
+end;
+
+function GetInject(const aAttributes: TArray<TCustomAttribute>; out aInject: InjectAttribute): Boolean;
+begin
+  Result:= False;
+  aInject:= nil;
+  for var lAttr in aAttributes do
+    if lAttr is InjectAttribute then
+    begin
+      aInject:= InjectAttribute(lAttr);
+      Exit(True);
+    end;
+end;
+
+
+
+function ServiceTypeFromAttrOrMember(const aAttr: InjectAttribute; const aMemberType: TRttiType): PTypeInfo;
+begin
+  Result := nil;
+  if Assigned(aAttr) then
+    Result := aAttr.ServiceType; // may be nil
+  if (Result = nil) and Assigned(aMemberType) then
+    Result := aMemberType.Handle;
+end;
+
 
 {$IFDEF DEBUG}
 var fPrevInitProc : Procedure;
@@ -201,12 +263,12 @@ end;
 constructor TDependencyRegistry.Create;
 begin
   inherited Create;
-  fRequiredTypes := THashSet<PTypeInfo>.Create;
+  fRequired:= TDictionary<PTypeInfo, TValidationMode>.Create;
 end;
 
 destructor TDependencyRegistry.Destroy;
 begin
-  fRequiredTypes.Free;
+  fRequired.Free;
   inherited;
 end;
 
@@ -220,13 +282,25 @@ begin
   RegisterRequirement(TypeInfo(T));
 end;
 
-procedure TDependencyRegistry.RegisterRequirement(aTypeInfo: PTypeInfo);
-begin
-  if not assigned(aTypeInfo) then
-    exit;
-  fDirty:= True;
 
-  fRequiredTypes.Add(aTypeInfo);
+procedure TDependencyRegistry.RegisterRequirement(aTypeInfo: PTypeInfo; aMode: TValidationMode);
+var
+  lExisting: TValidationMode;
+begin
+  if not Assigned(aTypeInfo) then
+    Exit;
+  if aMode = vmIgnore then
+    Exit;
+
+  fDirty := True;
+
+  if fRequired.TryGetValue(aTypeInfo, lExisting) then
+  begin
+    // "ResolveAtStartup" wins
+    if Ord(aMode) > Ord(lExisting) then
+      fRequired[aTypeInfo] := aMode;
+  end else
+    fRequired.Add(aTypeInfo, aMode);
 end;
 
 
@@ -239,15 +313,12 @@ var
   lInject: InjectAttribute;
   lServiceType: PTypeInfo;
 
-  function ServiceTypeFromAttrOrMember(const aAttr: InjectAttribute; const aMemberType: TRttiType): PTypeInfo;
-  begin
-    Result := nil;
-    if Assigned(aAttr) then
-      Result := aAttr.ServiceType; // may be nil
-    if (Result = nil) and Assigned(aMemberType) then
-      Result := aMemberType.Handle;
-  end;
 
+var
+  m: TRttiMethod;
+  p: TRttiParameter;
+  lReq: DIRequireAttribute;
+  lMode: TValidationMode;
 begin
   if aRttiType = nil then
     Exit;
@@ -255,41 +326,45 @@ begin
   // Fields with [Inject]
   for lField in aRttiType.GetFields do
   begin
-    lInject := nil;
-    for lAttr in lField.GetAttributes do
-      if lAttr is InjectAttribute then
+    lMode:= GetValidationMode(lField.GetAttributes , lReq);
+    lInject:= nil;
+    if lMode<> vmIgnore then
+      if Assigned(lReq) or GetInject(lField.GetAttributes , lInject) then
       begin
-        lInject := InjectAttribute(lAttr);
-        Break;
+        lServiceType := ServiceTypeFromAttrOrMember(lInject, lField.FieldType);
+        RegisterRequirement(lServiceType, lMode);
       end;
-
-    if Assigned(lInject) then
-    begin
-      lServiceType := ServiceTypeFromAttrOrMember(lInject, lField.FieldType);
-      RegisterRequirement(lServiceType);
-    end;
   end;
 
   // Writable properties with [Inject]
   for lProp in aRttiType.GetProperties do
   begin
-    if not lProp.IsWritable then
+    if not (lProp.IsWritable) then
       Continue;
 
+    lMode:= GetValidationMode(lProp.GetAttributes , lReq);
     lInject := nil;
-    for lAttr in lProp.GetAttributes do
-      if lAttr is InjectAttribute then
+    if lMode <> vmIgnore then
+      if Assigned(lReq) or GetInject(lProp.GetAttributes , lInject) then
       begin
-        lInject := InjectAttribute(lAttr);
-        Break;
+        lServiceType := ServiceTypeFromAttrOrMember(lInject, lProp.PropertyType);
+        RegisterRequirement(lServiceType, lMode);
+      end;
+  end;
+
+  // Constructors
+  for m in aRttiType.GetMethods do
+    if m.IsConstructor and (m.Visibility = mvPublic) then
+      if Length(m.GetParameters) > 0 then
+      begin
+        for p in m.GetParameters do
+        begin
+          if GetValidationMode(p.GetAttributes , lReq) <> vmIgnore then
+            if Assigned(lReq) then
+              RegisterRequirement(p.ParamType.Handle, lReq.Mode);
+        end;
       end;
 
-    if Assigned(lInject) then
-    begin
-      lServiceType := ServiceTypeFromAttrOrMember(lInject, lProp.PropertyType);
-      RegisterRequirement(lServiceType);
-    end;
-  end;
 end;
 
 procedure TDependencyRegistry.RegisterRequirementsFrom(aClass: TClass);
@@ -323,9 +398,15 @@ begin
   end;
 end;
 
+function TDependencyRegistry.GetMode(aTypeInfo: PTypeInfo): TValidationMode;
+begin
+  if not fRequired.TryGetValue(aTypeInfo, Result) then
+    Result:= TValidationMode.vmRegisteredOnly; // default
+end;
+
 function TDependencyRegistry.GetRequiredTypes: TArray<PTypeInfo>;
 begin
-  Result := fRequiredTypes.ToArray;
+  Result := fRequired.Keys.ToArray;
 end;
 
 
@@ -570,16 +651,17 @@ begin
           [lTypeName]
           );
 
-      // 2. Try to actually resolve it. This part remains the same and is correct.
-      try
-        fContainer.Resolve(lRequiredType);
-      except
-        on e: Exception do
-          raise EContainerException.CreateFmt(
-            'Startup Validation Failed: Could not resolve the required service "%s". Check its own dependencies. Original Error: %s',
-            [lTypeName, e.Message]
-            );
-      end;
+      // 2. Try to actually resolve it.
+      if TDependencyRegistry.Instance.GetMode(lRequiredType) = vmResolveAtStartup then
+        try
+          fContainer.Resolve(lRequiredType);
+        except
+          on e: Exception do
+            raise EContainerException.CreateFmt(
+              'Startup Validation Failed: Could not resolve the required service "%s". Check its own dependencies. Original Error: %s',
+              [lTypeName, e.Message]
+              );
+        end;
     end;
   finally
     lCtx.Free;
@@ -588,135 +670,124 @@ end;
 
 { TContainerHelper }
 
-
 procedure TContainerHelper.BuildUp(const AInstance: TObject; aOverwriteExisting: Boolean = false);
 var
-  lCtx: TRttiContext;
-  lType: TRttiType;
+  Ctx: TRttiContext;
+  lRttiType: TRttiType;
   lField: TRttiField;
   lProp: TRttiProperty;
-  lAttr: TCustomAttribute;
-  lInjectAttr: InjectAttribute;
-  lServiceType: PTypeInfo;
 
-  function IsUnset(const aValue: TValue): Boolean;
+  function IsUnset(const V: TValue): Boolean;
   begin
-    // Treat Nil object/interface or empty value as "unset"
-    if aValue.IsEmpty then
-      Exit(True);
-    if aValue.Kind = tkClass then
-      Exit(aValue.AsObject = nil);
-    if aValue.Kind = tkInterface then
-      Exit(aValue.AsInterface = nil);
-    // for other kinds we don't inject here
+    if V.IsEmpty then Exit(True);
+    if V.Kind = tkClass then Exit(V.AsObject = nil);
+    if V.Kind = tkInterface then Exit(V.AsInterface = nil);
     Result := False;
   end;
 
-
-  procedure InjectFieldIfNeeded(const aObj: TObject; const aField: TRttiField; const aServiceType: PTypeInfo);
-  var
-    lCurrent: TValue;
+  function IsInjectableType(aTypeInfo: PTypeInfo): Boolean;
   begin
-    lCurrent := aField.GetValue(aObj);
-    if aOverwriteExisting or IsUnset(lCurrent) then
-      aField.SetValue(aObj, Self.Resolve(aServiceType));
+    Result :=
+      Assigned(aTypeInfo) and
+      (aTypeInfo^.Kind in [tkInterface, tkClass]);
   end;
 
-  procedure InjectPropIfNeeded(const aObj: TObject; const aProp: TRttiProperty; const aServiceType: PTypeInfo);
+  function TryGetInjectionType(
+    const Attrs: TArray<TCustomAttribute>;
+    const MemberType: TRttiType;
+    out TypeInfoToResolve: PTypeInfo
+  ): Boolean;
   var
-    lCurrent: TValue;
+    lReq: DIRequireAttribute;
+    lMode: TValidationMode;
+    lInject: InjectAttribute;
   begin
-    if not aProp.IsWritable then
+    TypeInfoToResolve := nil;
+
+    lMode := GetValidationMode(Attrs, lReq);
+    if lMode = vmIgnore then
+      Exit(False);
+
+    GetInject(Attrs, lInject);
+
+    // inject if DIRequire present OR Inject present
+    if (lReq = nil) and (lInject = nil) then
+      Exit(False);
+
+    TypeInfoToResolve := ServiceTypeFromAttrOrMember(lInject, MemberType);
+    Result := IsInjectableType(TypeInfoToResolve);
+  end;
+
+  procedure InjectFieldIfNeeded(const Obj: TObject; const F: TRttiField; const TI: PTypeInfo);
+  var
+    lCur: TValue;
+  begin
+    lCur := F.GetValue(Obj);
+    if aOverwriteExisting or IsUnset(lCur) then
+      F.SetValue(Obj, Self.Resolve(TI));
+  end;
+
+  procedure InjectPropIfNeeded(const Obj: TObject; const P: TRttiProperty; const TI: PTypeInfo);
+  var
+    lCur: TValue;
+  begin
+    if (not P.IsWritable) then
       Exit;
-    lCurrent := aProp.GetValue(aObj);
-    if aOverwriteExisting or IsUnset(lCurrent) then
-      aProp.SetValue(aObj, Self.Resolve(aServiceType));
+
+    lCur := P.GetValue(Obj);
+    if aOverwriteExisting or IsUnset(lCur) then
+      P.SetValue(Obj, Self.Resolve(TI));
   end;
 
-
+var
+  TI: PTypeInfo;
 begin
   if not Assigned(AInstance) then
-  begin
-    exit;
-  end;
+    Exit;
 
-  lCtx := TRttiContext.Create;
+  Ctx := TRttiContext.Create;
   try
-    lType := lCtx.GetType(AInstance.ClassType);
+    lRttiType := Ctx.GetType(AInstance.ClassType);
 
-    // Fields with [Inject]
-    for lField in lType.GetFields do
+    // Fields
+    for lField in lRttiType.GetFields do
     begin
-      lInjectAttr := nil;
-      for lAttr in lField.GetAttributes do
-      begin
-        if lAttr is InjectAttribute then
-        begin
-          lInjectAttr := InjectAttribute(lAttr);
-          break;
-        end;
-      end;
+      if not TryGetInjectionType(lField.GetAttributes, lField.FieldType, TI) then
+        Continue;
 
-      if Assigned(lInjectAttr) then
-      begin
-        lServiceType := lInjectAttr.ServiceType;
-        if lServiceType = nil then
-        begin
-          lServiceType := lField.FieldType.Handle;
-        end;
-
-        try
-          InjectFieldIfNeeded(AInstance, lField, lServiceType);
-        except
-          on E: Exception do
-            raise EContainerException.CreateFmt(
-              'BuildUp failed for %s.%s (%s): %s',
-              [AInstance.ClassName, lField.Name, lField.FieldType.Name, E.Message]
-            );
-        end;
+      try
+        InjectFieldIfNeeded(AInstance, lField, TI);
+      except
+        on E: Exception do
+          raise EContainerException.CreateFmt(
+            'BuildUp failed for %s.%s (%s): %s',
+            [AInstance.ClassName, lField.Name, lField.FieldType.Name, E.Message]
+          );
       end;
     end;
 
-    // Writable properties with [Inject]
-    for lProp in lType.GetProperties do
+    // Properties
+    for lProp in lRttiType.GetProperties do
     begin
-      if not lProp.IsWritable then
-      begin
-        continue;
-      end;
+      if (not lProp.IsWritable) then
+        Continue;
 
-      lInjectAttr := nil;
-      for lAttr in lProp.GetAttributes do
-      begin
-        if lAttr is InjectAttribute then
-        begin
-          lInjectAttr := InjectAttribute(lAttr);
-          break;
-        end;
-      end;
+      if not TryGetInjectionType(lProp.GetAttributes, lProp.PropertyType, TI) then
+        Continue;
 
-      if Assigned(lInjectAttr) then
-      begin
-        lServiceType := lInjectAttr.ServiceType;
-        if lServiceType = nil then
-        begin
-          lServiceType := lProp.PropertyType.Handle;
-        end;
-
-        try
-          InjectPropIfNeeded(AInstance, lProp, lServiceType);
-        except
-          on E: Exception do
-            raise EContainerException.CreateFmt(
-              'BuildUp failed for %s.%s (%s): %s',
-              [AInstance.ClassName, lProp.Name, lProp.PropertyType.Name, E.Message]
-            );
-        end;
+      try
+        InjectPropIfNeeded(AInstance, lProp, TI);
+      except
+        on E: Exception do
+          raise EContainerException.CreateFmt(
+            'BuildUp failed for %s.%s (%s): %s',
+            [AInstance.ClassName, lProp.Name, lProp.PropertyType.Name, E.Message]
+          );
       end;
     end;
 
   finally
-    lCtx.Free;
+    Ctx.Free;
   end;
 end;
 
@@ -739,6 +810,14 @@ procedure TDIRegistrationModule.RegisterDependencies(
   aContainer: TContainer);
 begin
 
+end;
+
+{ DIRequireAttribute }
+
+constructor DIRequireAttribute.Create(aMode: TValidationMode);
+begin
+  inherited Create;
+  Mode := aMode;
 end;
 
 initialization
