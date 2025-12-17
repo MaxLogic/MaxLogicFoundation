@@ -1,259 +1,283 @@
-Unit AutoFree;
+unit AutoFree;
 
-{f$I JEDI.INC}
+interface
 
+uses
+  System.Classes, System.Generics.Collections, System.SysUtils;
 
-{ Copyright: Pawel Piotrowski, MaxLogic, www.maxlogic.eu
-  License: free to use, no warranty of any kind
-
-  Version: 1.7
-  History:
-  2022-05-01: all "old" projects are migrated, so I adding back the overloded gc() function just to make thinks cleaner again
-  2022-02-17: fix for delphi 11: previously the TGarbo was a array, that was released in the order first-in-last-out, in delphi 11, it is the other way around... first-in-first-out... which destroys the order of the destruction of interfaces contained in this array. So now it is a managed record
-  2021-05-28: stupid delphi 10.4 broke the life cycle of the interfaces..., if gc() is called in begin end, then the interface will be destroyed on "end" and not as before, when the method exits...
-  2017-05-17: added Method RunOnExit(TProc)
-  2016-07-26: added an interface that calls a proc when it is destroyed
-
-  Inspired by:
-  http://stackoverflow.com/questions/415958/how-to-automatically-free-classes-objects
-
-
-}
-
-Interface
-
-Uses
-  sysUtils, classes, Generics.collections;
-
-Type
-
-  IGarbo = Interface
+type
+  IGarbo = interface
     ['{A6E17957-C233-4433-BCBD-3B53C0C2C596}']
-    Function Obj: TObject;
-    // this function will be called after the obj is freed
-    Function addAfterFree(aProc: TThreadProcedure): IGarbo;
-  End;
-
-  // this one will allow you to declare a single local variable and then use it to store all the references to iGarbo instances produced by gc()
-  TGarbos = record
-    Items: Array Of IGarbo;
-    {$IFDEF DELPHI27_UP            }
-    class operator Finalize (var aGarbos: TGarbos);
-    {$ENDIF}
+    function Obj: TObject;
+    // called after the object is freed
+    function AddAfterFree(aProc: TThreadProcedure): IGarbo;
   end;
 
-  TGarbo = Class(TInterfacedObject, IGarbo)
-  Private
-    FObj: TObject;
+  // Aggregator for keeping multiple IGarbo references alive to the same scope
+  TGarbos = record
+  public
+    Items: array of IGarbo;
+    Count: Integer;
+
+    procedure Add(const aGarbo: IGarbo); overload;
+    function Add(aObj: TObject): IGarbo; overload;
+
+    procedure Clear;
+
+    class operator Initialize(out aGarbos: TGarbos);
+    class operator Finalize(var aGarbos: TGarbos);
+  end;
+
+  TGarbo = class(TInterfacedObject, IGarbo)
+  private
+    fObj: TObject;
     fAfterFreedProcedures: TList<TThreadProcedure>;
-  Public
-    Constructor Create(AObjectToGC: TObject);
-    Destructor Destroy; Override;
-    Function Obj: TObject;
+  public
+    constructor Create(aObjectToGC: TObject);
+    destructor Destroy; override;
 
-    // this function will be called after the obj is freed
-    Function addAfterFree(aProc: TThreadProcedure): IGarbo;
-  End;
+    function Obj: TObject;
+    function AddAfterFree(aProc: TThreadProcedure): IGarbo;
 
-  Tproc = system.sysUtils.TProc;
+    class function GC<T: class>(out aInstance: T; aObj: T): IGarbo; overload; static; inline;
+    class procedure GC<T: class>(out aInstance: T; aObj: T; out aGarboInstance: IGarbo); overload; static; inline;
+    class procedure GC<T: class>(out aInstance: T; aObj: T; var aGarbos: TGarbos); overload; static; inline;
+  end;
 
-  iCallProcOnDestroy = Interface
+  TProc = System.SysUtils.TProc;
+
+  ICallProcOnDestroy = interface
     ['{7D3DDF6A-3A2F-44F8-A83B-D7F66F66C559}']
+    procedure SetProc(const aValue: TProc);
+    function GetProc: TProc;
+    property Proc: TProc read GetProc write SetProc;
+  end;
 
-    Procedure SetProc(Const Value: Tproc);
-    Function GetProc: Tproc;
-    Property Proc: Tproc Read GetProc Write SetProc;
-  End;
+  TCallProcOnDestroy = class(TInterfacedObject, ICallProcOnDestroy)
+  private
+    fProc: TProc;
+    procedure SetProc(const aValue: TProc);
+    function GetProc: TProc;
+  public
+    constructor Create(aProc: TProc);
+    destructor Destroy; override;
+    class function New(aProc: TProc): ICallProcOnDestroy;
 
-  TCallProcOnDestroy = Class(TInterfacedObject, iCallProcOnDestroy)
-  Private
-    FProc: Tproc;
-    Procedure SetProc(Const Value: Tproc);
-    Function GetProc: Tproc;
-  Public
-    Constructor Create(aProc: Tproc);
-    Destructor Destroy; Override;
-    Class Function New(aProc: Tproc): iCallProcOnDestroy;
+    property Proc: TProc read GetProc write SetProc;
+  end;
 
-    Property Proc: Tproc Read GetProc Write SetProc;
-  End;
+procedure GC(aObj: TObject; out aGarboInstance: IGarbo); overload;
+procedure GC(aObj: TObject; var aGarbos: TGarbos); overload;
+function GC(aObj: TObject): IGarbo; overload; inline;
 
-  { The GC function simply returns an object in the form of an interface.
-    just call gc(MyObjectInstance); and you can forgett about the free part
-    NOTE: it is not necessary to assign the result to a local variable, delphi does it for you in the background
-    Except delphi 10 releases the instance when it exit the begin...end block, not neccessary when exiting the method..
-  }
-Function GC2(Obj: TObject): IGarbo; Overload;
+procedure GC(var aInstance; aObj: TObject; out aGarboInstance: IGarbo); overload;
+procedure GC(var aInstance; aObj: TObject; var aGarbos: TGarbos); overload;
+function GC(var aInstance; aObj: TObject): IGarbo; overload; inline;
 
-// To help enforce the move To d10.4 .. .
-Procedure GC(Obj: TObject; Out garboInstance: IGarbo); Overload;
-Procedure GC(Obj: TObject; Var garboInstances: TGarbos); Overload;
+// run this anonymous method when exiting the current scope
+function RunOnExit(aProc: TProc): ICallProcOnDestroy; inline;
+// shorter alias for RunOnExit
+function Trap(aProc: TProc): ICallProcOnDestroy; inline;
 
-{$IFNDEF EnforceSeparateDeclarations}
-Function GC(Obj: TObject):IGarbo; Overload; inline;
-{$ENDIF}
+implementation
 
-// this one allows this syntax:
-// var myList:TStringList
-// gc(myList, TStringList.create);
-Function GC2(Var aInstance; Obj: TObject): IGarbo; Overload;
-
-// To help enforce the move To d10.4 .. .
-Procedure GC(Var aInstance; Obj: TObject; Out garboInstance: IGarbo); Overload;
-Procedure GC(Var aInstance; Obj: TObject; Var garboInstances: TGarbos); Overload;
-
-{$IFNDEF EnforceSeparateDeclarations}
-Function GC(Var aInstance; Obj: TObject): IGarbo; Overload; inline;
-{$ENDIF}
-
-// run this anonymous method when exiting the current method
-// ATTENTION: on delphi 10.4 will be run when exiting the begin..end block
-Function RunOnExit(aProc: Tproc): iCallProcOnDestroy;
-
-Implementation
-
-
-Function GC2(Obj: TObject): IGarbo;
-Begin
-  Result := TGarbo.Create(Obj);
-End;
-
-Function GC2(Var aInstance; Obj: TObject): IGarbo;
-Begin
-  TObject(aInstance) := Obj;
-  Result := TGarbo.Create(Obj);
-End;
-
-Function RunOnExit(aProc: Tproc): iCallProcOnDestroy;
-Begin
+function RunOnExit(aProc: TProc): ICallProcOnDestroy;
+begin
   Result := TCallProcOnDestroy.New(aProc);
-End;
+end;
+
+function Trap(aProc: TProc): ICallProcOnDestroy;
+begin
+  Result := TCallProcOnDestroy.New(aProc);
+end;
 
 { TGarbo }
 
-Function TGarbo.addAfterFree(aProc: TThreadProcedure): IGarbo;
-Begin
-  If Not assigned(fAfterFreedProcedures) Then
+class procedure TGarbo.GC<T>(out aInstance: T; aObj: T; out aGarboInstance: IGarbo);
+begin
+  aInstance := aObj;
+  aGarboInstance := AutoFree.GC(TObject(aObj));
+end;
+
+class procedure TGarbo.GC<T>(out aInstance: T; aObj: T; var aGarbos: TGarbos);
+var
+  lGarbo: IGarbo;
+begin
+  aInstance := aObj;
+  lGarbo := AutoFree.GC(TObject(aObj));
+  aGarbos.Add(lGarbo);
+end;
+
+class function TGarbo.GC<T>(out aInstance: T; aObj: T): IGarbo;
+begin
+  aInstance := aObj;
+  Result := AutoFree.GC(TObject(aObj));
+end;
+
+function TGarbo.AddAfterFree(aProc: TThreadProcedure): IGarbo;
+begin
+  if not Assigned(fAfterFreedProcedures) then
+  begin
     fAfterFreedProcedures := TList<TThreadProcedure>.Create;
-  fAfterFreedProcedures.add(aProc);
-  Result := self;
-End;
+  end;
 
-Constructor TGarbo.Create(AObjectToGC: TObject);
-Begin
-  Inherited Create;
-  FObj := AObjectToGC;
-End;
-
-Destructor TGarbo.Destroy;
-Var
-  x: Integer;
-Begin
-  If assigned(FObj) Then
-    FreeAndNil(FObj);
-
-  If assigned(fAfterFreedProcedures) Then
-  Begin
-    Try
-      For x := 0 To fAfterFreedProcedures.Count - 1 Do
-        fAfterFreedProcedures[x](); // run it
-    Finally
-      fAfterFreedProcedures.Free;
-    End;
-  End;
-
-  Inherited;
-End;
-
-Function TGarbo.Obj: TObject;
-Begin
-  Result := FObj;
-End;
-
-{ TCallProcOnDestroy }
-
-Destructor TCallProcOnDestroy.Destroy;
-Begin
-  If assigned(FProc) Then
-    FProc();
-  Inherited;
-End;
-
-Procedure TCallProcOnDestroy.SetProc(Const Value: Tproc);
-Begin
-  FProc := Value;
-End;
-
-Function TCallProcOnDestroy.GetProc: Tproc;
-Begin
-  Result := FProc;
-End;
-
-Constructor TCallProcOnDestroy.Create(aProc: Tproc);
-Begin
-  Inherited Create;
-  FProc := aProc;
-End;
-
-Class Function TCallProcOnDestroy.New(aProc: Tproc): iCallProcOnDestroy;
-Begin
-  Result := TCallProcOnDestroy.Create(aProc);
-End;
-
-Procedure GC(Var aInstance; Obj: TObject; Out garboInstance: IGarbo);
-Begin
-  garboInstance := GC2(aInstance, Obj)
-End;
-
-Procedure GC(Var aInstance; Obj: TObject; Var garboInstances: TGarbos);
-Var
-  len: Integer;
-Begin
-  len := Length(garboInstances.Items);
-  setLength(garboInstances.Items, len + 1);
-  garboInstances.Items[len] := GC2(aInstance, Obj);
-End;
-
-Procedure GC(Obj: TObject; Out garboInstance: IGarbo);
-Begin
-  garboInstance := GC2(Obj);
-End;
-
-
-{$IFNDEF EnforceSeparateDeclarations}
-Function GC(Var aInstance; Obj: TObject): IGarbo;
-begin
-  Result := GC2(aInstance, Obj);
+  fAfterFreedProcedures.Add(aProc);
+  Result := Self;
 end;
-Function GC(Obj: TObject):IGarbo;
+
+constructor TGarbo.Create(aObjectToGC: TObject);
 begin
-  Result := GC2(Obj);
+  inherited Create;
+  fObj := aObjectToGC;
 end;
-{$ENDIF}
 
-Procedure GC(Obj: TObject; Var garboInstances: TGarbos);
-Var
-  len: Integer;
-Begin
-  len := Length(garboInstances.Items);
-  setLength(garboInstances.Items, len + 1);
-  garboInstances.Items[len] := GC2(Obj)
-End;
-
-
-{ TGarbos }
-
-{$IFDEF DELPHI27_UP            }
-class operator TGarbos.Finalize (var aGarbos: TGarbos);
+destructor TGarbo.Destroy;
 var
   x: Integer;
 begin
-  for x := length(aGarbos.items)-1 downto 0 do
-    aGarbos.items[x]:= Nil;
+  FreeAndNil(fObj);
 
-  aGarbos.items:= Nil;
+  if Assigned(fAfterFreedProcedures) then
+  begin
+    try
+      for x := 0 to fAfterFreedProcedures.Count - 1 do
+      begin
+        fAfterFreedProcedures[x]();
+      end;
+    finally
+      fAfterFreedProcedures.Free;
+    end;
+  end;
+
+  inherited;
 end;
-{$ENDIF}
 
-End.
+function TGarbo.Obj: TObject;
+begin
+  Result := fObj;
+end;
+
+{ TCallProcOnDestroy }
+
+constructor TCallProcOnDestroy.Create(aProc: TProc);
+begin
+  inherited Create;
+  fProc := aProc;
+end;
+
+destructor TCallProcOnDestroy.Destroy;
+begin
+  if Assigned(fProc) then
+  begin
+    fProc();
+  end;
+
+  inherited;
+end;
+
+function TCallProcOnDestroy.GetProc: TProc;
+begin
+  Result := fProc;
+end;
+
+class function TCallProcOnDestroy.New(aProc: TProc): ICallProcOnDestroy;
+begin
+  Result := TCallProcOnDestroy.Create(aProc);
+end;
+
+procedure TCallProcOnDestroy.SetProc(const aValue: TProc);
+begin
+  fProc := aValue;
+end;
+
+{ Global GC overloads }
+
+procedure GC(var aInstance; aObj: TObject; out aGarboInstance: IGarbo);
+begin
+  aGarboInstance := GC(aInstance, aObj);
+end;
+
+procedure GC(var aInstance; aObj: TObject; var aGarbos: TGarbos);
+begin
+  aGarbos.Add(GC(aInstance, aObj));
+end;
+
+procedure GC(aObj: TObject; out aGarboInstance: IGarbo);
+begin
+  aGarboInstance := GC(aObj);
+end;
+
+procedure GC(aObj: TObject; var aGarbos: TGarbos);
+begin
+  aGarbos.Add(GC(aObj));
+end;
+
+function GC(var aInstance; aObj: TObject): IGarbo;
+begin
+  // untyped var cannot be assigned directly -> cast to TObject reference
+  TObject(aInstance) := aObj;
+  Result := TGarbo.Create(aObj);
+end;
+
+function GC(aObj: TObject): IGarbo;
+begin
+  Result := TGarbo.Create(aObj);
+end;
+
+{ TGarbos }
+
+procedure TGarbos.Add(const aGarbo: IGarbo);
+var
+  lCapacity: Integer;
+begin
+  lCapacity := Length(Items);
+
+  if Count >= lCapacity then
+  begin
+    if lCapacity = 0 then
+      lCapacity := 1
+    else if lCapacity = 1 then
+      lCapacity := 4
+    else if lCapacity >= 1024 then
+      lCapacity := lCapacity + 1024
+    else
+      lCapacity := lCapacity * 2;
+
+    SetLength(Items, lCapacity);
+  end;
+
+  Items[Count] := aGarbo;
+  Inc(Count);
+end;
+
+function TGarbos.Add(aObj: TObject): IGarbo;
+begin
+  Result := GC(aObj);
+  Add(Result);
+end;
+
+procedure TGarbos.Clear;
+var
+  x: Integer;
+begin
+  // release in reverse to preserve intended lifetime order
+  for x := Count - 1 downto 0 do
+    Items[x] := nil;
+
+  Items := nil;
+  Count := 0;
+end;
+
+class operator TGarbos.Initialize(out aGarbos: TGarbos);
+begin
+  aGarbos.Items := nil;
+  aGarbos.Count := 0;
+end;
+
+class operator TGarbos.Finalize(var aGarbos: TGarbos);
+begin
+  aGarbos.Clear;
+end;
+
+end.
 
