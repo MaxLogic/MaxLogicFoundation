@@ -392,7 +392,7 @@ function download(const aurl: string; postParams: TStringList; out response: Tby
 var
   ms: TMemoryStream;
 begin
-  gc2(ms, TMemoryStream.Create);
+  gc(ms, TMemoryStream.Create);
 
   Result := downloadStream(aurl, postParams, ms,
     ProgressProc,

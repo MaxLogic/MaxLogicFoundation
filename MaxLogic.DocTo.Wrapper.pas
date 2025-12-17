@@ -124,7 +124,7 @@ class function TDocToWrapper.Convert(const InFile, OutFile: String): TConvertRes
 var
   c: TDocToWrapper;
 begin
-  gc2(c, TDocToWrapper.Create);
+  gc(c, TDocToWrapper.Create);
   Result := c.DoConvert(InFile, OutFile);
 end;
 
