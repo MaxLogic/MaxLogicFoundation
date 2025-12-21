@@ -1,0 +1,4 @@
+[submodule "lib/jedi"]
+	path = lib/jedi
+	url = https://github.com/project-jedi/jedi.git
+	branch = master

@@ -63,7 +63,7 @@ function BitToChar(Bit: TBit): Char;
 begin
   case Bit of
     0: result := '0';
-    1: result := '1';
+    else result := '1';
   end;
 end;
 
@@ -71,7 +71,7 @@ function BitToBool(Bit: TBit): Boolean;
 begin
   case Bit of
     0: result := False;
-    1: result := True;
+    else result := True;
   end;
 end;
 

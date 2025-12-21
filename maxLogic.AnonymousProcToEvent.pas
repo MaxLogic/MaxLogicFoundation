@@ -13,9 +13,11 @@ type
   TAnonymousProcToEventHandler = class(TComponent)
   private
     fProc: TProc;
+    fObjProc: TProc<TObject>;
     procedure event(sender: Tobject);
   public
-    class function new(aParent: TComponent; aProc: TProc): TNotifyEvent;
+    class function new(aParent: TComponent; aProc: TProc): TNotifyEvent; overload;
+    class function new(aParent: TComponent; aProc: TProc<TObject>): TNotifyEvent; overload;
   end;
 
 implementation
@@ -26,6 +28,8 @@ procedure TAnonymousProcToEventHandler.event(sender: Tobject);
 begin
   if assigned(fProc) then
     fProc();
+  if assigned(fObjProc) then
+    fObjProc(Sender);
 end;
 
 class function TAnonymousProcToEventHandler.new(aParent: TComponent; aProc: TProc): TNotifyEvent;
@@ -34,7 +38,16 @@ var
 begin
   p := TAnonymousProcToEventHandler.create(aParent);
   p.fProc := aProc;
-  result := p.event;
+  Result := p.event;
+end;
+
+class function TAnonymousProcToEventHandler.new(aParent: TComponent; aProc: TProc<TObject>): TNotifyEvent;
+var
+  p: TAnonymousProcToEventHandler;
+begin
+  p := TAnonymousProcToEventHandler.create(aParent);
+  p.fObjProc := aProc;
+  Result := p.event;
 end;
 
 end.

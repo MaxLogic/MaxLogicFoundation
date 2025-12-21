@@ -1,0 +1,112 @@
+package MaxLogicFoundationR;
+
+{$R *.res}
+{$IFDEF IMPLICITBUILDING This IFDEF should not be used by users}
+{$ALIGN 8}
+{$ASSERTIONS ON}
+{$BOOLEVAL OFF}
+{$DEBUGINFO OFF}
+{$EXTENDEDSYNTAX ON}
+{$IMPORTEDDATA ON}
+{$IOCHECKS ON}
+{$LOCALSYMBOLS OFF}
+{$LONGSTRINGS ON}
+{$OPENSTRINGS ON}
+{$OPTIMIZATION ON}
+{$OVERFLOWCHECKS OFF}
+{$RANGECHECKS OFF}
+{$REFERENCEINFO OFF}
+{$SAFEDIVIDE OFF}
+{$STACKFRAMES OFF}
+{$TYPEDADDRESS OFF}
+{$VARSTRINGCHECKS ON}
+{$WRITEABLECONST OFF}
+{$MINENUMSIZE 1}
+{$IMAGEBASE $400000}
+{$DEFINE RELEASE}
+{$DEFINE NeverUninstall}
+{$DEFINE NeverSleepOnMMThreadContention}
+{$DEFINE UseSwitchToThread}
+{$DEFINE UseReleaseStack}
+{$DEFINE ZUGFeRD_Support}
+{$ENDIF IMPLICITBUILDING}
+{$DESCRIPTION 'MaxLogic Foundation Runtime Library'}
+{$LIBSUFFIX AUTO}
+{$RUNONLY}
+{$IMPLICITBUILD ON}
+
+requires
+  rtl,
+  vcl,
+  dbrtl,
+  bindengine,
+  vclie,
+  vcledge,
+  CustomIPTransport,
+  IndyIPCommon,
+  IndySystem,
+  IndyProtocols,
+  IndyCore,
+  IndyIPClient,
+  RESTComponents,
+  bindcomp,
+  VCLRESTComponents,
+  Jcl,
+  vclwinx,
+  vcldb;
+
+contains
+  AlignControlHelper in '..\AlignControlHelper.pas',
+  AppWideStopWatch in '..\AppWideStopWatch.pas',
+  AutoExpandingArray in '..\AutoExpandingArray.pas',
+  AutoFree in '..\AutoFree.pas',
+  AutoHourGlass in '..\AutoHourGlass.pas',
+  CancelToken in '..\CancelToken.pas',
+  FixedCriticalSection in '..\FixedCriticalSection.pas',
+  maxAsync in '..\maxAsync.pas',
+  maxBeep in '..\maxBeep.pas',
+  maxBurnMemory in '..\maxBurnMemory.pas',
+  maxBytes in '..\maxBytes.pas',
+  maxCallMeLater in '..\maxCallMeLater.pas',
+  maxCsv in '..\maxCsv.pas',
+  maxInMemoryFile in '..\maxInMemoryFile.pas',
+  maxInterOpCommunication in '..\maxInterOpCommunication.pas',
+  maxLogic.BitOperations in '..\maxLogic.BitOperations.pas',
+  MaxLogic.BufferedFile in '..\MaxLogic.BufferedFile.pas',
+  maxLogic.Cipher.SCOP in '..\maxLogic.Cipher.SCOP.pas',
+  maxLogic.CmdLineParams in '..\maxLogic.CmdLineParams.pas',
+  MaxLogic.CommaTextPayload in '..\MaxLogic.CommaTextPayload.pas',
+  MaxLogic.DateUtils in '..\MaxLogic.DateUtils.pas',
+  MaxLogic.debug.ControlInspector in '..\MaxLogic.debug.ControlInspector.pas',
+  MaxLogic.Debug in '..\MaxLogic.Debug.pas',
+  maxlogic.DotEnv in '..\maxlogic.DotEnv.pas',
+  MaxLogic.hash.FNV1a in '..\MaxLogic.hash.FNV1a.pas',
+  MaxLogic.hash.Murmur in '..\MaxLogic.hash.Murmur.pas',
+  MaxLogic.hash.xxHash in '..\MaxLogic.hash.xxHash.pas',
+  MaxLogic.HtmlUtils in '..\MaxLogic.HtmlUtils.pas',
+  maxLogic.IfThenEx in '..\maxLogic.IfThenEx.pas',
+  maxLogic.IndyHttpHelper in '..\maxLogic.IndyHttpHelper.pas',
+  MaxLogic.ioUtils in '..\MaxLogic.ioUtils.pas',
+  MaxLogic.JSON in '..\MaxLogic.JSON.pas',
+  maxLogic.Latin1Types in '..\maxLogic.Latin1Types.pas',
+  MaxLogic.MachineFingerprint in '..\MaxLogic.MachineFingerprint.pas',
+  maxLogic.MemoryBuffer in '..\maxLogic.MemoryBuffer.pas',
+  MaxLogic.OSInfo in '..\MaxLogic.OSInfo.pas',
+  MaxLogic.PortableTimer in '..\MaxLogic.PortableTimer.pas',
+  maxLogic.QuickPixel in '..\maxLogic.QuickPixel.pas',
+  MaxLogic.RestClientHelper in '..\MaxLogic.RestClientHelper.pas',
+  MaxLogic.RetryPolicy in '..\MaxLogic.RetryPolicy.pas',
+  MaxLogic.RichIniFile in '..\MaxLogic.RichIniFile.pas',
+  maxLogic.ringBuffer in '..\maxLogic.ringBuffer.pas',
+  maxLogic.RTTIHelper in '..\maxLogic.RTTIHelper.pas',
+  MaxLogic.SelfDeletingTemporaryFile in '..\MaxLogic.SelfDeletingTemporaryFile.pas',
+  MaxLogic.StrUtils in '..\MaxLogic.StrUtils.pas',
+  maxLogic.Utils in '..\maxLogic.Utils.pas',
+  MaxLogic.VCL.ControlDrawingDisabler in '..\MaxLogic.VCL.ControlDrawingDisabler.pas',
+  MaxLogic.VersionNumberParser in '..\MaxLogic.VersionNumberParser.pas',
+  MaxLogic.Windows in '..\MaxLogic.Windows.pas',
+  maxOutOfScopeAutomation in '..\maxOutOfScopeAutomation.pas',
+  maxSignal in '..\maxSignal.pas',
+  maxTextStream in '..\maxTextStream.pas';
+
+end.
