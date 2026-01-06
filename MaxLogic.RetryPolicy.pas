@@ -53,6 +53,9 @@ type
     procedure InvokeRetryProc(aProc: TProc<Cardinal, Cardinal>; aRetryNum, aDelay: Cardinal; aSync: TCallbackSync);
     function CalculateDelay(aRetryNum: Cardinal): Cardinal;
     procedure RunSync;
+    class procedure ClearOwnedException(var aEx: Exception; var aOwned: Boolean); static;
+    class procedure CaptureCurrentException(var aEx: Exception; var aOwned: Boolean); static;
+    class function CloneException(const aException: Exception): Exception; static;
   public
     constructor Create(aPolicy: TRetryPolicy; const aOptions: TRetryOptions; const aAction: TFunc<Boolean>);
     class procedure ExecuteSync(aPolicy: TRetryPolicy; const aOptions: TRetryOptions; const aAction: TFunc<Boolean>);
@@ -207,16 +210,95 @@ begin
   end;
 end;
 
-procedure TRetryRunner.InvokeFailureProc(aProc: TProc<Exception>; aException: Exception; aSync: TCallbackSync);
+class procedure TRetryRunner.ClearOwnedException(var aEx: Exception; var aOwned: Boolean);
 begin
-  if Assigned(aProc) then
+  if aOwned and Assigned(aEx) then
+    aEx.Free;
+
+  aEx := nil;
+  aOwned := False;
+end;
+
+class procedure TRetryRunner.CaptureCurrentException(var aEx: Exception; var aOwned: Boolean);
+var
+  lObj: TObject;
+begin
+  ClearOwnedException(aEx, aOwned);
+  lObj := AcquireExceptionObject;
+
+  if lObj is Exception then
   begin
-    // Wrap the call in a parameterless procedure to satisfy Synchronize/ForceQueue.
-    DoInvoke(procedure
-      begin
-        aProc(aException);
-      end, aSync);
+    aEx := Exception(lObj);
+    aOwned := True;
+  end
+  else if Assigned(lObj) then
+  begin
+    aEx := Exception.Create('Non-Exception raised: ' + lObj.ClassName);
+    aOwned := True;
+    lObj.Free;
+  end
+  else
+  begin
+    aEx := Exception.Create('Unknown exception object');
+    aOwned := True;
   end;
+end;
+
+class function TRetryRunner.CloneException(const aException: Exception): Exception;
+var
+  lClass: TClass;
+  lExceptionClass: ExceptionClass;
+begin
+  Result := nil;
+
+  if not Assigned(aException) then
+    Exit;
+
+  lClass := aException.ClassType;
+
+  if lClass.InheritsFrom(Exception) then
+    lExceptionClass := ExceptionClass(lClass)
+  else
+    lExceptionClass := Exception;
+
+  try
+    Result := lExceptionClass.Create(aException.Message);
+  except
+    Result := Exception.Create(aException.Message);
+  end;
+
+  if Assigned(Result) then
+    Result.HelpContext := aException.HelpContext;
+end;
+
+procedure TRetryRunner.InvokeFailureProc(aProc: TProc<Exception>; aException: Exception; aSync: TCallbackSync);
+var
+  lClone: Exception;
+begin
+  if not Assigned(aProc) then
+    Exit;
+
+  if aSync = csForceQueue then
+  begin
+    lClone := CloneException(aException);
+    TThread.ForceQueue(nil,
+      procedure
+      begin
+        try
+          aProc(lClone);
+        finally
+          lClone.Free;
+        end;
+      end);
+    Exit;
+  end;
+
+  DoInvoke(
+    procedure
+    begin
+      aProc(aException);
+    end,
+    aSync);
 end;
 
 procedure TRetryRunner.InvokeRetryProc(aProc: TProc<Cardinal, Cardinal>; aRetryNum, aDelay: Cardinal; aSync: TCallbackSync);
@@ -234,67 +316,82 @@ end;
 procedure TRetryRunner.RunSync;
 var
   lLastException: Exception;
+  lOwnsLastException: Boolean;
   lAttempt: Cardinal;
   lDelay: Cardinal;
+  lMaxRetry: Cardinal;
 begin
   lLastException := nil;
+  lOwnsLastException := False;
 
-  for lAttempt := 0 to Cardinal(fOptions.RetryCount) do
-  begin
-    if fPolicy.IsCancelled then
+  try
+    if fOptions.RetryCount < 0 then
+      lMaxRetry := 0
+    else
+      lMaxRetry := Cardinal(fOptions.RetryCount);
+
+    for lAttempt := 0 to lMaxRetry do
     begin
-      lLastException := ERetryCancelledException.Create('Retry policy was cancelled.');
-      Break;
-    end;
-
-    // On subsequent attempts (retries), handle the pre-retry logic
-    if lAttempt > 0 then
-    begin
-      lDelay := CalculateDelay(lAttempt);
-      InvokeRetryProc(fOptions.OnRetry, lAttempt, lDelay, fOptions.OnRetrySync);
-
-      if lDelay > 0 then
-        TThread.Sleep(lDelay); // Use TThread.Sleep for clarity.
-
-      // Check for cancellation again after sleeping
       if fPolicy.IsCancelled then
       begin
+        ClearOwnedException(lLastException, lOwnsLastException);
         lLastException := ERetryCancelledException.Create('Retry policy was cancelled.');
+        lOwnsLastException := True;
         Break;
       end;
-    end;
 
-    try
-      if fAction() then
+      if lAttempt > 0 then
       begin
-        if assigned(fOptions.OnSuccess) then
-          DoInvoke(fOptions.OnSuccess, fOptions.OnSuccessSync);
-        lLastException := nil; // Clear any previous exception on success.
-        Exit; // Success.
-      end
-      else
-      begin
-        // The action returned false, which is a failure condition.
-        // We create a generic exception if one wasn't already thrown.
-        if not Assigned(lLastException) then
-          lLastException := ERetryFailedException.Create('Action returned false.');
+        lDelay := CalculateDelay(lAttempt);
+        InvokeRetryProc(fOptions.OnRetry, lAttempt, lDelay, fOptions.OnRetrySync);
+
+        if lDelay > 0 then
+          TThread.Sleep(lDelay);
+
+        if fPolicy.IsCancelled then
+        begin
+          ClearOwnedException(lLastException, lOwnsLastException);
+          lLastException := ERetryCancelledException.Create('Retry policy was cancelled.');
+          lOwnsLastException := True;
+          Break;
+        end;
       end;
-    except
-      on E: Exception do
-        lLastException := E;
+
+      try
+        if fAction() then
+        begin
+          if Assigned(fOptions.OnSuccess) then
+            DoInvoke(fOptions.OnSuccess, fOptions.OnSuccessSync);
+
+          ClearOwnedException(lLastException, lOwnsLastException);
+          Exit;
+        end
+        else
+        begin
+          ClearOwnedException(lLastException, lOwnsLastException);
+          lLastException := ERetryFailedException.Create('Action returned false.');
+          lOwnsLastException := True;
+        end;
+      except
+        on E: Exception do
+          CaptureCurrentException(lLastException, lOwnsLastException);
+      end;
     end;
-  end;
 
-  // If we've exited the loop, all retries have failed or were cancelled.
-  InvokeFailureProc(fOptions.OnFailure, lLastException, fOptions.OnFailureSync);
+    InvokeFailureProc(fOptions.OnFailure, lLastException, fOptions.OnFailureSync);
 
-  if fOptions.RaiseOnFailure then
-  begin
-    if Assigned(lLastException) then
-      raise lLastException;
+    if fOptions.RaiseOnFailure then
+    begin
+      if Assigned(lLastException) then
+      begin
+        lOwnsLastException := False;
+        raise lLastException;
+      end;
 
-    // This case should only be hit if the action returns false and no exception is ever assigned.
-    raise ERetryFailedException.Create('Action failed to return success after all retries.');
+      raise ERetryFailedException.Create('Action failed to return success after all retries.');
+    end;
+  finally
+    ClearOwnedException(lLastException, lOwnsLastException);
   end;
 end;
 
