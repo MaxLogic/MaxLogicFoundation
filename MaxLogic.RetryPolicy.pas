@@ -244,6 +244,9 @@ begin
   end;
 end;
 
+type
+  ExceptionClass = class of Exception;
+
 class function TRetryRunner.CloneException(const aException: Exception): Exception;
 var
   lClass: TClass;
