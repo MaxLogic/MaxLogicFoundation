@@ -35,13 +35,12 @@ uses
   maxLogic.IOUtils, System.syncObjs, madStackTrace;
 
 var
-  fBuildInfo: string = '';
-  fBugReportMailRecipient: string = 'pawel@maxlogic.eu';
+  glBuildInfo: string = '';
+  glBugReportMailRecipient : String;
 
   glAddFieldToBugReportHeaderList: TStringList;
   glAddFieldToBugReportHeaderCS: TCriticalSection;
-
-var glLastBugReport: string;
+  glLastBugReport: string;
 
 function GetExceptionStackTrace(aException: Exception): string;
 begin
@@ -147,9 +146,9 @@ begin
 
   // smtp client
   mcfg.MailAsSmtpClient := True;
-  mcfg.SmtpServer := aServer; // 'mail.maxlogic.eu';
-  mcfg.SmtpPort := aPort; // 465;
-  mcfg.SmtpAccount := aUsername; // 'bugreport@maxlogic.eu';
+  mcfg.SmtpServer := aServer;
+  mcfg.SmtpPort := aPort;
+  mcfg.SmtpAccount := aUsername;
   mcfg.SmtpPassword := aPassword;
   mcfg.SmtpSsl := True;
   mcfg.SmtpTls := False;
@@ -159,10 +158,10 @@ procedure SetBugReportMailRecipient(const amailAddres: string);
 var
   mcfg: IMEModuleSettings;
 begin
-  fBugReportMailRecipient := amailAddres;
+  glBugReportMailRecipient := amailAddres;
 
   mcfg := MESettings;
-  mcfg.MailAddr := fBugReportMailRecipient;
+  mcfg.MailAddr := glBugReportMailRecipient;
 end;
 
 procedure AdjustMadExcept(const aLogdir: string);
@@ -203,10 +202,10 @@ begin
   mcfg.ShowPleaseWaitBox := True;
 
   // Send mail Options
-  fBuildInfo := Trim(ExtractFileName(maxLogic.IOUtils.GetCurrentDLLName) + ' ' +
+  glBuildInfo := Trim(ExtractFileName(maxLogic.IOUtils.GetCurrentDLLName) + ' ' +
     maxLogic.IOUtils.GetBuildInfo);
-  mcfg.MailSubject := 'Bugreport - ' + fBuildInfo;
-  mcfg.MailAddr := fBugReportMailRecipient;
+  mcfg.MailSubject := 'Bugreport - ' + glBuildInfo;
+  mcfg.MailAddr := glBugReportMailRecipient;
 
   { // upload to web server
     property IMESettings.UploadToFogBugz      : boolean;    // create FogBogz bug report
@@ -280,7 +279,7 @@ var
   mcfg: IMEModuleSettings;
 begin
   mcfg := MESettings;
-  mcfg.MailSubject := 'Bugreport - ' + fBuildInfo + ' - ' + ErrorMessage;
+  mcfg.MailSubject := 'Bugreport - ' + glBuildInfo + ' - ' + ErrorMessage;
 end;
 
 procedure AddFieldToBugReportHeader(const aName, aValue: string);
