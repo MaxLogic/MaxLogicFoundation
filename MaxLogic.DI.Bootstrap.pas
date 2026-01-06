@@ -47,7 +47,13 @@ The `TDependencyRegistry` pattern is most valuable and shines brightest in these
 
 Remark:
   if spring4D does not call your constructors , ensure your have the following declared:
-  {$RTTI EXPLICIT METHODS([vcPublic, vcPublished]) PROPERTIES([vcPublic, vcPublished])}
+  {$RTTI INHERIT
+    METHODS([vcPublic, vcPublished])
+    PROPERTIES([vcPublic, vcPublished])
+    FIELDS([vcPrivate, vcProtected, vcPublic, vcPublished])
+  }
+
+
 **)
 
 {$ENDREGION 'docu'}
@@ -673,7 +679,7 @@ end;
 procedure TContainerHelper.BuildUp(const AInstance: TObject; aOverwriteExisting: Boolean = false);
 var
   Ctx: TRttiContext;
-  lRttiType: TRttiType;
+  lCurType: TRttiType;
   lField: TRttiField;
   lProp: TRttiProperty;
 
@@ -747,43 +753,48 @@ begin
 
   Ctx := TRttiContext.Create;
   try
-    lRttiType := Ctx.GetType(AInstance.ClassType);
-
-    // Fields
-    for lField in lRttiType.GetFields do
+    lCurType := Ctx.GetType(AInstance.ClassType);
+    // scan this class and all its BaseTypes. This makes BuildUp robust even if some derived class has strict RTTI settings.
+    while Assigned(lCurType) do
     begin
-      if not TryGetInjectionType(lField.GetAttributes, lField.FieldType, TI) then
-        Continue;
 
-      try
-        InjectFieldIfNeeded(AInstance, lField, TI);
-      except
-        on E: Exception do
-          raise EContainerException.CreateFmt(
-            'BuildUp failed for %s.%s (%s): %s',
-            [AInstance.ClassName, lField.Name, lField.FieldType.Name, E.Message]
-          );
+      // Fields
+      for lField in lCurType.GetFields do
+      begin
+        if not TryGetInjectionType(lField.GetAttributes, lField.FieldType, TI) then
+          Continue;
+
+        try
+          InjectFieldIfNeeded(AInstance, lField, TI);
+        except
+          on E: Exception do
+            raise EContainerException.CreateFmt(
+              'BuildUp failed for %s.%s (%s): %s',
+              [AInstance.ClassName, lField.Name, lField.FieldType.Name, E.Message]
+            );
+        end;
       end;
-    end;
 
-    // Properties
-    for lProp in lRttiType.GetProperties do
-    begin
-      if (not lProp.IsWritable) then
-        Continue;
+      // Properties
+      for lProp in lCurType.GetProperties do
+      begin
+        if (not lProp.IsWritable) then
+          Continue;
 
-      if not TryGetInjectionType(lProp.GetAttributes, lProp.PropertyType, TI) then
-        Continue;
+        if not TryGetInjectionType(lProp.GetAttributes, lProp.PropertyType, TI) then
+          Continue;
 
-      try
-        InjectPropIfNeeded(AInstance, lProp, TI);
-      except
-        on E: Exception do
-          raise EContainerException.CreateFmt(
-            'BuildUp failed for %s.%s (%s): %s',
-            [AInstance.ClassName, lProp.Name, lProp.PropertyType.Name, E.Message]
-          );
+        try
+          InjectPropIfNeeded(AInstance, lProp, TI);
+        except
+          on E: Exception do
+            raise EContainerException.CreateFmt(
+              'BuildUp failed for %s.%s (%s): %s',
+              [AInstance.ClassName, lProp.Name, lProp.PropertyType.Name, E.Message]
+            );
+        end;
       end;
+      lCurType := lCurType.BaseType;
     end;
 
   finally
