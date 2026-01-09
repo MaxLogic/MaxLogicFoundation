@@ -249,6 +249,7 @@ var
   s: string;
   lLeft, lRight: string;
   lPotentialValue: string;
+  lTreatAsValue: Boolean;
 begin
   Result := find(aSwitch, aIgnoreCase, i);
   aValue := '';
@@ -272,6 +273,10 @@ begin
     // Check if the next parameter looks like another switch
     if IsSwitch(lPotentialValue) then
     begin
+      lTreatAsValue := (Length(lPotentialValue) > 1) and (lPotentialValue[1] = '-') and
+        (lPotentialValue[2] in ['0'..'9']);
+      if lTreatAsValue then
+        aValue := lPotentialValue;
       // Next item looks like a switch, so current switch has no value.
     end else begin
       // Treat the next parameter as the value
