@@ -35,6 +35,7 @@ type
 
     [Test] procedure Utf8Truncate_BasicBoundaries;
     [Test] procedure Utf8Truncate_NoTruncation_ReturnsFull;
+    [Test] procedure Utf8Truncate_ExactByteBudget_UsesFullCodePoint;
 
     [Test] procedure StrToFloatWCC_Formats;
     [Test] procedure StrToFloatWCC_LettersRaise_And_TryFalse_And_Default;
@@ -650,6 +651,17 @@ begin
   lOutBytes := Utf8TruncateByCodePoint(lS, Length(lBytes));
   lOut := TEncoding.UTF8.GetString(lOutBytes);
   Assert.AreEqual(lS, lOut);
+end;
+
+procedure TMaxLogicStrUtilsTests.Utf8Truncate_ExactByteBudget_UsesFullCodePoint;
+var
+  b: TBytes;
+begin
+  b := Utf8TruncateByCodePoint('€A', 3);
+  Assert.AreEqual(3, Length(b));
+  Assert.AreEqual(Byte($E2), b[0]);
+  Assert.AreEqual(Byte($82), b[1]);
+  Assert.AreEqual(Byte($AC), b[2]);
 end;
 
 { StrToFloatWCC tests }

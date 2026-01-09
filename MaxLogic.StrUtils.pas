@@ -961,11 +961,31 @@ begin
   Result := string.Join(aSeparator, lValues);
 end;
 
+function Utf8SequenceLength(const aLead: Byte): Integer; inline;
+begin
+  if (aLead and $80) = 0 then
+    Exit(1);
+  if (aLead and $E0) = $C0 then
+    Exit(2);
+  if (aLead and $F0) = $E0 then
+    Exit(3);
+  if (aLead and $F8) = $F0 then
+    Exit(4);
+  Result := 1;
+end;
+
+function IsUtf8ContinuationByte(const aByte: Byte): Boolean; inline;
+begin
+  Result := (aByte and $C0) = $80;
+end;
+
 function Utf8TruncateByCodePoint(const AInput: string; aMaxBytesLength: integer): TBytes;
 var
   src: TBytes;
-  i, nextLen, Total: integer;
-  b: BYTE;
+  lIndex: Integer;
+  lSeqLen: Integer;
+  lTotal: Integer;
+  lCheck: Integer;
 begin
   if aMaxBytesLength <= 0 then
     exit(nil);
@@ -974,32 +994,37 @@ begin
   if length(src) <= aMaxBytesLength then
     exit(src);
 
-  i := 0;
-  Total := 0;
-  while i < length(src) do
+  lIndex := 0;
+  lTotal := 0;
+  while lIndex < length(src) do
   begin
-    b := src[i];
-    if b < $80 then
-      nextLen := 1
-    else if (b and $E0) = $C0 then
-      nextLen := 2
-    else if (b and $F0) = $E0 then
-      nextLen := 3
-    else if (b and $F8) = $F0 then
-      nextLen := 4
-    else
-      break;
+    lSeqLen := Utf8SequenceLength(src[lIndex]);
+    if (lIndex + lSeqLen) > length(src) then
+      Break;
+    if (lTotal + lSeqLen) > aMaxBytesLength then
+      Break;
 
-    if Total + nextLen > aMaxBytesLength then
-      break;
+    if lSeqLen > 1 then
+    begin
+      for lCheck := 1 to lSeqLen - 1 do
+      begin
+        if not IsUtf8ContinuationByte(src[lIndex + lCheck]) then
+        begin
+          lSeqLen := 1;
+          Break;
+        end;
+      end;
+      if (lTotal + lSeqLen) > aMaxBytesLength then
+        Break;
+    end;
 
-    Inc(Total, nextLen);
-    Inc(i, nextLen);
+    Inc(lTotal, lSeqLen);
+    Inc(lIndex, lSeqLen);
   end;
 
-  SetLength(Result, Total);
-  if Total > 0 then
-    move(src[0], Result[0], Total);
+  SetLength(Result, lTotal);
+  if lTotal > 0 then
+    Move(src[0], Result[0], lTotal);
 end;
 
 function CharPosEx(
