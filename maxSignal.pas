@@ -64,7 +64,7 @@ Procedure MsgWaitForSingleObject(Handle: THandle; TimeOut: Cardinal = infinite);
 implementation
 
 uses
-  diagnostics;
+  System.Diagnostics;
 
 Function InsideMainThread: boolean;
 Begin
