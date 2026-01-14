@@ -202,6 +202,8 @@ type
   TContainerHelper = class helper for TContainer
     // lField/property injection for legacy objects that are not created by the container.
     procedure BuildUp(const AInstance: TObject; aOverwriteExisting: Boolean = false);
+    function HasService<T>: Boolean; overload;
+    function HasService(aTypeInfo: PTypeInfo): Boolean; overload;
   end;
 
 implementation
@@ -675,6 +677,19 @@ begin
 end;
 
 { TContainerHelper }
+
+function TContainerHelper.HasService<T>: Boolean;
+begin
+  Result:= HasService(TypeInfo(T));
+end;
+
+function TContainerHelper.HasService(aTypeInfo: PTypeInfo): Boolean;
+var
+  lServiceLocator: IServiceLocator;
+begin
+  lServiceLocator := TServiceLocatorAdapter.Create(self);
+  Result:= lServiceLocator.HasService(aTypeInfo);
+end;
 
 procedure TContainerHelper.BuildUp(const AInstance: TObject; aOverwriteExisting: Boolean = false);
 var
