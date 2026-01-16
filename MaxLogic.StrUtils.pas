@@ -1,4 +1,4 @@
-unit maxLogic.StrUtils;
+﻿unit maxLogic.StrUtils;
 
 {$IFDEF MSWINDOWS}
 {$WARN SYMBOL_PLATFORM OFF}
@@ -270,7 +270,9 @@ function SplitInHalfBy(const aText: string; aDelim: char; out alLeft, alRight: s
 
 function fStr(const d: double; vs: integer = 2; ns: integer = 2): string;
 function GuidToHex(const aGuid: TGuid): string;
-function Join(const aSeparator: string; const aValues: TArray<integer>): string;
+function Join(const aSeparator: string; const aValues: TArray<integer>): string; overload;
+function Join(const aSeparator: string; aValues: TStringList): string; overload;
+
 
 // this method ensures the num of bytes does not exceed aMaxByteLength
 // it supports unicode surrogate pairs
@@ -949,6 +951,11 @@ function GuidToHex(const aGuid: TGuid): string;
 begin
   SetLength(Result, SizeOf(TGuid) * 2);
   BinToHex(@aGuid, PChar(Result), SizeOf(TGuid));
+end;
+
+function Join(const aSeparator: string; aValues: TStringList): string; overload;
+begin
+  Result:= String.Join(aSeparator, aValues.ToStringArray);
 end;
 
 function Join(const aSeparator: string; const aValues: TArray<integer>): string;
