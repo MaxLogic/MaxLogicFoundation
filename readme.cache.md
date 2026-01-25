@@ -31,7 +31,7 @@ This framework provides a reusable, in-process cache for Delphi apps/services wh
 - **Dependency**: an object that can detect staleness (pull model). On access, the cache may ask the dependency if the entry is stale. (`maxlogic.cache.pas :: IMaxCacheDependency`, `maxlogic.cache.pas :: TMaxCache.ValidateDependency`)
 - **Invalidation**: marking an entry obsolete and (sometimes) removing it from the bucket dictionary so the next access reloads. (`maxlogic.cache.pas :: TMaxCache.InvalidateInternal`)
 - **Tag**: a label attached to an entry at publish time, used for “invalidate everything in a group”. (`maxlogic.cache.pas :: TMaxCache.RegisterTags`)
-- **Scoped tag**: internal normalization used by the cache to avoid cross-namespace tag collisions: `Namespace + '|' + Tag` unless the tag starts with `global:` or already contains `|`. (`maxlogic.cache.pas :: TMaxCache.ScopedTag`)
+- **Scoped tag**: internal normalization used by the cache to avoid cross-namespace tag collisions: `Namespace + '|' + Tag` unless the tag starts with `global:`. Tags containing `|` are rejected to prevent cross-namespace injection. (`maxlogic.cache.pas :: TMaxCache.ScopedTag`)
 - **Single-flight loading**: at most one thread runs the loader for a given `(Namespace, Key)`; other threads wait on that entry’s `EntrySync`. (`maxlogic.cache.pas :: TMaxCache.TryBeginLoad`, `maxlogic.cache.pas :: TMaxCache.WaitForEntry`)
 
 ## Public API Reference
@@ -181,11 +181,11 @@ Public cache interface used by application code. (`maxlogic.cache.pas :: IMaxCac
   - “Read-only probe”: returns `True` only if the entry exists and is `Ready` and **not expired**.
   - Does **not** validate dependencies and does **not** update `LastAccessMs` / idle expiration. (`maxlogic.cache.pas :: TMaxCache.TryGet`)
 - `procedure Invalidate(const aNamespace, aKey: string);`
-  - Removes entry from its bucket, marks it `Obsolete`, clears `Value` to `nil`, wakes any waiters, and unregisters tags. (`maxlogic.cache.pas :: TMaxCache.InvalidateInternal`)
+  - Marks the entry `Obsolete`, sets `WasInvalidated := 1`, clears `Value := nil`, wakes waiters, then removes the entry if it is still the same instance and unregisters tags. (`maxlogic.cache.pas :: TMaxCache.InvalidateInternal`)
 - `procedure InvalidateMany(const aNamespace: string; const aKeys: array of string);`
   - Convenience to invalidate multiple keys. (`maxlogic.cache.pas :: TMaxCache.InvalidateMany`)
 - `procedure InvalidateNamespace(const aNamespace: string);`
-  - Clears the namespace bucket, marks entries `Obsolete`, clears values to `nil`, wakes waiters, unregisters tags. (`maxlogic.cache.pas :: TMaxCache.InvalidateNamespaceInternal`)
+  - Snapshots entries, marks each `Obsolete`, clears values to `nil`, wakes waiters, removes entries if they are still the same instance, and unregisters tags. (`maxlogic.cache.pas :: TMaxCache.InvalidateNamespaceInternal`)
 - `procedure InvalidateByTag(const aScopedTag: string);`
   - Invalidates all keys registered under a tag.
   - Requires `aScopedTag` to be either:
@@ -206,10 +206,10 @@ Concrete implementation of `IMaxCache`. (`maxlogic.cache.pas :: TMaxCache`)
   - `class function New(const aConfig: TMaxCacheConfig): IMaxCache; overload; static;`
   - `class function New: IMaxCache; overload; static;` (uses `TMaxCacheConfig.Default`)
 - Tag helper:
-  - `class function ScopedTag(const aNamespace, aTag: string): string; static;`
-    - If `aTag` starts with `global:` (case-insensitive) → returns it unchanged.
-    - If `aTag` already contains `|` → returns it unchanged.
-    - Else returns `aNamespace + '|' + aTag`. (`maxlogic.cache.pas :: TMaxCache.ScopedTag`)
+- `class function ScopedTag(const aNamespace, aTag: string): string; static;`
+  - If `aTag` starts with `global:` (case-insensitive) → returns it unchanged.
+  - If `aTag` contains `|` → raises `EMaxCacheException` (invalid untrusted scope).
+  - Else returns `aNamespace + '|' + aTag`. (`maxlogic.cache.pas :: TMaxCache.ScopedTag`)
 
 ### `TMaxCacheRepositoryBase`
 
@@ -384,15 +384,13 @@ Cache.InvalidateByTag('global:templates');
 ### Invalidation mechanics
 
 - `Invalidate(Namespace, Key)`:
-  - Removes the entry from the namespace dictionary first, then:
-    - marks it `Obsolete`,
-    - sets `WasInvalidated := 1`,
-    - clears `Value := nil`,
-    - pulses waiters,
-    - unregisters its tags. (`maxlogic.cache.pas :: TMaxCache.InvalidateInternal`)
+  - Marks the entry `Obsolete` under the entry monitor, sets `WasInvalidated := 1`, clears `Value := nil`, and pulses waiters.
+  - Then removes the entry from the bucket **only if it is still the same instance** and unregisters its tags. (`maxlogic.cache.pas :: TMaxCache.InvalidateInternal`)
 - `InvalidateNamespace(Namespace)`:
-  - Copies entries out, clears bucket, then for each entry:
-    - marks `Obsolete`, clears value, pulses waiters, unregisters tags.
+  - Snapshots the current entries, then for each entry:
+    - marks `Obsolete`, clears value, pulses waiters,
+    - removes the entry **only if it is still the same instance**,
+    - unregisters tags. (`maxlogic.cache.pas :: TMaxCache.InvalidateNamespaceInternal`)
   - Direct invalidation metric increments once per namespace call. (`maxlogic.cache.pas :: TMaxCache.InvalidateNamespaceInternal`)
 - `InvalidateByTag(ScopedTag)`:
   - Copies tag references under tag-index read lock and then invalidates keys one-by-one (no tag lock held during invalidation). (`maxlogic.cache.pas :: TMaxCache.GetTagRefsCopy`, `maxlogic.cache.pas :: TMaxCache.InvalidateByTag`)
@@ -422,6 +420,7 @@ Cache.InvalidateByTag('global:templates');
 - Single-flight coordination uses `TMonitor` on a per-entry `EntrySync` object. (`maxlogic.cache.pas :: TMaxCache.WaitForEntry`)
 - Dependency validation stampede protection uses `TInterlocked.CompareExchange` on `IsValidating`. (`maxlogic.cache.pas :: TMaxCache.ValidateDependency`)
 - The loader itself is executed outside bucket locks. (`maxlogic.cache.pas :: TMaxCache.GetOrCreate`)
+- On Win32, we use atomic reads/writes for entry `Int64` timestamps and sizes to avoid torn reads. (`maxlogic.cache.pas :: TMaxCache.ReadInt64`, `maxlogic.cache.pas :: TMaxCache.WriteInt64`)
 
 ### Lifecycle assumptions
 
@@ -439,10 +438,13 @@ Cache.InvalidateByTag('global:templates');
   - Failures are negative-cached until `RetryAtMs`, computed as `NowMs + max(FailCacheMs, MinFailCacheMs)`. (`maxlogic.cache.pas :: TMaxCache.GetOrCreate`)
 - Wait timeout:
   - Waiters may raise `EMaxCacheWaitTimeout` if the entry remains `Loading` after `DefaultWaitTimeoutMs` (or 30s fallback if configured <= 0). (`maxlogic.cache.pas :: TMaxCache.WaitForEntry`)
+  - On timeout, we mark the entry `Failed`, set `RetryAtMs := NowMs + max(FailCacheMs, MinFailCacheMs)`, pulse waiters, and raise. (`maxlogic.cache.pas :: TMaxCache.WaitForEntry`)
 - Shutdown:
   - `GetOrCreate` / `TryGet` raise `EMaxCacheShutdown` after shutdown. (`maxlogic.cache.pas :: TMaxCache.EnsureNotShuttingDown`)
 - InvalidateByTag misuse:
   - `InvalidateByTag` raises `EMaxCacheException` if tag is not scoped (`Namespace|Tag`) or `global:`. (`maxlogic.cache.pas :: TMaxCache.InvalidateByTag`)
+- ScopedTag misuse:
+  - `ScopedTag` raises `EMaxCacheException` if `aTag` contains `|` and is not `global:`. (`maxlogic.cache.pas :: TMaxCache.ScopedTag`)
 
 ### Diagnostics and observability
 

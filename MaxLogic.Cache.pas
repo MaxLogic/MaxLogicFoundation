@@ -194,7 +194,9 @@ type
       cScopedTagSep = '|';
       cGlobalTagPrefix = 'global:';
       cMinSweepIntervalMs = 1;
-      cHistogramBucketCount = 8;
+      cLoadTimeBoundsCount = 7;
+      cHistogramBucketCount = cLoadTimeBoundsCount + 1;
+      cLoadTimeBounds: array[0..cLoadTimeBoundsCount - 1] of Integer = (1, 5, 10, 50, 100, 500, 1000);
   private
     fConfig: TMaxCacheConfig;
     fComparer: IEqualityComparer<string>;
@@ -224,11 +226,15 @@ type
   private
     class function NowMs: Int64; static;
     class function ClampNonNegative(const aValue: Integer): Integer; static;
+    class function ReadInt64(var aValue: Int64): Int64; static; inline;
+    class procedure WriteInt64(var aTarget: Int64; const aValue: Int64); static; inline;
 
     function GetOrCreateBucket(const aNamespace: string): TMaxNamespaceBucket;
     function TryGetBucket(const aNamespace: string): TMaxNamespaceBucket;
 
     function TryGetEntry(const aBucket: TMaxNamespaceBucket; const aKey: string): TMaxCacheEntry;
+    procedure MarkEntryInvalidated(const aEntry: TMaxCacheEntry; const aClearValue: Boolean; out aTags: TArray<string>);
+    function RemoveEntryIfSame(const aBucket: TMaxNamespaceBucket; const aKey: string; const aEntry: TMaxCacheEntry): Boolean;
     function TryBeginLoad(
       const aKey: string;
       const aBucket: TMaxNamespaceBucket;
@@ -258,7 +264,30 @@ type
     procedure InvalidateNamespaceInternal(const aNamespace: string; const aCountDirectMetric: Boolean);
   end;
 
+{$IFDEF UNITTESTS}
+type
+  TMaxCacheTagRegisterHook = reference to procedure(const aNamespace, aKey: string; const aTags: TArray<string>);
+
+procedure MaxCache_SetTagRegisterHook(const aHook: TMaxCacheTagRegisterHook);
+procedure MaxCache_ClearTagRegisterHook;
+{$ENDIF}
+
 implementation
+
+{$IFDEF UNITTESTS}
+var
+  gTagRegisterHook: TMaxCacheTagRegisterHook;
+
+procedure MaxCache_SetTagRegisterHook(const aHook: TMaxCacheTagRegisterHook);
+begin
+  gTagRegisterHook := aHook;
+end;
+
+procedure MaxCache_ClearTagRegisterHook;
+begin
+  gTagRegisterHook := nil;
+end;
+{$ENDIF}
 
 { TMaxDependencyStamp }
 
@@ -480,7 +509,7 @@ begin
   if aTag.StartsWith(cGlobalTagPrefix, True) then
     Exit(aTag);
   if aTag.IndexOf(cScopedTagSep) >= 0 then
-    Exit(aTag);
+    raise EMaxCacheException.Create('Tag must be unscoped (no "|") unless it starts with global:');
   Result := aNamespace + cScopedTagSep + aTag;
 end;
 
@@ -580,6 +609,24 @@ begin
   Result := aValue;
 end;
 
+class function TMaxCache.ReadInt64(var aValue: Int64): Int64;
+begin
+{$IFDEF CPUX86}
+  Result := TInterlocked.CompareExchange(aValue, 0, 0);
+{$ELSE}
+  Result := aValue;
+{$ENDIF}
+end;
+
+class procedure TMaxCache.WriteInt64(var aTarget: Int64; const aValue: Int64);
+begin
+{$IFDEF CPUX86}
+  TInterlocked.Exchange(aTarget, aValue);
+{$ELSE}
+  aTarget := aValue;
+{$ENDIF}
+end;
+
 procedure TMaxCache.EnsureNotShuttingDown;
 begin
   if TInterlocked.CompareExchange(fIsShuttingDown, 0, 0) <> 0 then
@@ -629,15 +676,53 @@ begin
   end;
 end;
 
+procedure TMaxCache.MarkEntryInvalidated(const aEntry: TMaxCacheEntry; const aClearValue: Boolean; out aTags: TArray<string>);
+begin
+  aTags := [];
+  TMonitor.Enter(aEntry.EntrySync);
+  try
+    aTags := aEntry.Tags;
+    aEntry.WasInvalidated := 1;
+    aEntry.State := TMaxCacheEntryState.Obsolete;
+    if aClearValue then
+      aEntry.Value := nil;
+    TMonitor.PulseAll(aEntry.EntrySync);
+  finally
+    TMonitor.Exit(aEntry.EntrySync);
+  end;
+end;
+
+function TMaxCache.RemoveEntryIfSame(const aBucket: TMaxNamespaceBucket; const aKey: string; const aEntry: TMaxCacheEntry): Boolean;
+var
+  lCurrent: TMaxCacheEntry;
+begin
+  Result := False;
+  aBucket.Lock.BeginWrite;
+  try
+    if aBucket.Items.TryGetValue(aKey, lCurrent) and (lCurrent = aEntry) then
+    begin
+      aBucket.Items.Remove(aKey);
+      Result := True;
+    end;
+  finally
+    aBucket.Lock.EndWrite;
+  end;
+end;
+
 function TMaxCache.IsExpired(const aEntry: TMaxCacheEntry; const aNowMs: Int64; out aEvictKind: Integer): Boolean;
+var
+  lExpiresAt: Int64;
+  lIdleExpiresAt: Int64;
 begin
   aEvictKind := 0;
-  if (aEntry.ExpiresAtMs > 0) and (aNowMs >= aEntry.ExpiresAtMs) then
+  lExpiresAt := ReadInt64(aEntry.ExpiresAtMs);
+  if (lExpiresAt > 0) and (aNowMs >= lExpiresAt) then
   begin
     aEvictKind := 1;
     Exit(True);
   end;
-  if (aEntry.IdleExpiresAtMs > 0) and (aNowMs >= aEntry.IdleExpiresAtMs) then
+  lIdleExpiresAt := ReadInt64(aEntry.IdleExpiresAtMs);
+  if (lIdleExpiresAt > 0) and (aNowMs >= lIdleExpiresAt) then
   begin
     aEvictKind := 2;
     Exit(True);
@@ -647,9 +732,9 @@ end;
 
 procedure TMaxCache.TouchEntry(const aEntry: TMaxCacheEntry; const aNowMs: Int64);
 begin
-  aEntry.LastAccessMs := aNowMs;
+  WriteInt64(aEntry.LastAccessMs, aNowMs);
   if aEntry.IdleMs > 0 then
-    aEntry.IdleExpiresAtMs := aNowMs + aEntry.IdleMs;
+    WriteInt64(aEntry.IdleExpiresAtMs, aNowMs + aEntry.IdleMs);
 end;
 
 function TMaxCache.ValidateDependency(const aEntry: TMaxCacheEntry; const aNowMs: Int64): Boolean;
@@ -665,7 +750,7 @@ begin
   if aEntry.ValidateIntervalMs = 0 then
     lShouldValidate := True
   else
-    lShouldValidate := (aNowMs >= aEntry.NextValidateMs);
+    lShouldValidate := (aNowMs >= ReadInt64(aEntry.NextValidateMs));
 
   if not lShouldValidate then
     Exit(True);
@@ -681,7 +766,7 @@ begin
       if aEntry.ValidateIntervalMs = 0 then
         lShouldValidate := True
       else
-        lShouldValidate := (aNowMs >= aEntry.NextValidateMs);
+        lShouldValidate := (aNowMs >= ReadInt64(aEntry.NextValidateMs));
     finally
       TMonitor.Exit(aEntry.EntrySync);
     end;
@@ -702,7 +787,7 @@ begin
         lNext := aNowMs
       else
         lNext := aNowMs + aEntry.ValidateIntervalMs;
-      aEntry.NextValidateMs := lNext;
+      WriteInt64(aEntry.NextValidateMs, lNext);
       if lIsStale and (aEntry.State = TMaxCacheEntryState.Ready) then
         aEntry.State := TMaxCacheEntryState.Obsolete;
     finally
@@ -717,10 +802,15 @@ end;
 procedure TMaxCache.WaitForEntry(const aEntry: TMaxCacheEntry);
 var
   lTimeout: Integer;
+  lRetryAt: Int64;
+  lFailCacheMs: Integer;
 begin
   lTimeout := fConfig.DefaultWaitTimeoutMs;
   if lTimeout <= 0 then
     lTimeout := 30000;
+
+  lRetryAt := 0;
+  lFailCacheMs := 0;
 
   TMonitor.Enter(aEntry.EntrySync);
   try
@@ -730,7 +820,21 @@ begin
     if not TMonitor.Wait(aEntry.EntrySync, lTimeout) then
     begin
       if aEntry.State = TMaxCacheEntryState.Loading then
+      begin
+        aEntry.State := TMaxCacheEntryState.Failed;
+        aEntry.LastErrorMsg := 'Timed out waiting for cache entry load';
+        aEntry.LastErrorClassName := EMaxCacheWaitTimeout.ClassName;
+
+        lFailCacheMs := aEntry.FailCacheMs;
+        if lFailCacheMs < fConfig.MinFailCacheMs then
+          lFailCacheMs := fConfig.MinFailCacheMs;
+        aEntry.FailCacheMs := lFailCacheMs;
+        lRetryAt := NowMs + lFailCacheMs;
+        WriteInt64(aEntry.RetryAtMs, lRetryAt);
+
+        TMonitor.PulseAll(aEntry.EntrySync);
         raise EMaxCacheWaitTimeout.Create('Timed out waiting for cache entry load');
+      end;
     end;
   finally
     TMonitor.Exit(aEntry.EntrySync);
@@ -755,8 +859,8 @@ begin
     begin
       lEntry := TMaxCacheEntry.Create;
       lEntry.State := TMaxCacheEntryState.Loading;
-      lEntry.CreatedAtMs := aNowMs;
-      lEntry.LastAccessMs := aNowMs;
+      WriteInt64(lEntry.CreatedAtMs, aNowMs);
+      WriteInt64(lEntry.LastAccessMs, aNowMs);
       aBucket.Items.Add(aKey, lEntry);
       lEntry.AddRef;
       aEntry := lEntry;
@@ -771,7 +875,7 @@ begin
 
     if lEntry.State = TMaxCacheEntryState.Failed then
     begin
-      if aNowMs < lEntry.RetryAtMs then
+      if aNowMs < ReadInt64(lEntry.RetryAtMs) then
         Exit(False);
     end;
 
@@ -880,8 +984,6 @@ begin
 end;
 
 procedure TMaxCache.RecordLoadTimeMs(const aElapsedMs: Integer);
-const
-  cBounds: array[0..6] of Integer = (1, 5, 10, 50, 100, 500, 1000);
 var
   lIdx: Integer;
   lMs: Integer;
@@ -891,7 +993,7 @@ begin
     lMs := 0;
 
   lIdx := 0;
-  while (lIdx < Length(cBounds)) and (lMs >= cBounds[lIdx]) do
+  while (lIdx < Length(cLoadTimeBounds)) and (lMs >= cLoadTimeBounds[lIdx]) do
     Inc(lIdx);
 
   TInterlocked.Increment(fLoadTimeHistogram[lIdx]);
@@ -899,13 +1001,12 @@ begin
 end;
 
 class function TMaxCache.EstimateP95Ms(const aHistogram: array of Int64): Double;
-const
-  cBounds: array[0..cHistogramBucketCount - 1] of Integer = (1, 5, 10, 50, 100, 500, 1000, 1000);
 var
   lTotal: Int64;
   lTarget: Int64;
   lCum: Int64;
   i: Integer;
+  lBoundIdx: Integer;
 begin
   lTotal := 0;
   for i := Low(aHistogram) to High(aHistogram) do
@@ -920,10 +1021,15 @@ begin
   begin
     Inc(lCum, aHistogram[i]);
     if lCum >= lTarget then
-      Exit(cBounds[i]);
+    begin
+      lBoundIdx := i;
+      if lBoundIdx > High(cLoadTimeBounds) then
+        lBoundIdx := High(cLoadTimeBounds);
+      Exit(cLoadTimeBounds[lBoundIdx]);
+    end;
   end;
 
-  Result := cBounds[High(cBounds)];
+  Result := cLoadTimeBounds[High(cLoadTimeBounds)];
 end;
 
 function TMaxCache.GetOrCreate(const aNamespace, aKey: string; const aLoader: TFunc<IInterface>; const aOptions: TMaxCacheOptions): IInterface;
@@ -990,7 +1096,7 @@ begin
 
           TMaxCacheEntryState.Failed:
           begin
-            if lNow < lEntry.RetryAtMs then
+            if lNow < ReadInt64(lEntry.RetryAtMs) then
             begin
               if lEntry.ReturnStaleOnFailure and (lEntry.Value <> nil) then
               begin
@@ -1077,7 +1183,7 @@ begin
         lIdleMs := lEntry.IdleMs;
         lValidateIntervalMs := lEntry.ValidateIntervalMs;
         lFailCacheMs := lEntry.FailCacheMs;
-        lSizeEstimateBytes := Integer(lEntry.SizeEstimateBytes);
+        lSizeEstimateBytes := Integer(ReadInt64(lEntry.SizeEstimateBytes));
         lNewTags := lEntry.Tags;
         lDependency := lEntry.Dependency;
         lReturnStaleOnFailure := lEntry.ReturnStaleOnFailure;
@@ -1109,7 +1215,7 @@ begin
           TMonitor.Enter(lEntry.EntrySync);
           try
             lEntry.State := TMaxCacheEntryState.Failed;
-            lEntry.RetryAtMs := lRetryAt;
+            WriteInt64(lEntry.RetryAtMs, lRetryAt);
             lEntry.LastErrorMsg := E.Message;
             lEntry.LastErrorClassName := E.ClassName;
             lEntry.FailCacheMs := lFailCacheMs;
@@ -1170,8 +1276,8 @@ begin
 
           lEntry.Value := lLoadedIntf;
           lEntry.State := TMaxCacheEntryState.Ready;
-          lEntry.CreatedAtMs := lNow;
-          lEntry.LastAccessMs := lNow;
+          WriteInt64(lEntry.CreatedAtMs, lNow);
+          WriteInt64(lEntry.LastAccessMs, lNow);
 
           lEntry.TtlMs := lTtlMs;
           lEntry.IdleMs := lIdleMs;
@@ -1182,24 +1288,24 @@ begin
           lEntry.Dependency := lDependency;
           lEntry.Tags := lNewTags;
           if lSizeEstimateBytes > 0 then
-            lEntry.SizeEstimateBytes := lSizeEstimateBytes;
+            WriteInt64(lEntry.SizeEstimateBytes, lSizeEstimateBytes);
 
           if lTtlMs > 0 then
-            lEntry.ExpiresAtMs := lNow + lTtlMs
+            WriteInt64(lEntry.ExpiresAtMs, lNow + lTtlMs)
           else
-            lEntry.ExpiresAtMs := 0;
+            WriteInt64(lEntry.ExpiresAtMs, 0);
 
           if lIdleMs > 0 then
-            lEntry.IdleExpiresAtMs := lNow + lIdleMs
+            WriteInt64(lEntry.IdleExpiresAtMs, lNow + lIdleMs)
           else
-            lEntry.IdleExpiresAtMs := 0;
+            WriteInt64(lEntry.IdleExpiresAtMs, 0);
 
           if lValidateIntervalMs = 0 then
-            lEntry.NextValidateMs := lNow
+            WriteInt64(lEntry.NextValidateMs, lNow)
           else
-            lEntry.NextValidateMs := lNow + lValidateIntervalMs;
+            WriteInt64(lEntry.NextValidateMs, lNow + lValidateIntervalMs);
 
-          lEntry.RetryAtMs := 0;
+          WriteInt64(lEntry.RetryAtMs, 0);
           lEntry.LastErrorMsg := '';
           lEntry.LastErrorClassName := '';
 
@@ -1209,10 +1315,25 @@ begin
         TMonitor.Exit(lEntry.EntrySync);
       end;
 
-      if Length(lOldTags) > 0 then
-        UnregisterTags(aNamespace, aKey, lOldTags);
-      if (not lAbandonedByInvalidation) and (lEntry.WasInvalidated = 0) and (Length(lNewTags) > 0) then
-        RegisterTags(aNamespace, aKey, lNewTags);
+      if not lAbandonedByInvalidation then
+      begin
+{$IFDEF UNITTESTS}
+        if (Length(lNewTags) > 0) and Assigned(gTagRegisterHook) then
+          gTagRegisterHook(aNamespace, aKey, lNewTags);
+{$ENDIF}
+        if (Length(lOldTags) > 0) or (Length(lNewTags) > 0) then
+        begin
+          TMonitor.Enter(lEntry.EntrySync);
+          try
+            if Length(lOldTags) > 0 then
+              UnregisterTags(aNamespace, aKey, lOldTags);
+            if (Length(lNewTags) > 0) and (lEntry.WasInvalidated = 0) then
+              RegisterTags(aNamespace, aKey, lNewTags);
+          finally
+            TMonitor.Exit(lEntry.EntrySync);
+          end;
+        end;
+      end;
 
       if lAbandonedByInvalidation then
         Continue;
@@ -1262,6 +1383,7 @@ var
   lBucket: TMaxNamespaceBucket;
   lEntry: TMaxCacheEntry;
   lTags: TArray<string>;
+  lRemoved: Boolean;
 begin
   Result := False;
 
@@ -1269,32 +1391,17 @@ begin
   if lBucket = nil then
     Exit(False);
 
-  lEntry := nil;
-  lTags := [];
-  lBucket.Lock.BeginWrite;
-  try
-    if lBucket.Items.TryGetValue(aKey, lEntry) then
-    begin
-      lBucket.Items.Remove(aKey);
-    end;
-  finally
-    lBucket.Lock.EndWrite;
-  end;
-
+  lEntry := TryGetEntry(lBucket, aKey);
   if lEntry = nil then
     Exit(False);
+  lRemoved := False;
   try
-    TMonitor.Enter(lEntry.EntrySync);
-    try
-      lTags := lEntry.Tags;
-      lEntry.WasInvalidated := 1;
-      lEntry.State := TMaxCacheEntryState.Obsolete;
-      lEntry.Value := nil;
-      TMonitor.PulseAll(lEntry.EntrySync);
-    finally
-      TMonitor.Exit(lEntry.EntrySync);
-    end;
+    lTags := [];
+    MarkEntryInvalidated(lEntry, True, lTags);
+    lRemoved := RemoveEntryIfSame(lBucket, aKey, lEntry);
   finally
+    if lRemoved then
+      lEntry.Release;
     lEntry.Release;
   end;
 
@@ -1305,6 +1412,7 @@ begin
 
   if Length(lTags) > 0 then
     UnregisterTags(aNamespace, aKey, lTags);
+
 end;
 
 procedure TMaxCache.Invalidate(const aNamespace, aKey: string);
@@ -1328,24 +1436,27 @@ var
   lKey: string;
   lEntry: TMaxCacheEntry;
   lTags: TArray<string>;
+  lRemoved: Boolean;
 begin
   lBucket := TryGetBucket(aNamespace);
   if lBucket = nil then
     Exit;
 
-  lBucket.Lock.BeginWrite;
+  lBucket.Lock.BeginRead;
   try
     SetLength(lPairs, lBucket.Items.Count);
     lIdx := 0;
     for lKey in lBucket.Items.Keys do
     begin
       lEntry := lBucket.Items[lKey];
+      lEntry.AddRef;
       lPairs[lIdx] := TPair<string, TMaxCacheEntry>.Create(lKey, lEntry);
       Inc(lIdx);
     end;
-    lBucket.Items.Clear;
+    if lIdx <> Length(lPairs) then
+      SetLength(lPairs, lIdx);
   finally
-    lBucket.Lock.EndWrite;
+    lBucket.Lock.EndRead;
   end;
 
   for lIdx := Low(lPairs) to High(lPairs) do
@@ -1353,18 +1464,13 @@ begin
     lKey := lPairs[lIdx].Key;
     lEntry := lPairs[lIdx].Value;
     lTags := [];
+    lRemoved := False;
     try
-      TMonitor.Enter(lEntry.EntrySync);
-      try
-        lTags := lEntry.Tags;
-        lEntry.WasInvalidated := 1;
-        lEntry.State := TMaxCacheEntryState.Obsolete;
-        lEntry.Value := nil;
-        TMonitor.PulseAll(lEntry.EntrySync);
-      finally
-        TMonitor.Exit(lEntry.EntrySync);
-      end;
+      MarkEntryInvalidated(lEntry, True, lTags);
+      lRemoved := RemoveEntryIfSame(lBucket, lKey, lEntry);
     finally
+      if lRemoved then
+        lEntry.Release;
       if Length(lTags) > 0 then
         UnregisterTags(aNamespace, lKey, lTags);
       lEntry.Release;
@@ -1414,7 +1520,7 @@ begin
   try
     Result.EntryCount := lBucket.Items.Count;
     for lEntry in lBucket.Items.Values do
-      Inc(lBytes, lEntry.SizeEstimateBytes);
+      Inc(lBytes, ReadInt64(lEntry.SizeEstimateBytes));
   finally
     lBucket.Lock.EndRead;
   end;
@@ -1429,6 +1535,7 @@ var
   lNs: string;
   lEntry: TMaxCacheEntry;
   lBytes: Int64;
+  lEntrySize: Int64;
   lKeys: TArray<TMaxCacheKeySize>;
   lKey: string;
   lIdx: Integer;
@@ -1486,14 +1593,15 @@ begin
       for lKey in lBucket.Items.Keys do
       begin
         lEntry := lBucket.Items[lKey];
-        Inc(lBytes, lEntry.SizeEstimateBytes);
+        lEntrySize := ReadInt64(lEntry.SizeEstimateBytes);
+        Inc(lBytes, lEntrySize);
 
-        if lEntry.SizeEstimateBytes > 0 then
+        if lEntrySize > 0 then
         begin
           SetLength(lKeys, Length(lKeys) + 1);
           lKeys[High(lKeys)].Namespace := lNs;
           lKeys[High(lKeys)].Key := lKey;
-          lKeys[High(lKeys)].EstimatedBytes := lEntry.SizeEstimateBytes;
+          lKeys[High(lKeys)].EstimatedBytes := lEntrySize;
         end;
       end;
     finally
@@ -1526,6 +1634,8 @@ var
   lBucket: TMaxNamespaceBucket;
   lEntryPair: TPair<string, TMaxCacheEntry>;
   lEntry: TMaxCacheEntry;
+  lEntries: TArray<TMaxCacheEntry>;
+  lIdx: Integer;
 begin
   if TInterlocked.CompareExchange(fIsShuttingDown, 1, 0) <> 0 then
     Exit;
@@ -1537,9 +1647,24 @@ begin
       lBucket := lBucketPair.Value;
       lBucket.Lock.BeginRead;
       try
+        SetLength(lEntries, lBucket.Items.Count);
+        lIdx := 0;
         for lEntryPair in lBucket.Items do
         begin
           lEntry := lEntryPair.Value;
+          lEntry.AddRef;
+          lEntries[lIdx] := lEntry;
+          Inc(lIdx);
+        end;
+        if lIdx <> Length(lEntries) then
+          SetLength(lEntries, lIdx);
+      finally
+        lBucket.Lock.EndRead;
+      end;
+
+      for lEntry in lEntries do
+      begin
+        try
           TMonitor.Enter(lEntry.EntrySync);
           try
             lEntry.WasInvalidated := 1;
@@ -1548,9 +1673,9 @@ begin
           finally
             TMonitor.Exit(lEntry.EntrySync);
           end;
+        finally
+          lEntry.Release;
         end;
-      finally
-        lBucket.Lock.EndRead;
       end;
     end;
   finally
@@ -1637,6 +1762,7 @@ var
   lEntry: TMaxCacheEntry;
   lEvictKind: Integer;
   lTags: TArray<string>;
+  lRemoved: Boolean;
 begin
   if aRemaining <= 0 then
     Exit;
@@ -1675,41 +1801,28 @@ begin
 
   for lCandidate in lCandidates do
   begin
-    lEntry := nil;
-    lTags := [];
-
-    aBucket.Lock.BeginWrite;
-    try
-      if aBucket.Items.TryGetValue(lCandidate.Key, lEntry) then
-      begin
-        if lEntry.State = TMaxCacheEntryState.Loading then
-        begin
-          lEntry := nil;
-          Continue;
-        end;
-        aBucket.Items.Remove(lCandidate.Key);
-      end;
-    finally
-      aBucket.Lock.EndWrite;
-    end;
-
+    lEntry := TryGetEntry(aBucket, lCandidate.Key);
     if lEntry = nil then
       Continue;
+
+    lTags := [];
+    lRemoved := False;
     try
-      TMonitor.Enter(lEntry.EntrySync);
-      try
-        lTags := lEntry.Tags;
-        lEntry.WasInvalidated := 1;
-        lEntry.State := TMaxCacheEntryState.Obsolete;
-        TMonitor.PulseAll(lEntry.EntrySync);
-      finally
-        TMonitor.Exit(lEntry.EntrySync);
+      if lEntry.State <> TMaxCacheEntryState.Loading then
+      begin
+        MarkEntryInvalidated(lEntry, False, lTags);
+        lRemoved := RemoveEntryIfSame(aBucket, lCandidate.Key, lEntry);
+        if Length(lTags) > 0 then
+          UnregisterTags(aNamespace, lCandidate.Key, lTags);
       end;
     finally
-      if Length(lTags) > 0 then
-        UnregisterTags(aNamespace, lCandidate.Key, lTags);
-      lEntry.Release; // drop dictionary ref
+      if lRemoved then
+        lEntry.Release;
+      lEntry.Release;
     end;
+
+    if not lRemoved then
+      Continue;
 
     case lCandidate.Kind of
       1: TInterlocked.Increment(fEvictionsTtl);
@@ -1740,6 +1853,7 @@ var
   lToEvict: Integer;
   lEvictKeys: TArray<string>;
   lTags: TArray<string>;
+  lRemoved: Boolean;
 begin
   if aRemaining <= 0 then
     Exit;
@@ -1760,9 +1874,9 @@ begin
       if lEntry.State = TMaxCacheEntryState.Loading then
         Continue;
       lInfos[lIdx].Key := lKey;
-      lInfos[lIdx].LastAccessMs := lEntry.LastAccessMs;
-      lInfos[lIdx].SizeBytes := lEntry.SizeEstimateBytes;
-      Inc(lTotalBytes, lEntry.SizeEstimateBytes);
+      lInfos[lIdx].LastAccessMs := ReadInt64(lEntry.LastAccessMs);
+      lInfos[lIdx].SizeBytes := ReadInt64(lEntry.SizeEstimateBytes);
+      Inc(lTotalBytes, ReadInt64(lEntry.SizeEstimateBytes));
       Inc(lIdx);
     end;
     if lIdx <> Length(lInfos) then
@@ -1825,43 +1939,28 @@ begin
       Break;
     Dec(aRemaining);
 
-    lEntry := nil;
-    lTags := [];
-    aBucket.Lock.BeginWrite;
-    try
-      if aBucket.Items.TryGetValue(lKey, lEntry) then
-      begin
-        if lEntry.State = TMaxCacheEntryState.Loading then
-        begin
-          lEntry := nil;
-          Continue;
-        end;
-        aBucket.Items.Remove(lKey);
-      end;
-    finally
-      aBucket.Lock.EndWrite;
-    end;
-
+    lEntry := TryGetEntry(aBucket, lKey);
     if lEntry = nil then
       Continue;
 
+    lTags := [];
+    lRemoved := False;
     try
-      TMonitor.Enter(lEntry.EntrySync);
-      try
-        lTags := lEntry.Tags;
-        lEntry.WasInvalidated := 1;
-        lEntry.State := TMaxCacheEntryState.Obsolete;
-        TMonitor.PulseAll(lEntry.EntrySync);
-      finally
-        TMonitor.Exit(lEntry.EntrySync);
+      if lEntry.State <> TMaxCacheEntryState.Loading then
+      begin
+        MarkEntryInvalidated(lEntry, False, lTags);
+        lRemoved := RemoveEntryIfSame(aBucket, lKey, lEntry);
+        if Length(lTags) > 0 then
+          UnregisterTags(aNamespace, lKey, lTags);
       end;
     finally
-      if Length(lTags) > 0 then
-        UnregisterTags(aNamespace, lKey, lTags);
-      lEntry.Release; // drop dictionary ref
+      if lRemoved then
+        lEntry.Release;
+      lEntry.Release;
     end;
 
-    TInterlocked.Increment(fEvictionsSize);
+    if lRemoved then
+      TInterlocked.Increment(fEvictionsSize);
   end;
 end;
 
@@ -1915,13 +2014,13 @@ begin
           Continue;
 
         Inc(lTotalEntries);
-        Inc(lTotalBytes, lEntry.SizeEstimateBytes);
+        Inc(lTotalBytes, ReadInt64(lEntry.SizeEstimateBytes));
 
         SetLength(lInfos, Length(lInfos) + 1);
         lInfos[High(lInfos)].Namespace := lNs;
         lInfos[High(lInfos)].Key := lKey;
-        lInfos[High(lInfos)].LastAccessMs := lEntry.LastAccessMs;
-        lInfos[High(lInfos)].SizeBytes := lEntry.SizeEstimateBytes;
+        lInfos[High(lInfos)].LastAccessMs := ReadInt64(lEntry.LastAccessMs);
+        lInfos[High(lInfos)].SizeBytes := ReadInt64(lEntry.SizeEstimateBytes);
       end;
     finally
       lBucket.Lock.EndRead;

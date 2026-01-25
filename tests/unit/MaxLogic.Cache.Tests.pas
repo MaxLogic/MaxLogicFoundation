@@ -54,6 +54,8 @@ type
     [Test] procedure Waiting_TimesOut;
     [Test] procedure Invalidate_DuringLoading_IsSafe;
     [Test] procedure TagInvalidation_ScopedTag;
+    [Test] procedure TagInvalidation_NoGhostAfterConcurrentInvalidate;
+    [Test] procedure ScopedTag_RejectsPreScoped;
     [Test] procedure DependencyValidation_StampedeProtected;
     [Test] procedure FileDependency_HashDetectsTimestampPreservedChange;
     [Test] procedure Sweeper_TtlEvicts;
@@ -624,6 +626,112 @@ begin
   finally
     lOptions.Free;
   end;
+end;
+
+procedure TMaxCacheTests.TagInvalidation_NoGhostAfterConcurrentInvalidate;
+const
+  cTimeoutMs = 4000;
+var
+  lCache: IMaxCache;
+  lConfig: TMaxCacheConfig;
+  lOptionsA: TMaxCacheOptions;
+  lOptionsB: TMaxCacheOptions;
+  lHookEntered: TEvent;
+  lHookContinue: TEvent;
+  lThread: TThread;
+  lErr: string;
+  lLoadCount: Integer;
+begin
+  lConfig := NewConfigNoSweep;
+  lCache := TMaxCache.New(lConfig);
+
+  lOptionsA := TMaxCacheOptions.Create;
+  lOptionsB := TMaxCacheOptions.Create;
+  lOptionsA.Tags := ['group:A'];
+  lOptionsB.Tags := ['group:B'];
+
+  lHookEntered := TEvent.Create(nil, True, False, '');
+  lHookContinue := TEvent.Create(nil, True, False, '');
+  lThread := nil;
+  lErr := '';
+  lLoadCount := 0;
+  try
+    MaxCache_SetTagRegisterHook(
+      procedure(const aNamespace, aKey: string; const aTags: TArray<string>)
+      begin
+        if (aNamespace = 'ns') and (aKey = 'k') and (Length(aTags) > 0) and (aTags[0] = 'group:A') then
+        begin
+          lHookEntered.SetEvent;
+          lHookContinue.WaitFor(cTimeoutMs);
+        end;
+      end);
+
+    lThread := TThread.CreateAnonymousThread(
+      procedure
+      begin
+        try
+          lCache.GetOrCreate('ns', 'k',
+            function: IInterface
+            begin
+              TInterlocked.Increment(lLoadCount);
+              Result := TTestValue.Create(1, 'A') as ITestValue;
+            end, lOptionsA);
+        except
+          on E: Exception do
+            lErr := E.ClassName + ': ' + E.Message;
+        end;
+      end);
+    lThread.FreeOnTerminate := False;
+    lThread.Start;
+
+    Assert.AreEqual(wrSignaled, lHookEntered.WaitFor(cTimeoutMs), 'hook not entered');
+    lCache.Invalidate('ns', 'k');
+    lHookContinue.SetEvent;
+
+    lThread.WaitFor;
+    Assert.AreEqual('', lErr, 'loader thread should not raise');
+
+    MaxCache_ClearTagRegisterHook;
+
+    lCache.GetOrCreate('ns', 'k',
+      function: IInterface
+      begin
+        TInterlocked.Increment(lLoadCount);
+        Result := TTestValue.Create(2, 'B') as ITestValue;
+      end, lOptionsB);
+
+    lCache.InvalidateByTag(TMaxCache.ScopedTag('ns', 'group:A'));
+
+    lCache.GetOrCreate('ns', 'k',
+      function: IInterface
+      begin
+        TInterlocked.Increment(lLoadCount);
+        Result := TTestValue.Create(3, 'should not load') as ITestValue;
+      end);
+
+    Assert.AreEqual(2, lLoadCount, 'tag A should not invalidate new entry');
+  finally
+    MaxCache_ClearTagRegisterHook;
+    lHookContinue.SetEvent;
+    if lThread <> nil then
+    begin
+      lThread.WaitFor;
+      lThread.Free;
+    end;
+    lHookContinue.Free;
+    lHookEntered.Free;
+    lOptionsA.Free;
+    lOptionsB.Free;
+  end;
+end;
+
+procedure TMaxCacheTests.ScopedTag_RejectsPreScoped;
+begin
+  Assert.WillRaise(
+    procedure
+    begin
+      TMaxCache.ScopedTag('ns1', 'other|tag');
+    end, EMaxCacheException);
 end;
 
 procedure TMaxCacheTests.DependencyValidation_StampedeProtected;
