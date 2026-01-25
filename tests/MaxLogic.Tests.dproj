@@ -179,6 +179,13 @@
         <DCCReference Include="..\MaxLogic.StrUtils.pas"/>
         <DCCReference Include="unit\MaxLogic.PortableTimer.Tests.pas"/>
         <DCCReference Include="unit\MaxLogic.StrUtils.Tests.pas"/>
+        <DCCReference Include="..\MaxLogic.hash.FNV1a.pas"/>
+        <DCCReference Include="..\MaxLogic.hash.xxHash.pas"/>
+        <DCCReference Include="..\MaxLogic.hash.Murmur.pas"/>
+        <DCCReference Include="..\MaxLogic.Cache.pas"/>
+        <DCCReference Include="..\MaxLogic.Cache.RepositoryBase.pas"/>
+        <DCCReference Include="unit\MaxLogic.Cache.Tests.pas"/>
+        <DCCReference Include="unit\MaxLogic.Hash.Tests.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
             <DependentOn>..\MaxLogicDefault.optset</DependentOn>
