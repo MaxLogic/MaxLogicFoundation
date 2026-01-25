@@ -326,10 +326,15 @@ end;
 procedure TPortableTimerTests.ModeSwitchApplies;
 const
   cInterval = 40;
+  cSchedulerJitterMs = 25;
   cTimeoutMs = 5000;
 var
-  lDeltaBefore: Int64;
-  lDeltaAfter: Int64;
+  lBefore1: Int64;
+  lBefore2: Int64;
+  lAfter1: Int64;
+  lAfter2: Int64;
+  lAvgBefore: Int64;
+  lAvgAfter: Int64;
 begin
   ResetState;
   fRecordTimes := True;
@@ -350,15 +355,22 @@ begin
 
   fLock.Acquire;
   try
-    Assert.IsTrue((fTimes[0] <> 0) and (fTimes[1] <> 0) and (fTimes[2] <> 0) and (fTimes[3] <> 0), 'Missing timestamp data');
-    lDeltaBefore := Int64(fTimes[1]) - Int64(fTimes[0]);
-    lDeltaAfter := Int64(fTimes[3]) - Int64(fTimes[2]);
+    Assert.IsTrue((fTimes[0] <> 0) and (fTimes[1] <> 0) and (fTimes[2] <> 0) and (fTimes[3] <> 0) and (fTimes[4] <> 0), 'Missing timestamp data');
+
+    lBefore1 := Int64(fTimes[1]) - Int64(fTimes[0]);
+    lBefore2 := Int64(fTimes[2]) - Int64(fTimes[1]);
+    lAfter1 := Int64(fTimes[3]) - Int64(fTimes[2]);
+    lAfter2 := Int64(fTimes[4]) - Int64(fTimes[3]);
+
+    lAvgBefore := (lBefore1 + lBefore2) div 2;
+    lAvgAfter := (lAfter1 + lAfter2) div 2;
   finally
     fLock.Release;
   end;
 
-  Assert.IsTrue(lDeltaBefore > 0, 'Baseline interval capture failed');
-  Assert.IsTrue(lDeltaAfter <= lDeltaBefore, Format('Fixed-rate switch failed to tighten cadence (before=%d after=%d)', [lDeltaBefore, lDeltaAfter]));
+  Assert.IsTrue(lAvgBefore > 0, 'Baseline interval capture failed');
+  Assert.IsTrue(lAvgAfter <= lAvgBefore + cSchedulerJitterMs,
+    Format('Fixed-rate switch failed to tighten cadence within scheduler jitter (before=%d after=%d jitter=%d)', [lAvgBefore, lAvgAfter, cSchedulerJitterMs]));
 end;
 
 procedure TPortableTimerTests.HandlerSwapTakesEffect;

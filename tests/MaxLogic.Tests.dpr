@@ -25,6 +25,9 @@ uses
   MaxLogic.hash.FNV1a in '..\MaxLogic.hash.FNV1a.pas',
   MaxLogic.hash.xxHash in '..\MaxLogic.hash.xxHash.pas',
   MaxLogic.hash.Murmur in '..\MaxLogic.hash.Murmur.pas',
+  MaxLogic.Cache in '..\MaxLogic.Cache.pas',
+  MaxLogic.Cache.RepositoryBase in '..\MaxLogic.Cache.RepositoryBase.pas',
+  MaxLogic.Cache.Tests in 'unit\MaxLogic.Cache.Tests.pas',
   MaxLogic.Hash.Tests in 'unit\MaxLogic.Hash.Tests.pas';
 
 var

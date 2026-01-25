@@ -134,6 +134,7 @@ type
     class var FOrdinalComparer: IEqualityComparer<string>;
     class var FOrdinalIgnoreCaseComparer: IEqualityComparer<string>;
     class constructor Create;
+    class destructor Destroy;
     class function FoldAscii(aChar: Char): Char; static; inline;
     class function FoldCharValue(aChar: Char): Word; static; inline;
     class function FoldPair(const aPair: Cardinal): Cardinal; static; inline;
@@ -1270,6 +1271,12 @@ var
 begin
   for i := 0 to 255 do
     FUpperAscii[i] := TCharacter.ToUpper(Char(i));
+end;
+
+class destructor TFastCaseAwareComparer.Destroy;
+begin
+  FOrdinalComparer := nil;
+  FOrdinalIgnoreCaseComparer := nil;
 end;
 
 constructor TFastCaseAwareComparer.Create(aCaseSensitive: Boolean);

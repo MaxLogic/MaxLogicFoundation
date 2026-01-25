@@ -75,3 +75,5 @@ todo.md
 *.cmds
 dunitx-results.xml
 pas-api-map.md
+/TASKS.md
+/spec.md
