@@ -52,6 +52,9 @@ Remark:
     PROPERTIES([vcPublic, vcPublished])
     FIELDS([vcPrivate, vcProtected, vcPublic, vcPublished])
   }
+  
+or use: `{$I maxlogic.RttiEx.inc}`
+There is also a helper script to find pas files that use BuildUp but do not have this inc file - see: find-missing-rttiEx.inc-when-using-BuildUp.ps1
 
 
 **)
