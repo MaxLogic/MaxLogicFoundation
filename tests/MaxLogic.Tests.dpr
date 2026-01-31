@@ -15,6 +15,8 @@ uses
   DUnitX.Loggers.Xml.NUnit,
   MaxLogic.BufferedFile in '..\MaxLogic.BufferedFile.pas',
   MaxLogic.BufferedFile.Tests in 'unit\MaxLogic.BufferedFile.Tests.pas',
+  maxAsync in '..\maxAsync.pas',
+  MaxLogic.AsyncLoop.Tests in 'unit\MaxLogic.AsyncLoop.Tests.pas',
   MaxLogic.DotEnv.Tests in 'unit\MaxLogic.DotEnv.Tests.pas',
   maxlogic.DotEnv in '..\maxlogic.DotEnv.pas',
   MaxLogic.RichIniFile in '..\MaxLogic.RichIniFile.pas',

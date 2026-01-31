@@ -139,6 +139,7 @@ type
     class function FoldCharValue(aChar: Char): Word; static; inline;
     class function FoldPair(const aPair: Cardinal): Cardinal; static; inline;
     class function Rotl32(aValue: Cardinal; aBits: Integer): Cardinal; static; inline;
+    class function ReadCardinalUnaligned(const aPtr: Pointer): Cardinal; static; inline;
     class function HashBytes(const aData: PByte; aLength: NativeInt): Cardinal; static;
     class function HashOrdinal(const aValue: string): Integer; static;
     class function HashCaseInsensitive(const aValue: string): Integer; static;
@@ -349,12 +350,14 @@ uses
 function OccurrencesOfChar(const s: string; const c: char): integer;
 var
   pc: PChar;
+  lEndPtr: PChar;
 begin
   Result := 0;
   if s <> '' then
   begin
-    pc := @s[1];
-    for var i := 1 to length(s) do
+    pc := PChar(s);
+    lEndPtr := pc + Length(s);
+    while pc < lEndPtr do
     begin
       if pc^ = c then
         Inc(Result);
@@ -573,6 +576,14 @@ begin
     aOnFoundProc(lValue, lStartMarkerFoundAtIndex, lReplacementValue, lAction);
 
     case lAction of
+      raReplace:
+        begin
+          lAction := raReplace;
+        end;
+      raReplaceAndStop:
+        begin
+          lAction := raReplaceAndStop;
+        end;
       raStop:
         break;
       raSkip:
@@ -1270,7 +1281,7 @@ var
   i: Integer;
 begin
   for i := 0 to 255 do
-    FUpperAscii[i] := TCharacter.ToUpper(Char(i));
+    FUpperAscii[i] := TCharacter.ToUpper(Char(i)); //PALOFF we only cast 0..255 here
 end;
 
 class destructor TFastCaseAwareComparer.Destroy;
@@ -1319,6 +1330,17 @@ begin
   Result := (aValue shl aBits) or (aValue shr (32 - aBits));
 end;
 
+class function TFastCaseAwareComparer.ReadCardinalUnaligned(const aPtr: Pointer): Cardinal;
+{$IFDEF CPUARM}
+begin
+  Move(PByte(aPtr)^, Result, SizeOf(Result));
+end;
+{$ELSE}
+begin
+  Result := PCardinal(aPtr)^; //PALOFF we intentionally allow unaligned reads on x86/x64
+end;
+{$ENDIF}
+
 
 
 class function TFastCaseAwareComparer.HashBytes(const aData: PByte; aLength: NativeInt): Cardinal;
@@ -1349,13 +1371,13 @@ begin
     Dec(v4, CXXPrime1);
 
     repeat
-      v1 := Rotl32(v1 + PCardinal(lPtr)^ * CXXPrime2, 13) * CXXPrime1;
+      v1 := Rotl32(v1 + ReadCardinalUnaligned(lPtr) * CXXPrime2, 13) * CXXPrime1;
       Inc(lPtr, 4);
-      v2 := Rotl32(v2 + PCardinal(lPtr)^ * CXXPrime2, 13) * CXXPrime1;
+      v2 := Rotl32(v2 + ReadCardinalUnaligned(lPtr) * CXXPrime2, 13) * CXXPrime1;
       Inc(lPtr, 4);
-      v3 := Rotl32(v3 + PCardinal(lPtr)^ * CXXPrime2, 13) * CXXPrime1;
+      v3 := Rotl32(v3 + ReadCardinalUnaligned(lPtr) * CXXPrime2, 13) * CXXPrime1;
       Inc(lPtr, 4);
-      v4 := Rotl32(v4 + PCardinal(lPtr)^ * CXXPrime2, 13) * CXXPrime1;
+      v4 := Rotl32(v4 + ReadCardinalUnaligned(lPtr) * CXXPrime2, 13) * CXXPrime1;
       Inc(lPtr, 4);
     until lPtr > (lEnd - 16);
 
@@ -1368,7 +1390,7 @@ begin
 
   while (lEnd - lPtr) >= 4 do
   begin
-    Result := Rotl32(Result + PCardinal(lPtr)^ * CXXPrime3, 17) * CXXPrime4;
+    Result := Rotl32(Result + ReadCardinalUnaligned(lPtr) * CXXPrime3, 17) * CXXPrime4;
     Inc(lPtr, 4);
   end;
 
@@ -1448,13 +1470,13 @@ begin
     while lPtr <= lLimit do
     begin
       // Process 4 pairs (8 chars) in parallel -> allows CPU to execute multiple lanes simultaneously
-      v1 := Rotl32(v1 + FoldPair(PCardinal(lPtr)^) * CXXPrime2, 13) * CXXPrime1;
+      v1 := Rotl32(v1 + FoldPair(ReadCardinalUnaligned(lPtr)) * CXXPrime2, 13) * CXXPrime1;
       Inc(lPtr, 2);
-      v2 := Rotl32(v2 + FoldPair(PCardinal(lPtr)^) * CXXPrime2, 13) * CXXPrime1;
+      v2 := Rotl32(v2 + FoldPair(ReadCardinalUnaligned(lPtr)) * CXXPrime2, 13) * CXXPrime1;
       Inc(lPtr, 2);
-      v3 := Rotl32(v3 + FoldPair(PCardinal(lPtr)^) * CXXPrime2, 13) * CXXPrime1;
+      v3 := Rotl32(v3 + FoldPair(ReadCardinalUnaligned(lPtr)) * CXXPrime2, 13) * CXXPrime1;
       Inc(lPtr, 2);
-      v4 := Rotl32(v4 + FoldPair(PCardinal(lPtr)^) * CXXPrime2, 13) * CXXPrime1;
+      v4 := Rotl32(v4 + FoldPair(ReadCardinalUnaligned(lPtr)) * CXXPrime2, 13) * CXXPrime1;
       Inc(lPtr, 2);
     end;
 
@@ -1470,7 +1492,7 @@ begin
   // Step 4: Process remaining 2-char (4-byte) chunks
   while (lEnd - lPtr) >= 2 do
   begin
-    Result := Rotl32(Result + FoldPair(PCardinal(lPtr)^) * CXXPrime3, 17) * CXXPrime4;
+    Result := Rotl32(Result + FoldPair(ReadCardinalUnaligned(lPtr)) * CXXPrime3, 17) * CXXPrime4;
     Inc(lPtr, 2);
   end;
 
@@ -1526,16 +1548,20 @@ begin
 
 {$IFOPT Q+}
   {$DEFINE FASTCASE_EQUALS_QPLUS}
+  {$DEFINE FASTCASE_EQUALS_RESTORE}
   {$Q-}
 {$ENDIF}
 {$IFOPT R+}
   {$DEFINE FASTCASE_EQUALS_RPLUS}
+  {$DEFINE FASTCASE_EQUALS_RESTORE}
   {$R-}
 {$ENDIF}
+{$IFDEF FASTCASE_EQUALS_RESTORE}
   try
+{$ENDIF}
     while NativeInt(lEndPtr - lLeftPtr) >= 2 do
     begin
-      if FoldPair(PCardinal(lLeftPtr)^) <> FoldPair(PCardinal(lRightPtr)^) then
+      if FoldPair(ReadCardinalUnaligned(lLeftPtr)) <> FoldPair(ReadCardinalUnaligned(lRightPtr)) then
         Exit(False);
       Inc(lLeftPtr, 2);
       Inc(lRightPtr, 2);
@@ -1546,6 +1572,7 @@ begin
       if FoldCharValue(lLeftPtr^) <> FoldCharValue(lRightPtr^) then
         Exit(False);
     end;
+{$IFDEF FASTCASE_EQUALS_RESTORE}
   finally
 {$IFDEF FASTCASE_EQUALS_RPLUS}
     {$UNDEF FASTCASE_EQUALS_RPLUS}
@@ -1556,6 +1583,8 @@ begin
     {$Q+}
 {$ENDIF}
   end;
+  {$UNDEF FASTCASE_EQUALS_RESTORE}
+{$ENDIF}
 
   Result := True;
 end;

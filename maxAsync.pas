@@ -367,9 +367,13 @@ type
       FSimultanousThreadCount: integer;
       fActivThreadCount: integer;
       fThreads: array of iAsync;
+      fRunProcWithCancel: TAsyncEnumProcWithCancel;
+      fRunOnDone: TProc;
 
       procedure SetOnFinished(const Value: TThreadProcedure);
       procedure SetSimultanousThreadCount(const Value: integer);
+      procedure RunIteration(CurIndex: integer);
+      procedure RunFinished;
       procedure asyncLoopIteration;
     public
       constructor Create;
@@ -469,7 +473,7 @@ type
           static;
       end;
 
-    iUserData<t >= interface
+    iUserData<t >= interface //PALOFF we need the GUID for Supports/RTTI
       ['{77527854-F405-4CBD-8FAA-B2ED87C6E2E1}']
 procedure SetValue(const aValue: t);
 function getValue: t;
@@ -1257,24 +1261,11 @@ begin
   if ThreadCount <> 0 then
     Loop.SimultanousThreadCount := ThreadCount;
 
-  Loop.OnFinished :=
-    procedure
-  begin
-    Loop.Free;
-    OnDone;
-  end;
+  Loop.fRunProcWithCancel := aProc;
+  Loop.fRunOnDone := OnDone;
+  Loop.OnFinished := Loop.RunFinished;
 
-  Loop.Execute(aMin, aMax,
-    procedure(i: integer)
-    var
-      aCancel: boolean;
-    begin
-      aCancel := False;
-      aProc(i, aCancel);
-      if aCancel then
-        Loop.Cancel;
-    end);
-
+  Loop.Execute(aMin, aMax, Loop.RunIteration);
 end;
 
 class procedure TAsyncLoop.RunAndWait(const aMin, aMax: integer; aProc: TAsyncEnumProcWithCancel; ThreadCount: integer);
@@ -1323,14 +1314,51 @@ begin
   FSimultanousThreadCount := Value;
 end;
 
+procedure TAsyncLoop.RunIteration(CurIndex: integer);
+var
+  lCancel: boolean;
+begin
+  lCancel := False;
+  fRunProcWithCancel(CurIndex, lCancel);
+  if lCancel then
+    Cancel;
+end;
+
+procedure TAsyncLoop.RunFinished;
+var
+  lOnDone: TProc;
+begin
+  lOnDone := fRunOnDone;
+  fRunProcWithCancel := nil;
+  fRunOnDone := nil;
+  Free;
+  if Assigned(lOnDone) then
+    lOnDone;
+end;
+
 destructor TAsyncLoop.Destroy;
 var
   X: integer;
+  lCurrentThreadId: TThreadID;
+  lAsyncIntern: iAsyncIntern;
+  lThreadData: iThreadData;
 begin
   WaitFor;
+  lCurrentThreadId := TThread.CurrentThread.ThreadId;
   for X := 0 to length(fThreads) - 1 do
     if fThreads[X] <> nil then
     begin
+      // Avoid waiting on our own worker thread to prevent self-deadlocks.
+      if Supports(fThreads[X], iAsyncIntern, lAsyncIntern) then
+      begin
+        lThreadData := lAsyncIntern.GetThreadData;
+        if (lThreadData <> nil) and (lThreadData.Thread <> nil) and
+          (lThreadData.Thread.ThreadId = lCurrentThreadId) then
+        begin
+          fThreads[X] := nil;
+          Continue;
+        end;
+      end;
       fThreads[X].WaitFor;
       fThreads[X] := nil;
     end;
@@ -2051,4 +2079,3 @@ initialization
   System.NeverSleepOnMMThreadContention := True;
 
 end.
-

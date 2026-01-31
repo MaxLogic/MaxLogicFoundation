@@ -304,6 +304,8 @@ begin
 end;
 
 function TmaxConsoleRunner.execute: boolean;
+var
+  lExitCode: DWORD;
 begin
   Result := false;
 
@@ -331,8 +333,10 @@ begin
       PullData;
     until fProcessFinished;
 
-    if not GetExitCodeProcess(fProcessInfo.hProcess, DWORD(fExitCode)) then
-      fExitCode := -1; // Return -1 if exit code retrieval fails
+    if not GetExitCodeProcess(fProcessInfo.hProcess, lExitCode) then
+      fExitCode := -1 // Return -1 if exit code retrieval fails
+    else
+      fExitCode := Integer(lExitCode);
     ClosehandleAndZeroIt(fProcessInfo.hProcess);
     ClosehandleAndZeroIt(fProcessInfo.hThread);
 
