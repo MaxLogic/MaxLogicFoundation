@@ -832,15 +832,17 @@ function NormalizePath(const aPath: string): string;
 var
   badSlash, goodSlash: char;
   s: string;
+  lDoubleSlash: string;
 begin
   s := aPath;
   goodSlash := TPath.DirectorySeparatorChar;
+  lDoubleSlash := StringOfChar(goodSlash, 2);
 
   if goodSlash = '/' then
     s := Stringreplace(s, '\', goodSlash, [rfReplaceAll])
   else
     s := Stringreplace(s, '/', goodSlash, [rfReplaceAll]);
-  s := Stringreplace(s, goodSlash + goodSlash, goodSlash, [rfReplaceAll]);
+  s := Stringreplace(s, lDoubleSlash, goodSlash, [rfReplaceAll]);
 
   Result := s;
 end;
