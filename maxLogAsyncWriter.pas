@@ -862,7 +862,7 @@ class
     Result.TimeStamp := AppStopWatch.ElapsedMilliseconds;
     Result.DateTime := now();
 
-    Result.ThreadId := GetCurrentThreadId();
+    Result.ThreadId := TThread.CurrentThread.ThreadID;
     Result.ThreadName := TmaxAsyncGlobal.GetThreadName(Result.ThreadId);
   end;
 

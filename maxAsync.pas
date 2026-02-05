@@ -759,7 +759,7 @@ begin
   {$ENDIF}
   fThreadData.SetThreadId(
     {$IFDEF MsWindows}
-    GetCurrentThreadId
+    TThread.CurrentThread.ThreadID
     {$ELSE}
     TThread.CurrentThread.ThreadId
     {$ENDIF}
@@ -790,7 +790,7 @@ begin
         NameThreadForDebugging(AnsiString(sName));
 
         {$IFDEF madExcept}
-        madExcept.NameThread(GetCurrentThreadId, sName);
+        madExcept.NameThread(TThread.CurrentThread.ThreadID, sName);
         {$ENDIF}
         if fThreadData.Proc <> nil then
         begin
@@ -2074,7 +2074,7 @@ end;
 initialization
 
   {$IFDEF madExcept}
-  madExcept.NameThread(GetCurrentThreadId, 'MainVclThread');
+  madExcept.NameThread(TThread.CurrentThread.ThreadID, 'MainVclThread');
   {$ENDIF}
   System.NeverSleepOnMMThreadContention := True;
 

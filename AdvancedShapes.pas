@@ -1359,8 +1359,8 @@ begin
   setlength(fPoints, c);
   for x := 0 to c - 1 do
   begin
-    w(node, 'P' + i2s(x) + 'X', fPoints[x].x);
-    w(node, 'P' + i2s(x) + 'y', fPoints[x].x);
+    w(node, 'P' + IntToStr(x) + 'X', fPoints[x].x);
+    w(node, 'P' + IntToStr(x) + 'y', fPoints[x].x);
   end;
   AfterChanged;
 end;
@@ -1385,8 +1385,8 @@ begin
   w(node, 'POINT-COUNT', Length(Points));
   for x := 0 to Length(fPoints) - 1 do
   begin
-    w(node, 'P' + i2s(x) + 'X', fPoints[x].x);
-    w(node, 'P' + i2s(x) + 'y', fPoints[x].x);
+    w(node, 'P' + IntToStr(x) + 'X', fPoints[x].x);
+    w(node, 'P' + IntToStr(x) + 'y', fPoints[x].x);
   end;
 
 end;

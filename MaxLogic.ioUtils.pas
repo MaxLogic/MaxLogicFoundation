@@ -225,6 +225,8 @@ procedure FillZeroBytes(var Bytes: TBytes);
 procedure ZeroMemory(aPtr: Pointer; aSize: NativeInt); inline;
 {$ENDIF}
 
+procedure GetFileList(aFileList: TStringList; const aDirectory: String; const aFileMask: String = '*.*'; aIncludeSubDirectories: Boolean = false);
+
 implementation
 
 uses
@@ -1187,5 +1189,20 @@ end;
 {$ENDIF}
 
 
+procedure GetFileList(aFileList: TStringList; const aDirectory, aFileMask: String; aIncludeSubDirectories: Boolean);
+var
+  lOption: TSearchOption;
+  lDir: String;
+begin
+  if aIncludeSubDirectories then
+    lOption:= TSearchOption.soTopDirectoryOnly
+  else
+    lOption:= TSearchOption.soAllDirectories;
+
+  lDir:= slash(aDirectory);
+  var lFiles:= TDirectory.GetFiles(lDir, aFileMask, lOption);
+  for var lFile in lFiles do
+    aFileList.Add(ExtractRelativePath(lDir, lFile));
+end;
 end.
 
