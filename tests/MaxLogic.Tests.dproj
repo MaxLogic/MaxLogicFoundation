@@ -186,6 +186,7 @@
         <DCCReference Include="..\MaxLogic.Cache.RepositoryBase.pas"/>
         <DCCReference Include="unit\MaxLogic.Cache.Tests.pas"/>
         <DCCReference Include="unit\MaxLogic.Hash.Tests.pas"/>
+        <DCCReference Include="unit\MaxLogic.Process.Tests.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
             <DependentOn>..\MaxLogicDefault.optset</DependentOn>
