@@ -18,7 +18,7 @@
   2. In the `initialization` section of any unit that has a dependency,
      register that dependency's interface type with the TDependencyRegistry.
      Example:
-        `TDependencyRegistry.Instance.RegisterRequirement(TypeInfo(IMyService));`
+        `TDependencyRegistry.Instance.RegisterRequirement(TypeInfo(IMyService), TSomeUnit.UnitName);`
         or
         `TDependencyRegistry.Instance.RegisterRequirementsFrom(TMyClass);
 
@@ -92,18 +92,33 @@ type
   TDICompositionRoot = class;
 
   /// <summary>
+  /// Stores a dependency requirement plus the known requesters.
+  /// </summary>
+  TDependencyRequirement = class
+  private
+    fMode: TValidationMode;
+    fRequesters: TStringList;
+  public
+    constructor Create(aMode: TValidationMode);
+    destructor Destroy; override;
+    procedure AddRequester(const aUnitName, aClassName: string);
+    property Mode: TValidationMode read fMode write fMode;
+    property Requesters: TStringList read fRequesters;
+  end;
+
+  /// <summary>
   /// A singleton registry to collect all required dependency types from across the application.
   /// Its primary purpose is to enable robust, fail-fast validation at application startup.
   /// </summary>
   TDependencyRegistry = class
   private
-    fRequired: TDictionary<PTypeInfo, TValidationMode>;
+    fRequired: TObjectDictionary<PTypeInfo, TDependencyRequirement>;
     fDirty: Boolean;
     class var fInstance: TDependencyRegistry;
     constructor Create;
     class destructor DestroyClass;
     // Core scanner that works purely on TRttiType (no instance required)
-    procedure RegisterRequirementsFromRttiType(const aRttiType: TRttiType);
+    procedure RegisterRequirementsFromRttiType(const aRttiType: TRttiType; const aRequesterUnit, aRequesterClass: string);
   public
     destructor Destroy; override;
 
@@ -117,8 +132,10 @@ type
     /// the interface specified by aTypeInfo. This should be called from the
     /// `initialization` section of units that contain classes with dependencies.
     /// </summary>
-    procedure RegisterRequirement(aTypeInfo: PTypeInfo; aMode: TValidationMode = vmRegisteredOnly); overload;
-    procedure RegisterRequirement<T>; overload;
+    procedure RegisterRequirement(aTypeInfo: PTypeInfo; const aUnitName: string; aMode: TValidationMode = vmRegisteredOnly); overload;
+    procedure RegisterRequirement(aTypeInfo: PTypeInfo; const aUnitName, aClassName: string; aMode: TValidationMode = vmRegisteredOnly); overload;
+    procedure RegisterRequirement<T>(const aUnitName: string; aMode: TValidationMode = vmRegisteredOnly); overload;
+    procedure RegisterRequirement<T>(const aUnitName, aClassName: string; aMode: TValidationMode = vmRegisteredOnly); overload;
 
     /// <summary>
     /// Scans the given class type for [Inject]-and/or [DIRequire] decorated fields and properties
@@ -135,6 +152,7 @@ type
     /// </summary>
     function GetRequiredTypes: TArray<PTypeInfo>;
     function GetMode(aTypeInfo: PTypeInfo): TValidationMode;
+    function GetRequestersText(aTypeInfo: PTypeInfo): string;
 
     /// <summary>
     /// Returns the list of required service types as a JSON array of strings.
@@ -250,6 +268,40 @@ begin
     Result := aMemberType.Handle;
 end;
 
+{ TDependencyRequirement }
+
+constructor TDependencyRequirement.Create(aMode: TValidationMode);
+begin
+  inherited Create;
+  fMode := aMode;
+  fRequesters := TStringList.Create;
+  fRequesters.Sorted := True;
+  fRequesters.Duplicates := dupIgnore;
+end;
+
+destructor TDependencyRequirement.Destroy;
+begin
+  fRequesters.Free;
+  inherited;
+end;
+
+procedure TDependencyRequirement.AddRequester(const aUnitName, aClassName: string);
+var
+  lUnitName: string;
+  lKey: string;
+begin
+  lUnitName := aUnitName;
+  if lUnitName = '' then
+    lUnitName := '<unknown>';
+
+  if aClassName <> '' then
+    lKey := lUnitName + '.' + aClassName
+  else
+    lKey := lUnitName;
+
+  fRequesters.Add(lKey);
+end;
+
 
 {$IFDEF DEBUG}
 var fPrevInitProc : Procedure;
@@ -274,7 +326,7 @@ end;
 constructor TDependencyRegistry.Create;
 begin
   inherited Create;
-  fRequired:= TDictionary<PTypeInfo, TValidationMode>.Create;
+  fRequired:= TObjectDictionary<PTypeInfo, TDependencyRequirement>.Create([TDictionaryOwnership.doOwnsValues]);
 end;
 
 destructor TDependencyRegistry.Destroy;
@@ -288,15 +340,25 @@ begin
   FreeAndNil(fInstance);
 end;
 
-procedure TDependencyRegistry.RegisterRequirement<T>;
+procedure TDependencyRegistry.RegisterRequirement<T>(const aUnitName: string; aMode: TValidationMode);
 begin
-  RegisterRequirement(TypeInfo(T));
+  RegisterRequirement(TypeInfo(T), aUnitName, aMode);
 end;
 
 
-procedure TDependencyRegistry.RegisterRequirement(aTypeInfo: PTypeInfo; aMode: TValidationMode);
+procedure TDependencyRegistry.RegisterRequirement<T>(const aUnitName, aClassName: string; aMode: TValidationMode);
+begin
+  RegisterRequirement(TypeInfo(T), aUnitName, aClassName, aMode);
+end;
+
+procedure TDependencyRegistry.RegisterRequirement(aTypeInfo: PTypeInfo; const aUnitName: string; aMode: TValidationMode);
+begin
+  RegisterRequirement(aTypeInfo, aUnitName, '', aMode);
+end;
+
+procedure TDependencyRegistry.RegisterRequirement(aTypeInfo: PTypeInfo; const aUnitName, aClassName: string; aMode: TValidationMode);
 var
-  lExisting: TValidationMode;
+  lExisting: TDependencyRequirement;
 begin
   if not Assigned(aTypeInfo) then
     Exit;
@@ -308,15 +370,20 @@ begin
   if fRequired.TryGetValue(aTypeInfo, lExisting) then
   begin
     // "ResolveAtStartup" wins
-    if Ord(aMode) > Ord(lExisting) then
-      fRequired[aTypeInfo] := aMode;
+    if Ord(aMode) > Ord(lExisting.Mode) then
+      lExisting.Mode := aMode;
   end else
-    fRequired.Add(aTypeInfo, aMode);
+  begin
+    lExisting := TDependencyRequirement.Create(aMode);
+    fRequired.Add(aTypeInfo, lExisting);
+  end;
+
+  lExisting.AddRequester(aUnitName, aClassName);
 end;
 
 
 
-procedure TDependencyRegistry.RegisterRequirementsFromRttiType(const aRttiType: TRttiType);
+procedure TDependencyRegistry.RegisterRequirementsFromRttiType(const aRttiType: TRttiType; const aRequesterUnit, aRequesterClass: string);
 var
   lField: TRttiField;
   lProp: TRttiProperty;
@@ -343,7 +410,7 @@ begin
       if Assigned(lReq) or GetInject(lField.GetAttributes , lInject) then
       begin
         lServiceType := ServiceTypeFromAttrOrMember(lInject, lField.FieldType);
-        RegisterRequirement(lServiceType, lMode);
+        RegisterRequirement(lServiceType, aRequesterUnit, aRequesterClass, lMode);
       end;
   end;
 
@@ -359,7 +426,7 @@ begin
       if Assigned(lReq) or GetInject(lProp.GetAttributes , lInject) then
       begin
         lServiceType := ServiceTypeFromAttrOrMember(lInject, lProp.PropertyType);
-        RegisterRequirement(lServiceType, lMode);
+        RegisterRequirement(lServiceType, aRequesterUnit, aRequesterClass, lMode);
       end;
   end;
 
@@ -372,7 +439,7 @@ begin
         begin
           if GetValidationMode(p.GetAttributes , lReq) <> vmIgnore then
             if Assigned(lReq) then
-              RegisterRequirement(p.ParamType.Handle, lReq.Mode);
+              RegisterRequirement(p.ParamType.Handle, aRequesterUnit, aRequesterClass, lReq.Mode);
         end;
       end;
 
@@ -389,7 +456,7 @@ begin
   lCtx := TRttiContext.Create;
   try
     lType := lCtx.GetType(aClass); // RTTI by class ref, no instance needed
-    RegisterRequirementsFromRttiType(lType);
+    RegisterRequirementsFromRttiType(lType, aClass.UnitName, aClass.ClassName);
   finally
     lCtx.Free;
   end;
@@ -399,25 +466,56 @@ procedure TDependencyRegistry.RegisterRequirementsFrom<T>;
 var
   lCtx: TRttiContext;
   lType: TRttiType;
+  lClass: TClass;
 begin
   lCtx := TRttiContext.Create;
   try
     lType := lCtx.GetType(TypeInfo(T));
-    RegisterRequirementsFromRttiType(lType);
+    lClass := nil;
+    if lType is TRttiInstanceType then
+      lClass := TRttiInstanceType(lType).MetaclassType;
+
+    if Assigned(lClass) then
+      RegisterRequirementsFromRttiType(lType, lClass.UnitName, lClass.ClassName)
+    else
+      RegisterRequirementsFromRttiType(lType, '<unknown>', lType.Name);
   finally
     lCtx.Free;
   end;
 end;
 
 function TDependencyRegistry.GetMode(aTypeInfo: PTypeInfo): TValidationMode;
+var
+  lReq: TDependencyRequirement;
 begin
-  if not fRequired.TryGetValue(aTypeInfo, Result) then
+  if fRequired.TryGetValue(aTypeInfo, lReq) then
+    Result := lReq.Mode
+  else
     Result:= TValidationMode.vmRegisteredOnly; // default
 end;
 
 function TDependencyRegistry.GetRequiredTypes: TArray<PTypeInfo>;
 begin
   Result := fRequired.Keys.ToArray;
+end;
+
+function TDependencyRegistry.GetRequestersText(aTypeInfo: PTypeInfo): string;
+var
+  lReq: TDependencyRequirement;
+  i: Integer;
+begin
+  Result := '';
+  if not fRequired.TryGetValue(aTypeInfo, lReq) then
+    Exit;
+  if lReq.Requesters.Count = 0 then
+    Exit;
+
+  for i := 0 to lReq.Requesters.Count - 1 do
+  begin
+    if Result <> '' then
+      Result := Result + '; ';
+    Result := Result + lReq.Requesters[i];
+  end;
 end;
 
 
@@ -640,6 +738,7 @@ procedure TDICompositionRoot.ValidateDependencies;
 var
   lRequiredType: PTypeInfo;
   lTypeName: string;
+  lRequesterText: string;
   lServiceLocator: IServiceLocator;
   lCtx: TRttiContext;
 begin
@@ -654,12 +753,15 @@ begin
     for lRequiredType in TDependencyRegistry.Instance.GetRequiredTypes do
     begin
       lTypeName := lCtx.GetType(lRequiredType).QualifiedName;
+      lRequesterText := TDependencyRegistry.Instance.GetRequestersText(lRequiredType);
+      if lRequesterText <> '' then
+        lRequesterText := sLineBreak + 'Required by: ' + lRequesterText;
 
       // 1. Check if the interface is registered using the correct method.
       if not lServiceLocator.HasService(lRequiredType) then
         raise EContainerException.CreateFmt(
-          'Startup Validation Failed: The required service "%s" is declared as a dependency but is not registered in the DI container.',
-          [lTypeName]
+          'Startup Validation Failed: The required service "%s" is declared as a dependency but is not registered in the DI container.%s',
+          [lTypeName, lRequesterText]
           );
 
       // 2. Try to actually resolve it.
@@ -669,8 +771,8 @@ begin
         except
           on e: Exception do
             raise EContainerException.CreateFmt(
-              'Startup Validation Failed: Could not resolve the required service "%s". Check its own dependencies. Original Error: %s',
-              [lTypeName, e.Message]
+              'Startup Validation Failed: Could not resolve the required service "%s". Check its own dependencies. Original Error: %s%s',
+              [lTypeName, e.Message, lRequesterText]
               );
         end;
     end;
