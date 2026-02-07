@@ -1200,6 +1200,9 @@ begin
     lOption:= TSearchOption.soAllDirectories;
 
   lDir:= slash(aDirectory);
+  if not TDirectory.Exists(lDir) then
+    exit;
+
   var lFiles:= TDirectory.GetFiles(lDir, aFileMask, lOption);
   for var lFile in lFiles do
     aFileList.Add(ExtractRelativePath(lDir, lFile));
