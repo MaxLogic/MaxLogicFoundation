@@ -267,9 +267,12 @@ type
 {$IFDEF UNITTESTS}
 type
   TMaxCacheTagRegisterHook = reference to procedure(const aNamespace, aKey: string; const aTags: TArray<string>);
+  TMaxCacheBeforeInvalidateRemoveHook = reference to procedure(const aNamespace, aKey: string; const aTags: TArray<string>);
 
 procedure MaxCache_SetTagRegisterHook(const aHook: TMaxCacheTagRegisterHook);
 procedure MaxCache_ClearTagRegisterHook;
+procedure MaxCache_SetBeforeInvalidateRemoveHook(const aHook: TMaxCacheBeforeInvalidateRemoveHook);
+procedure MaxCache_ClearBeforeInvalidateRemoveHook;
 {$ENDIF}
 
 implementation
@@ -277,6 +280,7 @@ implementation
 {$IFDEF UNITTESTS}
 var
   gTagRegisterHook: TMaxCacheTagRegisterHook;
+  gBeforeInvalidateRemoveHook: TMaxCacheBeforeInvalidateRemoveHook;
 
 procedure MaxCache_SetTagRegisterHook(const aHook: TMaxCacheTagRegisterHook);
 begin
@@ -286,6 +290,16 @@ end;
 procedure MaxCache_ClearTagRegisterHook;
 begin
   gTagRegisterHook := nil;
+end;
+
+procedure MaxCache_SetBeforeInvalidateRemoveHook(const aHook: TMaxCacheBeforeInvalidateRemoveHook);
+begin
+  gBeforeInvalidateRemoveHook := aHook;
+end;
+
+procedure MaxCache_ClearBeforeInvalidateRemoveHook;
+begin
+  gBeforeInvalidateRemoveHook := nil;
 end;
 {$ENDIF}
 
@@ -1398,6 +1412,10 @@ begin
   try
     lTags := [];
     MarkEntryInvalidated(lEntry, True, lTags);
+{$IFDEF UNITTESTS}
+    if Assigned(gBeforeInvalidateRemoveHook) then
+      gBeforeInvalidateRemoveHook(aNamespace, aKey, lTags);
+{$ENDIF}
     lRemoved := RemoveEntryIfSame(lBucket, aKey, lEntry);
   finally
     if lRemoved then
@@ -1405,12 +1423,14 @@ begin
     lEntry.Release;
   end;
 
-  Result := True;
-
+  Result := lRemoved;
   if aCountDirectMetric then
     TInterlocked.Increment(fInvalidationsDirect);
 
-  if Length(lTags) > 0 then
+  if not Result then
+    Exit;
+
+  if lRemoved and (Length(lTags) > 0) then
     UnregisterTags(aNamespace, aKey, lTags);
 
 end;
@@ -1471,7 +1491,7 @@ begin
     finally
       if lRemoved then
         lEntry.Release;
-      if Length(lTags) > 0 then
+      if lRemoved and (Length(lTags) > 0) then
         UnregisterTags(aNamespace, lKey, lTags);
       lEntry.Release;
     end;
@@ -1812,7 +1832,7 @@ begin
       begin
         MarkEntryInvalidated(lEntry, False, lTags);
         lRemoved := RemoveEntryIfSame(aBucket, lCandidate.Key, lEntry);
-        if Length(lTags) > 0 then
+        if lRemoved and (Length(lTags) > 0) then
           UnregisterTags(aNamespace, lCandidate.Key, lTags);
       end;
     finally
@@ -1950,7 +1970,7 @@ begin
       begin
         MarkEntryInvalidated(lEntry, False, lTags);
         lRemoved := RemoveEntryIfSame(aBucket, lKey, lEntry);
-        if Length(lTags) > 0 then
+        if lRemoved and (Length(lTags) > 0) then
           UnregisterTags(aNamespace, lKey, lTags);
       end;
     finally

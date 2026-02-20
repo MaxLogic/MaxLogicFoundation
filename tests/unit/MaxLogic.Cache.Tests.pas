@@ -55,6 +55,7 @@ type
     [Test] procedure Invalidate_DuringLoading_IsSafe;
     [Test] procedure TagInvalidation_ScopedTag;
     [Test] procedure TagInvalidation_NoGhostAfterConcurrentInvalidate;
+    [Test] procedure TagInvalidation_SameTagPreservedAfterConcurrentInvalidateRace;
     [Test] procedure ScopedTag_RejectsPreScoped;
     [Test] procedure DependencyValidation_StampedeProtected;
     [Test] procedure FileDependency_HashDetectsTimestampPreservedChange;
@@ -722,6 +723,103 @@ begin
     lHookEntered.Free;
     lOptionsA.Free;
     lOptionsB.Free;
+  end;
+end;
+
+procedure TMaxCacheTests.TagInvalidation_SameTagPreservedAfterConcurrentInvalidateRace;
+const
+  cTimeoutMs = 4000;
+var
+  lCache: IMaxCache;
+  lConfig: TMaxCacheConfig;
+  lSharedOptions: TMaxCacheOptions;
+  lHookEntered: TEvent;
+  lHookContinue: TEvent;
+  lInvalidateThread: TThread;
+  lThreadErr: string;
+  lLoadCount: Integer;
+begin
+  lConfig := NewConfigNoSweep;
+  lCache := TMaxCache.New(lConfig);
+
+  lSharedOptions := TMaxCacheOptions.Create;
+  lHookEntered := TEvent.Create(nil, True, False, '');
+  lHookContinue := TEvent.Create(nil, True, False, '');
+  lInvalidateThread := nil;
+  lThreadErr := '';
+  lLoadCount := 0;
+  try
+    lSharedOptions.Tags := ['group:shared'];
+
+    lCache.GetOrCreate('ns', 'k',
+      function: IInterface
+      begin
+        TInterlocked.Increment(lLoadCount);
+        Result := TTestValue.Create(1, 'seed') as ITestValue;
+      end, lSharedOptions);
+
+    MaxCache_SetBeforeInvalidateRemoveHook(
+      procedure(const aNamespace, aKey: string; const aTags: TArray<string>)
+      begin
+        if (aNamespace = 'ns') and (aKey = 'k') and (Length(aTags) = 1) and (aTags[0] = 'group:shared') then
+        begin
+          lHookEntered.SetEvent;
+          lHookContinue.WaitFor(cTimeoutMs);
+        end;
+      end);
+
+    lInvalidateThread := TThread.CreateAnonymousThread(
+      procedure
+      begin
+        try
+          lCache.Invalidate('ns', 'k');
+        except
+          on E: Exception do
+            lThreadErr := E.ClassName + ': ' + E.Message;
+        end;
+      end);
+    lInvalidateThread.FreeOnTerminate := False;
+    lInvalidateThread.Start;
+
+    Assert.AreEqual(wrSignaled, lHookEntered.WaitFor(cTimeoutMs), 'invalidate hook not entered');
+
+    // Remove the seeded entry while the first invalidation is paused before RemoveEntryIfSame.
+    lCache.Invalidate('ns', 'k');
+
+    // Recreate the same key with the same tag. The paused invalidation must not remove this new tag ref.
+    lCache.GetOrCreate('ns', 'k',
+      function: IInterface
+      begin
+        TInterlocked.Increment(lLoadCount);
+        Result := TTestValue.Create(2, 'reloaded') as ITestValue;
+      end, lSharedOptions);
+
+    lHookContinue.SetEvent;
+    lInvalidateThread.WaitFor;
+    Assert.AreEqual('', lThreadErr, 'invalidation thread should not raise');
+
+    MaxCache_ClearBeforeInvalidateRemoveHook;
+
+    lCache.InvalidateByTag(TMaxCache.ScopedTag('ns', 'group:shared'));
+    lCache.GetOrCreate('ns', 'k',
+      function: IInterface
+      begin
+        TInterlocked.Increment(lLoadCount);
+        Result := TTestValue.Create(3, 'after-tag-invalidate') as ITestValue;
+      end);
+
+    Assert.AreEqual(3, lLoadCount, 'shared tag should still invalidate the newest entry');
+  finally
+    MaxCache_ClearBeforeInvalidateRemoveHook;
+    lHookContinue.SetEvent;
+    if lInvalidateThread <> nil then
+    begin
+      lInvalidateThread.WaitFor;
+      lInvalidateThread.Free;
+    end;
+    lHookContinue.Free;
+    lHookEntered.Free;
+    lSharedOptions.Free;
   end;
 end;
 
