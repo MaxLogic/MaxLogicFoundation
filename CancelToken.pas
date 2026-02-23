@@ -3,7 +3,7 @@ unit CancelToken;
 interface
 
 uses
-  system.sysUtils, system.classes;
+  SysUtils, Classes;
 
 Type
   iCancelToken = Interface
