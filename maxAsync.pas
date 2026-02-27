@@ -28,6 +28,7 @@
   2023-06-28: moved iSignal to its own unit: maxSignal
   2022-01-30: Linux compatibility
   2021-06-12: TAsyncTimer implementation
+  2026-02-26: TAsyncTimer is now a deprecated compatibility wrapper. Use MaxLogic.PortableTimer.TPortableTimer instead.
   2020-02-27: iAsync has now access to the thread priority
   2019-10-05: removed tmonitor in favor of TFixedRtlCriticalSection
   2018-11-26: added thread safe messageDlg method
@@ -76,6 +77,7 @@ uses
   {$ENDIF}
   Classes, SysUtils, SyncObjs,
   generics.defaults, generics.collections,
+  MaxLogic.PortableTimer,
   maxSignal;
 
 type
@@ -405,10 +407,12 @@ type
         end;
     private
       fReadySignal: iSignal;
+      fReadySignalIsSignaled: boolean;
       fItems: TQueue<t>;
       FSimultanousThreadCount: integer;
       FOnFinished: TThreadProcedure;
       fProc: TAsyncCollectionProcessorProc<t>;
+      fOnFinishedThreadId: TThreadID;
 
       fThreads: TList<TThreadHolder>;
       fNextThreadId: Int64;
@@ -455,6 +459,15 @@ type
     public
       constructor Create(aList: TList<t>; aComparer: iComparer<t>);
       function find(const Value: t; out Index: integer): boolean;
+    end;
+
+    TSafeValueInit = class
+    strict private
+      class var fSec: iCriticalSection;
+      class constructor CreateClass;
+      class destructor DestroyClass;
+    public
+      class function GetLock: iCriticalSection; static; inline;
     end;
 
     TSafeValue<t: record > = record
@@ -557,24 +570,24 @@ property Value: t read getValue write SetValue;
       class constructor Create;
     end;
 
+    // Deprecated compatibility wrapper.
+    // Use MaxLogic.PortableTimer.TPortableTimer for new code.
     TAsyncTimer = class
     private
-      fAsync: iAsync;
-      fSignal: iSignal;
+      fEnabled: boolean;
+      fInterval: integer;
       fProc: TProc;
-      FEnabled: boolean;
-      FInterval: integer;
-      fTerminated: boolean;
-      procedure asyncLoop;
-      procedure SetEnabled(const Value: boolean);
-      procedure SetInterval(const Value: integer);
+      fTimer: TPortableTimer;
+      procedure HandleTimerTick(aSender: TObject);
+      procedure SetEnabled(const aValue: boolean);
+      procedure SetInterval(const aValue: integer);
     public
       constructor Create(aProc: TProc; aInterval: integer; aEnabled: boolean = True);
       destructor Destroy;
         override;
-      property Enabled: boolean read FEnabled write SetEnabled;
-      property Interval: integer read FInterval write SetInterval;
-    end;
+      property Enabled: boolean read fEnabled write SetEnabled;
+      property Interval: integer read fInterval write SetInterval;
+    end deprecated 'Use MaxLogic.PortableTimer.TPortableTimer instead.';
 
 function SimpleAsyncCall(aProc: TThreadProcedure;
   const TaskName: string = '';
@@ -1157,10 +1170,38 @@ end;
 
 { TSafeValue<T> }
 
-procedure TSafeValue<t>.EnsureInit;
+class constructor TSafeValueInit.CreateClass;
 begin
-  if fSec = nil then
-    fSec := tInterfacedCriticalSection.Create;
+  fSec := tInterfacedCriticalSection.Create;
+end;
+
+class destructor TSafeValueInit.DestroyClass;
+begin
+  fSec := nil;
+end;
+
+class function TSafeValueInit.GetLock: iCriticalSection;
+begin
+  Result := fSec;
+end;
+
+procedure TSafeValue<t>.EnsureInit;
+var
+  lInitSec: iCriticalSection;
+  lSec: iCriticalSection;
+begin
+  lSec := fSec;
+  if lSec <> nil then
+    Exit;
+
+  lInitSec := TSafeValueInit.GetLock;
+  lInitSec.Enter;
+  try
+    if fSec = nil then
+      fSec := tInterfacedCriticalSection.Create;
+  finally
+    lInitSec.leave;
+  end;
 end;
 
 function TSafeValue<t>.getValue: t;
@@ -1220,7 +1261,7 @@ end;
 constructor TAsyncLoop.Create;
 begin
   inherited Create;
-  FSimultanousThreadCount := TmaxAsyncGlobal.NumberOfProcessors * 4 - 2 { for the main VCL Thread };
+  FSimultanousThreadCount := Max(1, Integer(TmaxAsyncGlobal.NumberOfProcessors) * 4 - 2 { for the main VCL Thread });
   fReadySignal := tSignal.Create;
   fReadySignal.setSignaled;
 end;
@@ -1228,6 +1269,7 @@ end;
 procedure TAsyncLoop.Execute(aMin, aMax: integer; aProc: TAsyncEnumProc);
 var
   X: integer;
+  lThreadCount: integer;
 begin
   // prevent double executions
   WaitFor;
@@ -1236,7 +1278,11 @@ begin
   {$IFDEF ASYNC_LOOP_USES_SINGLETHREAD}
   self.SimultanousThreadCount := 1;
   {$ENDIF}
-  SetLength(fThreads, self.SimultanousThreadCount);
+  lThreadCount := self.SimultanousThreadCount;
+  if lThreadCount <= 0 then
+    lThreadCount := Max(1, Integer(TmaxAsyncGlobal.NumberOfProcessors) * 4 - 2);
+
+  SetLength(fThreads, lThreadCount);
 
   fCurIndex := aMin;
   fMax := aMax;
@@ -1258,14 +1304,19 @@ var
   Loop: TAsyncLoop;
 begin
   Loop := TAsyncLoop.Create;
-  if ThreadCount <> 0 then
-    Loop.SimultanousThreadCount := ThreadCount;
+  try
+    if ThreadCount <> 0 then
+      Loop.SimultanousThreadCount := ThreadCount;
 
-  Loop.fRunProcWithCancel := aProc;
-  Loop.fRunOnDone := OnDone;
-  Loop.OnFinished := Loop.RunFinished;
+    Loop.fRunProcWithCancel := aProc;
+    Loop.fRunOnDone := OnDone;
+    Loop.OnFinished := Loop.RunFinished;
 
-  Loop.Execute(aMin, aMax, Loop.RunIteration);
+    Loop.Execute(aMin, aMax, Loop.RunIteration);
+  except
+    Loop.Free;
+    raise;
+  end;
 end;
 
 class procedure TAsyncLoop.RunAndWait(const aMin, aMax: integer; aProc: TAsyncEnumProcWithCancel; ThreadCount: integer);
@@ -1273,22 +1324,25 @@ var
   Loop: TAsyncLoop;
 begin
   Loop := TAsyncLoop.Create;
-  if ThreadCount <> 0 then
-    Loop.SimultanousThreadCount := ThreadCount;
+  try
+    if ThreadCount <> 0 then
+      Loop.SimultanousThreadCount := ThreadCount;
 
-  Loop.Execute(aMin, aMax,
-    procedure(i: integer)
-    var
-      aCancel: boolean;
-    begin
-      aCancel := False;
-      aProc(i, aCancel);
-      if aCancel then
-        Loop.Cancel;
-    end);
+    Loop.Execute(aMin, aMax,
+      procedure(i: integer)
+      var
+        aCancel: boolean;
+      begin
+        aCancel := False;
+        aProc(i, aCancel);
+        if aCancel then
+          Loop.Cancel;
+      end);
 
-  Loop.WaitFor;
-  Loop.Free;
+    Loop.WaitFor;
+  finally
+    Loop.Free;
+  end;
 end;
 
 procedure TAsyncLoop.WaitFor;
@@ -1311,7 +1365,10 @@ procedure TAsyncLoop.SetSimultanousThreadCount(
   Value:
   integer);
 begin
-  FSimultanousThreadCount := Value;
+  if Value > 0 then
+    FSimultanousThreadCount := Value
+  else
+    FSimultanousThreadCount := Max(1, Integer(TmaxAsyncGlobal.NumberOfProcessors) * 4 - 2);
 end;
 
 procedure TAsyncLoop.RunIteration(CurIndex: integer);
@@ -1369,32 +1426,52 @@ end;
 
 procedure TAsyncLoop.asyncLoopIteration;
 var
-  Index: integer;
-  CallFinished: boolean;
+  lIndex: integer;
+  lCallFinished: boolean;
 begin
-  repeat
-    CallFinished := False;
-    Index := TInterlocked.increment(fCurIndex) - 1;
-    if Index > fMax then
-      if TInterlocked.Decrement(fActivThreadCount) = 0 then
-        CallFinished := True;
+  try
+    repeat
+      lIndex := TInterlocked.increment(fCurIndex) - 1;
+      if lIndex > fMax then
+        Break;
 
-    if CallFinished then
+      try
+        fProc(lIndex);
+      except
+        // keep the remaining workers bounded and guarantee completion signaling
+        Cancel;
+        raise;
+      end;
+    until False;
+  finally
+    lCallFinished := (TInterlocked.Decrement(fActivThreadCount) = 0);
+    if lCallFinished then
     begin
       fReadySignal.setSignaled;
       if assigned(FOnFinished) then
         FOnFinished();
-    end
-    else if Index <= fMax then
-    begin
-      fProc(Index);
     end;
-  until Index > fMax;
+  end;
 end;
 
 procedure TAsyncLoop.Cancel;
+var
+  lCancelValue: integer;
+  lCurrent: integer;
+  lSucceeded: boolean;
 begin
-  TInterlocked.Add(fCurIndex, fMax + 1);
+  if fMax = High(Integer) then
+    lCancelValue := High(Integer)
+  else
+    lCancelValue := fMax + 1;
+
+  repeat
+    lCurrent := fCurIndex;
+    if lCurrent > fMax then
+      Break;
+
+    TInterlocked.CompareExchange(fCurIndex, lCancelValue, lCurrent, lSucceeded);
+  until lSucceeded;
 end;
 
 { TmaxAsyncGlobal }
@@ -1562,26 +1639,42 @@ end;
 
 class function TWaiter.WaitFor(const Async: TArray<iAsync>; Milliseconds: dword = INFINITE; DoProcessMessages: boolean = False): boolean;
 var
-  events: TArray<TEvent>;
+  lAsyncIntern: iAsyncIntern;
+  lEvents: TArray<TEvent>;
+  lThreadData: iThreadData;
   X: integer;
 begin
-  SetLength(events, length(Async));
+  SetLength(lEvents, length(Async));
   for X := 0 to length(Async) - 1 do
-    events[X] := (Async[X] as iAsyncIntern).GetThreadData.ReadySignal.Event;
+  begin
+    if not Supports(Async[X], iAsyncIntern, lAsyncIntern) then
+      raise Exception.CreateFmt('TWaiter.WaitFor only supports maxAsync iAsync instances. Index=%d.', [X]);
 
-  Result := WaitFor(events, Milliseconds, DoProcessMessages);
+    lThreadData := lAsyncIntern.GetThreadData;
+    if (lThreadData = nil) or (lThreadData.ReadySignal = nil) or (lThreadData.ReadySignal.Event = nil) then
+      raise Exception.CreateFmt('TWaiter.WaitFor received invalid async thread data. Index=%d.', [X]);
+
+    lEvents[X] := lThreadData.ReadySignal.Event;
+  end;
+
+  Result := WaitFor(lEvents, Milliseconds, DoProcessMessages);
 end;
 
 class function TWaiter.WaitFor(const Signals: TArray<iSignal>; Milliseconds: dword; DoProcessMessages: boolean): boolean;
 var
-  events: TArray<TEvent>;
+  lEvents: TArray<TEvent>;
   X: integer;
 begin
-  SetLength(events, length(Signals));
+  SetLength(lEvents, length(Signals));
   for X := 0 to length(Signals) - 1 do
-    events[X] := Signals[X].Event;
+  begin
+    if (Signals[X] = nil) or (Signals[X].Event = nil) then
+      raise Exception.CreateFmt('TWaiter.WaitFor received invalid signal event. Index=%d.', [X]);
 
-  Result := WaitFor(events, Milliseconds, DoProcessMessages);
+    lEvents[X] := Signals[X].Event;
+  end;
+
+  Result := WaitFor(lEvents, Milliseconds, DoProcessMessages);
 end;
 
 class function TWaiter.WaitFor(const aEvents: TArray<TEvent>; Milliseconds: dword; DoProcessMessages: boolean): boolean;
@@ -1609,9 +1702,8 @@ var
   X: integer;
   Count: dword;
   SignalState: dword;
-  StartTime: dword;
   orgTimeOutMilliseconds: dword;
-  events: TArray<THandle>;
+  lHandles: TArray<THandle>;
   st: TStopWatch;
 begin
   if DoProcessMessages and (not InsideMainThread) then
@@ -1624,38 +1716,45 @@ begin
   if Count = 0 then
     exit(True);
 
-  SetLength(events, Count);
-  move(aEvents[0], events[0], Count * SizeOf(THandle));
-
-  while length(events) > 0 do
+  SetLength(lHandles, Count);
+  for X := 0 to Count - 1 do
   begin
-    Count := MIN(MAXCOUNT, length(events));
+    if aEvents[X] = nil then
+      raise Exception.CreateFmt('TWaiter.WaitFor received nil event object. Index=%d.', [X]);
+    lHandles[X] := aEvents[X].Handle;
+  end;
+
+  while length(lHandles) > 0 do
+  begin
+    Count := MIN(MAXCOUNT, length(lHandles));
 
     if not DoProcessMessages then
     begin
-      SignalState := WaitForMultipleObjects(Count, @events[0], True, Milliseconds);
+      SignalState := WaitForMultipleObjects(Count, @lHandles[0], True, Milliseconds);
       if SignalState in [WAIT_OBJECT_0..WAIT_OBJECT_0 + Count - 1] then
-        delete(events, 0, Count);
+        delete(lHandles, 0, Count);
 
     end
     else
     begin
 
-      SignalState := MsgWaitForMultipleObjects(Count, events[0], False, Milliseconds, QS_ALLINPUT);
+      SignalState := MsgWaitForMultipleObjects(Count, lHandles[0], False, Milliseconds, QS_ALLINPUT);
       // GUI message
       if SignalState = WAIT_OBJECT_0 + Count then
         application.ProcessMessages
       else if SignalState in [WAIT_OBJECT_0..WAIT_OBJECT_0 + Count - 1] then
-        delete(events, SignalState - WAIT_OBJECT_0, 1);
+        delete(lHandles, SignalState - WAIT_OBJECT_0, 1)
+      else if SignalState = WAIT_FAILED then
+        RaiseLastOSError;
     end;
 
     // check timeout
-    if (Milliseconds <> INFINITE) and (length(events) <> 0) then
+    if (Milliseconds <> INFINITE) and (length(lHandles) <> 0) then
     begin
       // if the timeOut is set, and is due, then exit
       if (orgTimeOutMilliseconds <= st.ElapsedMilliseconds) then
       begin
-        events := nil;
+        lHandles := nil;
         exit(False);
       end;
 
@@ -1683,9 +1782,11 @@ begin
 
   fThreads := TList<TThreadHolder>.Create;
 
-  FSimultanousThreadCount := TmaxAsyncGlobal.NumberOfProcessors * 4 - 2 { for the main VCL Thread };
+  FSimultanousThreadCount := Max(1, Integer(TmaxAsyncGlobal.NumberOfProcessors) * 4 - 2 { for the main VCL Thread });
   fReadySignal := tSignal.Create;
   fReadySignal.setSignaled;
+  fReadySignalIsSignaled := True;
+  fOnFinishedThreadId := 0;
 end;
 
 destructor TAsyncCollectionProcessor<t>.Destroy;
@@ -1700,42 +1801,71 @@ end;
 
 procedure TAsyncCollectionProcessor<t>.Add(const Items: TList<t>);
 var
-  Item: t;
+  lItem: t;
 begin
   fCriticalSection.Enter;
   try
-    for Item in Items do
-      fItems.Enqueue(Item);
+    if not Assigned(fProc) then
+      raise Exception.Create('TAsyncCollectionProcessor.Proc must be assigned before Add.');
+
+    if fReadySignalIsSignaled then
+    begin
+      fReadySignal.setNonsignaled;
+      fReadySignalIsSignaled := False;
+    end;
+    for lItem in Items do
+      fItems.Enqueue(lItem);
+
+    while fThreads.Count < FSimultanousThreadCount do
+      fThreads.Add(CreateThreadHolder);
   finally
     fCriticalSection.leave;
   end;
-  RestartThreads;
-
 end;
 
 procedure TAsyncCollectionProcessor<t>.Add(const Items: TArray<t>);
 var
-  Item: t;
+  lItem: t;
 begin
   fCriticalSection.Enter;
   try
-    for Item in Items do
-      fItems.Enqueue(Item);
+    if not Assigned(fProc) then
+      raise Exception.Create('TAsyncCollectionProcessor.Proc must be assigned before Add.');
+
+    if fReadySignalIsSignaled then
+    begin
+      fReadySignal.setNonsignaled;
+      fReadySignalIsSignaled := False;
+    end;
+    for lItem in Items do
+      fItems.Enqueue(lItem);
+
+    while fThreads.Count < FSimultanousThreadCount do
+      fThreads.Add(CreateThreadHolder);
   finally
     fCriticalSection.leave;
   end;
-  RestartThreads;
 end;
 
 procedure TAsyncCollectionProcessor<t>.Add(const Item: t);
 begin
   fCriticalSection.Enter;
   try
+    if not Assigned(fProc) then
+      raise Exception.Create('TAsyncCollectionProcessor.Proc must be assigned before Add.');
+
+    if fReadySignalIsSignaled then
+    begin
+      fReadySignal.setNonsignaled;
+      fReadySignalIsSignaled := False;
+    end;
     fItems.Enqueue(Item);
+
+    while fThreads.Count < FSimultanousThreadCount do
+      fThreads.Add(CreateThreadHolder);
   finally
     fCriticalSection.leave;
   end;
-  RestartThreads;
 end;
 
 procedure TAsyncCollectionProcessor<t>.ClearItems;
@@ -1750,35 +1880,69 @@ end;
 
 procedure TAsyncCollectionProcessor<t>.SetOnFinished(const Value: TThreadProcedure);
 begin
-  FOnFinished := Value;
+  fCriticalSection.Enter;
+  try
+    FOnFinished := Value;
+  finally
+    fCriticalSection.leave;
+  end;
 end;
 
 procedure TAsyncCollectionProcessor<t>.SetProc(const Value: TAsyncCollectionProcessorProc<t>);
 begin
-  fProc := Value;
+  if not Assigned(Value) then
+    raise Exception.Create('TAsyncCollectionProcessor.Proc cannot be nil.');
+
+  fCriticalSection.Enter;
+  try
+    fProc := Value;
+  finally
+    fCriticalSection.leave;
+  end;
 end;
 
 procedure TAsyncCollectionProcessor<t>.SetSimultanousThreadCount(const Value: integer);
+var
+  lThreadCount: integer;
 begin
-  if FSimultanousThreadCount <> Value then
+  if Value > 0 then
+    lThreadCount := Value
+  else
+    lThreadCount := Max(1, Integer(TmaxAsyncGlobal.NumberOfProcessors) * 4 - 2);
+
+  if FSimultanousThreadCount <> lThreadCount then
   begin
-    FSimultanousThreadCount := Value;
+    FSimultanousThreadCount := lThreadCount;
     RestartThreads;
   end;
 end;
 
 procedure TAsyncCollectionProcessor<t>.WaitFor;
+var
+  lCurrentThreadId: TThreadID;
+  lIsOnFinishedThread: boolean;
 begin
+  lCurrentThreadId := TThread.CurrentThread.ThreadId;
+  fCriticalSection.Enter;
+  try
+    lIsOnFinishedThread := (fOnFinishedThreadId <> 0) and (fOnFinishedThreadId = lCurrentThreadId);
+  finally
+    fCriticalSection.leave;
+  end;
+
+  if lIsOnFinishedThread then
+    Exit;
+
   fReadySignal.waitforSignaled;
 end;
 
 procedure TAsyncCollectionProcessor<t>.RestartThreads;
 begin
-  fReadySignal.setNonsignaled;
   fCriticalSection.Enter;
   try
-    while fThreads.Count < FSimultanousThreadCount do
-      fThreads.Add(CreateThreadHolder);
+    if fItems.Count <> 0 then
+      while fThreads.Count < FSimultanousThreadCount do
+        fThreads.Add(CreateThreadHolder);
 
   finally
     fCriticalSection.leave;
@@ -1802,52 +1966,122 @@ begin
 end;
 
 procedure TAsyncCollectionProcessor<t>.AsyncProcessItem(const ThreadId: Int64);
+const
+  cBatchSize = 8;
 var
-  X: integer;
-  Item: t;
-  IsLast, NoItem: boolean;
+  lBatch: array[0..cBatchSize - 1] of t;
+  lBatchCount: integer;
+  lBatchIndex: integer;
+  lRequeueIndex: integer;
+  lProc: TAsyncCollectionProcessorProc<t>;
+  lX: integer;
+  lItem: t;
+  lNoItem: boolean;
+  lCallFinished: boolean;
+  lShouldSetReady: boolean;
 begin
-  repeat
-    IsLast := False;
-    NoItem := False;
-    Item := default(t); // prevent 'variable might not be initialized' compiler warning
+  try
+    repeat
+      lBatchCount := 0;
 
-    fCriticalSection.Enter;
-    try
-      if fItems.Count <> 0 then
-      begin
-        Item := fItems.Dequeue;
-        NoItem := False;
-      end
-      else
-      begin
-        NoItem := True;
-
-        for X := 0 to fThreads.Count - 1 do
-          if fThreads[X].Id = ThreadId then
-          begin
-            fThreads.delete(X);
-            break;
-          end;
-        IsLast := fThreads.Count = 0
+      fCriticalSection.Enter;
+      try
+        lProc := fProc;
+        while (fItems.Count <> 0) and (lBatchCount < cBatchSize) do
+        begin
+          lBatch[lBatchCount] := fItems.Dequeue;
+          Inc(lBatchCount);
+        end
+      finally
+        fCriticalSection.leave;
       end;
 
+      lNoItem := (lBatchCount = 0);
+      if lNoItem then
+        Break;
+
+      lBatchIndex := 0;
+      try
+        while lBatchIndex < lBatchCount do
+        begin
+          lItem := lBatch[lBatchIndex];
+          lProc(lItem);
+          Inc(lBatchIndex);
+        end;
+      except
+        fCriticalSection.Enter;
+        try
+          for lRequeueIndex := lBatchIndex + 1 to lBatchCount - 1 do
+            fItems.Enqueue(lBatch[lRequeueIndex]);
+        finally
+          fCriticalSection.leave;
+        end;
+        raise;
+      end;
+    until False;
+  finally
+    lCallFinished := False;
+    lShouldSetReady := False;
+    fCriticalSection.Enter;
+    try
+      for lX := 0 to fThreads.Count - 1 do
+        if fThreads[lX].Id = ThreadId then
+        begin
+          fThreads.delete(lX);
+          break;
+        end;
+
+      if fItems.Count <> 0 then
+      begin
+        while fThreads.Count < FSimultanousThreadCount do
+          fThreads.Add(CreateThreadHolder);
+      end
+      else if fThreads.Count = 0 then
+      begin
+        lShouldSetReady := True;
+        lCallFinished := Assigned(FOnFinished);
+        if lCallFinished then
+          fOnFinishedThreadId := TThread.CurrentThread.ThreadId;
+      end;
     finally
       fCriticalSection.leave;
     end;
 
-    if NoItem and IsLast then
+    if lCallFinished then
     begin
       try
-        if assigned(FOnFinished) then
-          FOnFinished();
+        FOnFinished();
       finally
-        fReadySignal.setSignaled;
+        fCriticalSection.Enter;
+        try
+          fOnFinishedThreadId := 0;
+          if (fThreads.Count = 0) and (fItems.Count = 0) then
+          begin
+            if not fReadySignalIsSignaled then
+            begin
+              fReadySignal.setSignaled;
+              fReadySignalIsSignaled := True;
+            end;
+          end;
+        finally
+          fCriticalSection.leave;
+        end;
       end;
     end
-    else if not NoItem then
-      fProc(Item);
-  until NoItem;
+    else if lShouldSetReady then
+    begin
+      fCriticalSection.Enter;
+      try
+        if not fReadySignalIsSignaled then
+        begin
+          fReadySignal.setSignaled;
+          fReadySignalIsSignaled := True;
+        end;
+      finally
+        fCriticalSection.leave;
+      end;
+    end;
+  end;
 end;
 
 function TmaxAsync.GetThreadData: iThreadData;
@@ -1993,11 +2227,19 @@ end;
 
 procedure TLockFreeLock.lock;
 var
-  Succeeded: boolean;
+  lSucceeded: boolean;
+  lSpinCount: integer;
 begin
+  lSpinCount := 0;
   repeat
-    TInterlocked.CompareExchange(fLocked, 1, 0, Succeeded);
-  until Succeeded;
+    TInterlocked.CompareExchange(fLocked, 1, 0, lSucceeded);
+    if not lSucceeded then
+    begin
+      Inc(lSpinCount);
+      if (lSpinCount and 63) = 0 then
+        Sleep(0);
+    end;
+  until lSucceeded;
 end;
 
 procedure TLockFreeLock.unlock;
@@ -2018,61 +2260,71 @@ type
 begin
   // In the {$A8} or {$A+} state, fields in record types that are declared without the packed modifier and fields in class structures are aligned on quadword boundaries.
   {$IF SIZEOF(TTestRec) <> 16}
-  'App must be compiled in A8 mode'
-    {$IFEND}
+  {$MESSAGE ERROR 'maxAsync requires {$A8} / {$A+} alignment mode.'}
+  {$IFEND}
 end;
 
 { TAsyncTimer }
 
-procedure TAsyncTimer.SetEnabled(const Value: boolean);
+procedure TAsyncTimer.HandleTimerTick(aSender: TObject);
 begin
-  if FEnabled <> Value then
-  begin
-    FEnabled := Value;
-    if Value then
-      fSignal.setSignaled;
-  end;
+  if Assigned(fProc) and fEnabled then
+    fProc();
 end;
 
 constructor TAsyncTimer.Create(aProc: TProc; aInterval: integer; aEnabled: boolean);
+var
+  lInterval: integer;
 begin
   inherited Create;
-  FInterval := aInterval;
-  fSignal := tSignal.Create;
-  fSignal.setNonsignaled;
+
   fProc := aProc;
-  FEnabled := aEnabled;
-  fAsync := SimpleAsyncCall(asyncLoop)
+  fTimer := TPortableTimer.Create;
+  fTimer.OnTimer := HandleTimerTick;
+
+  lInterval := aInterval;
+  if lInterval <= 0 then
+    lInterval := 1;
+  fInterval := lInterval;
+  fTimer.Interval := Cardinal(lInterval);
+  fEnabled := False;
+  SetEnabled(aEnabled);
 end;
 
 destructor TAsyncTimer.Destroy;
 begin
-  FEnabled := False;
-  fTerminated := True;
-  fSignal.setSignaled;
-  fAsync.WaitFor;
+  fEnabled := False;
+  FreeAndNil(fTimer);
   inherited;
 end;
 
-procedure TAsyncTimer.asyncLoop;
+procedure TAsyncTimer.SetEnabled(const aValue: boolean);
 begin
-  repeat
-    fSignal.waitforSignaled(FInterval);
-    if FEnabled then
-      fProc();
-    fSignal.setNonsignaled;
-
-  until fTerminated;
+  if fEnabled <> aValue then
+  begin
+    fEnabled := aValue;
+    if fTimer <> nil then
+      fTimer.Enabled := aValue;
+  end;
 end;
 
-procedure TAsyncTimer.SetInterval(const Value: integer);
+procedure TAsyncTimer.SetInterval(const aValue: integer);
+var
+  lInterval: integer;
 begin
-  FInterval := Value;
-  fSignal.setSignaled;
+  lInterval := aValue;
+  if lInterval <= 0 then
+    lInterval := 1;
+
+  if fInterval <> lInterval then
+  begin
+    fInterval := lInterval;
+    if fTimer <> nil then
+      fTimer.Interval := Cardinal(lInterval);
+  end;
 end;
 
 initialization
-
   {$IFDEF madExcept}
   madExcept.NameThread(TThread.CurrentThread.ThreadID, 'MainVclThread');
   {$ENDIF}

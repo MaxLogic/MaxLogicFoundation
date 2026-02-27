@@ -9,6 +9,9 @@
         <Projects Include="MaxLogic.BufferedFile.Benchmark.dproj">
             <Dependencies/>
         </Projects>
+        <Projects Include="MaxLogic.Async.Benchmark.dproj">
+            <Dependencies/>
+        </Projects>
     </ItemGroup>
     <ProjectExtensions>
         <Borland.Personality>Default.Personality.12</Borland.Personality>
@@ -35,14 +38,23 @@
     <Target Name="MaxLogic_BufferedFile_Benchmark:Make">
         <MSBuild Projects="MaxLogic.BufferedFile.Benchmark.dproj" Targets="Make"/>
     </Target>
+    <Target Name="MaxLogic_Async_Benchmark">
+        <MSBuild Projects="MaxLogic.Async.Benchmark.dproj"/>
+    </Target>
+    <Target Name="MaxLogic_Async_Benchmark:Clean">
+        <MSBuild Projects="MaxLogic.Async.Benchmark.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="MaxLogic_Async_Benchmark:Make">
+        <MSBuild Projects="MaxLogic.Async.Benchmark.dproj" Targets="Make"/>
+    </Target>
     <Target Name="Build">
-        <CallTarget Targets="MaxLogic_RichIniBenchmark;MaxLogic_BufferedFile_Benchmark"/>
+        <CallTarget Targets="MaxLogic_RichIniBenchmark;MaxLogic_BufferedFile_Benchmark;MaxLogic_Async_Benchmark"/>
     </Target>
     <Target Name="Clean">
-        <CallTarget Targets="MaxLogic_RichIniBenchmark:Clean;MaxLogic_BufferedFile_Benchmark:Clean"/>
+        <CallTarget Targets="MaxLogic_RichIniBenchmark:Clean;MaxLogic_BufferedFile_Benchmark:Clean;MaxLogic_Async_Benchmark:Clean"/>
     </Target>
     <Target Name="Make">
-        <CallTarget Targets="MaxLogic_RichIniBenchmark:Make;MaxLogic_BufferedFile_Benchmark:Make"/>
+        <CallTarget Targets="MaxLogic_RichIniBenchmark:Make;MaxLogic_BufferedFile_Benchmark:Make;MaxLogic_Async_Benchmark:Make"/>
     </Target>
     <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
 </Project>

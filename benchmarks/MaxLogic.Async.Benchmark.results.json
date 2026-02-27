@@ -1,0 +1,32 @@
+{
+  "benchmark": "MaxLogic.Async.Benchmark",
+  "date": "2026-02-27",
+  "baseline": {
+    "source": "pre-optimization run",
+    "simple_async_call_units_per_sec": 60500,
+    "async_loop_units_per_sec": 44704059,
+    "async_collection_processor_units_per_sec": 34557,
+    "async_timer_units_per_sec": 65,
+    "portable_timer_units_per_sec": 64
+  },
+  "final": {
+    "source": "post-optimization run",
+    "simple_async_call_units_per_sec": 65135,
+    "async_loop_units_per_sec": 44412862,
+    "async_collection_processor_units_per_sec": 35394,
+    "async_timer_units_per_sec": 64,
+    "portable_timer_units_per_sec": 65
+  },
+  "delta_percent": {
+    "simple_async_call": 7.66,
+    "async_loop": -0.65,
+    "async_collection_processor": 2.42,
+    "async_timer": -1.54,
+    "portable_timer": 1.56
+  },
+  "notes": [
+    "Primary optimized target: TAsyncCollectionProcessor",
+    "Accepted optimization: batched dequeue in worker path with exception-safe requeue, plus reduced ready-signal reset calls",
+    "Additional attempts (larger batch size, dynamic desired worker count) were reverted after no measurable gain"
+  ]
+}

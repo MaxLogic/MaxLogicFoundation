@@ -3,11 +3,11 @@ setlocal
 
 pushd "%~dp0"
 
-rem Run tests only if the build succeeded (exit code 0)
+rem Run both test suites only if each previous step succeeded.
 call build-delphi.bat MaxLogic.Tests.dproj -config Debug && ^
-call MaxLogic.Tests.exe
+call MaxLogic.Tests.exe && ^
+call build-and-run-vcl-tests.bat
 
-rem Preserve the exit code from whichever ran last (build or tests)
 set "EXITCODE=%ERRORLEVEL%"
 
 popd

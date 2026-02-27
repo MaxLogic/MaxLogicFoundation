@@ -16,6 +16,7 @@ uses
   MaxLogic.BufferedFile in '..\MaxLogic.BufferedFile.pas',
   MaxLogic.BufferedFile.Tests in 'unit\MaxLogic.BufferedFile.Tests.pas',
   maxAsync in '..\maxAsync.pas',
+  MaxLogic.Async.Tests in 'unit\MaxLogic.Async.Tests.pas',
   MaxLogic.AsyncLoop.Tests in 'unit\MaxLogic.AsyncLoop.Tests.pas',
   MaxLogic.DotEnv.Tests in 'unit\MaxLogic.DotEnv.Tests.pas',
   maxlogic.DotEnv in '..\maxlogic.DotEnv.pas',
