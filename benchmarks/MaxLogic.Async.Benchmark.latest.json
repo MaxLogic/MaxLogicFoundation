@@ -1,13 +1,14 @@
 {
   "benchmark": "MaxLogic.Async.Benchmark",
-  "run_at_utc": "2026-02-27T23:47:12Z",
+  "run_at_utc": "2026-02-27T23:49:36Z",
   "date": "2026-02-27",
+  "aggregation": "median_of_5_runs",
   "metrics": {
-    "simple_async_call_ops_per_sec": 66157,
-    "async_loop_ops_per_sec": 41615803,
-    "async_collection_processor_ops_per_sec": 203323,
-    "async_collection_processor_batched_ops_per_sec": 1540990,
-    "async_collection_processor_multi_producer_ops_per_sec": 279676,
+    "simple_async_call_ops_per_sec": 61806,
+    "async_loop_ops_per_sec": 44379355,
+    "async_collection_processor_ops_per_sec": 183693,
+    "async_collection_processor_batched_ops_per_sec": 1417373,
+    "async_collection_processor_multi_producer_ops_per_sec": 247851,
     "async_timer_ops_per_sec": 64,
     "portable_timer_ops_per_sec": 64
   }
