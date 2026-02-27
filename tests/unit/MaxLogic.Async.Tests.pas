@@ -5,7 +5,8 @@ unit MaxLogic.Async.Tests;
 interface
 
 uses
-  System.Classes, System.Generics.Collections, System.Generics.Defaults, System.SyncObjs, System.SysUtils,
+  System.Classes, System.Generics.Collections, System.Generics.Defaults, System.Math, System.SyncObjs,
+  System.SysUtils,
   DUnitX.TestFramework,
   maxAsync;
 
@@ -49,8 +50,23 @@ type
     [Test] procedure UsesWorkerWhenThreadCountIsZero;
     [Test] procedure ProcessorCompletesWhenProcRaises;
     [Test] procedure WaitForIncludesWorkQueuedFromOnFinished;
+    [Test] procedure WaitForIncludesConcurrentAddTriggeredFromOnFinished;
     [Test] procedure OnFinishedCanCallWaitForOnSameProcessor;
+    [Test] procedure ConcurrentProducersProcessAllItems;
+    [Test] procedure DestroyWhileBusyCompletesWithoutException;
+    [Test] procedure LongRunStressProcessesAllItems;
     [Test] procedure AddWithoutProcRaises;
+  end;
+
+  [TestFixture]
+  TAsyncCollectionProcessorBoundedQueueScaffoldTests = class
+  public
+    [Test]
+    [Ignore('Phase 2 pending: bounded queue mode is not implemented yet.')]
+    procedure BoundedQueueTryAddReportsFullQueue;
+    [Test]
+    [Ignore('Phase 2 pending: bounded queue mode is not implemented yet.')]
+    procedure BoundedQueueBlockingModeBackpressuresProducers;
   end;
 
   [TestFixture]
@@ -559,6 +575,72 @@ begin
   end;
 end;
 
+procedure TAsyncCollectionProcessorTests.WaitForIncludesConcurrentAddTriggeredFromOnFinished;
+const
+  cTimeoutMs = 6000;
+var
+  lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
+  lAllDone: TEvent;
+  lAdderDone: TEvent;
+  lOnFinishedCalls: Integer;
+  lProcessedCount: Integer;
+begin
+  lProcessor := TAsyncCollectionProcessor<TAsyncWorkItem>.Create;
+  lAllDone := TEvent.Create(nil, True, False, '');
+  lAdderDone := TEvent.Create(nil, True, False, '');
+  try
+    lOnFinishedCalls := 0;
+    lProcessedCount := 0;
+
+    lProcessor.SimultanousThreadCount := 1;
+    lProcessor.Proc :=
+      procedure(const aItem: TAsyncWorkItem)
+      begin
+        try
+          TInterlocked.Increment(lProcessedCount);
+        finally
+          aItem.Free;
+        end;
+      end;
+    lProcessor.OnFinished :=
+      procedure
+      var
+        lCallNo: Integer;
+      begin
+        lCallNo := TInterlocked.Increment(lOnFinishedCalls);
+        if lCallNo = 1 then
+        begin
+          lAdderDone.ResetEvent;
+          TThread.CreateAnonymousThread(
+            procedure
+            begin
+              try
+                lProcessor.Add(TAsyncWorkItem.Create(2));
+              finally
+                lAdderDone.SetEvent;
+              end;
+            end).Start;
+
+          if lAdderDone.WaitFor(cTimeoutMs) <> wrSignaled then
+            raise Exception.Create('Timed out while adding work from OnFinished');
+        end
+        else if lCallNo = 2 then
+          lAllDone.SetEvent;
+      end;
+
+    lProcessor.Add(TAsyncWorkItem.Create(1));
+    lProcessor.WaitFor;
+
+    Assert.AreEqual<TWaitResult>(wrSignaled, lAllDone.WaitFor(0),
+      'WaitFor returned before work added during OnFinished was completed');
+    Assert.AreEqual<Integer>(2, lProcessedCount);
+  finally
+    lAdderDone.Free;
+    lAllDone.Free;
+    lProcessor.Free;
+  end;
+end;
+
 procedure TAsyncCollectionProcessorTests.OnFinishedCanCallWaitForOnSameProcessor;
 const
   cInitialTimeoutMs = 300;
@@ -625,6 +707,206 @@ begin
   end;
 end;
 
+procedure TAsyncCollectionProcessorTests.ConcurrentProducersProcessAllItems;
+const
+  cProducerCount = 8;
+  cItemsPerProducer = 500;
+  cTimeoutMs = 12000;
+var
+  lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
+  lDone: TEvent;
+  lProcessedCount: Integer;
+  lAddErrors: Integer;
+  lProducers: TArray<iAsync>;
+  lProducer: Integer;
+  i: Integer;
+  lExpectedCount: Integer;
+begin
+  lProcessor := TAsyncCollectionProcessor<TAsyncWorkItem>.Create;
+  lDone := TEvent.Create(nil, True, False, '');
+  try
+    lProcessedCount := 0;
+    lAddErrors := 0;
+    lExpectedCount := cProducerCount * cItemsPerProducer;
+
+    lProcessor.SimultanousThreadCount := Max(2, TThread.ProcessorCount);
+    lProcessor.Proc :=
+      procedure(const aItem: TAsyncWorkItem)
+      begin
+        try
+          TInterlocked.Increment(lProcessedCount);
+        finally
+          aItem.Free;
+        end;
+      end;
+    lProcessor.OnFinished :=
+      procedure
+      begin
+        lDone.SetEvent;
+      end;
+
+    SetLength(lProducers, cProducerCount);
+    for lProducer := 0 to High(lProducers) do
+      lProducers[lProducer] := SimpleAsyncCall(
+        procedure
+        var
+          lItem: TAsyncWorkItem;
+          j: Integer;
+        begin
+          for j := 1 to cItemsPerProducer do
+          begin
+            lItem := TAsyncWorkItem.Create(j);
+            try
+              lProcessor.Add(lItem);
+            except
+              lItem.Free;
+              TInterlocked.Increment(lAddErrors);
+            end;
+          end;
+        end,
+        'ConcurrentProducersProcessAllItems.' + IntToStr(lProducer));
+
+    for i := 0 to High(lProducers) do
+      lProducers[i].WaitFor;
+
+    Assert.AreEqual<TWaitResult>(wrSignaled, lDone.WaitFor(cTimeoutMs),
+      'Processor did not report completion for concurrent producers');
+    lProcessor.WaitFor;
+
+    Assert.AreEqual<Integer>(0, lAddErrors);
+    Assert.AreEqual<Integer>(lExpectedCount, lProcessedCount);
+  finally
+    lDone.Free;
+    lProcessor.Free;
+  end;
+end;
+
+procedure TAsyncCollectionProcessorTests.DestroyWhileBusyCompletesWithoutException;
+const
+  cItemCount = 64;
+  cTimeoutMs = 15000;
+var
+  lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
+  lDestroyDone: TEvent;
+  lDestroyAsync: iAsync;
+  lDestroyError: string;
+  lProcessedCount: Integer;
+  lAlmostDone: TEvent;
+  i: Integer;
+begin
+  lProcessor := TAsyncCollectionProcessor<TAsyncWorkItem>.Create;
+  lDestroyDone := TEvent.Create(nil, True, False, '');
+  lAlmostDone := TEvent.Create(nil, True, False, '');
+  lDestroyAsync := nil;
+  try
+    lDestroyError := '';
+    lProcessedCount := 0;
+
+    lProcessor.SimultanousThreadCount := Max(2, TThread.ProcessorCount);
+    lProcessor.Proc :=
+      procedure(const aItem: TAsyncWorkItem)
+      begin
+        try
+          Sleep(1);
+          if TInterlocked.Increment(lProcessedCount) >= (cItemCount - 1) then
+            lAlmostDone.SetEvent;
+        finally
+          aItem.Free;
+        end;
+      end;
+
+    for i := 1 to cItemCount do
+      lProcessor.Add(TAsyncWorkItem.Create(i));
+
+    Assert.AreEqual<TWaitResult>(wrSignaled, lAlmostDone.WaitFor(cTimeoutMs),
+      'Processor did not reach near-complete state in time');
+
+    lDestroyAsync := SimpleAsyncCall(
+      procedure
+      begin
+        try
+          lProcessor.Free;
+          lProcessor := nil;
+        except
+          on lException: Exception do
+            lDestroyError := lException.ClassName + ': ' + lException.Message;
+        end;
+        lDestroyDone.SetEvent;
+      end,
+      'DestroyWhileBusyCompletesWithoutException.Destroyer');
+
+    Assert.AreEqual<TWaitResult>(wrSignaled, lDestroyDone.WaitFor(cTimeoutMs),
+      'Destroy while busy timed out');
+    if lDestroyAsync <> nil then
+      lDestroyAsync.WaitFor;
+
+    Assert.AreEqual('', lDestroyError);
+    Assert.IsTrue(lProcessedCount > 0, 'Processor should process some items before shutdown completes');
+  finally
+    lAlmostDone.Free;
+    lDestroyDone.Free;
+    if lProcessor <> nil then
+      lProcessor.Free;
+  end;
+end;
+
+procedure TAsyncCollectionProcessorTests.LongRunStressProcessesAllItems;
+const
+  cTotalItems = 30000;
+  cBatchSize = 128;
+  cTimeoutMs = 25000;
+var
+  lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
+  lDone: TEvent;
+  lProcessedCount: Integer;
+  lCurrentValue: Integer;
+  lBatchCount: Integer;
+  lBatch: TArray<TAsyncWorkItem>;
+  i: Integer;
+begin
+  lProcessor := TAsyncCollectionProcessor<TAsyncWorkItem>.Create;
+  lDone := TEvent.Create(nil, True, False, '');
+  try
+    lProcessedCount := 0;
+    lCurrentValue := 1;
+
+    lProcessor.SimultanousThreadCount := Max(2, TThread.ProcessorCount);
+    lProcessor.Proc :=
+      procedure(const aItem: TAsyncWorkItem)
+      begin
+        try
+          TInterlocked.Increment(lProcessedCount);
+        finally
+          aItem.Free;
+        end;
+      end;
+    lProcessor.OnFinished :=
+      procedure
+      begin
+        lDone.SetEvent;
+      end;
+
+    while lCurrentValue <= cTotalItems do
+    begin
+      lBatchCount := Min(cBatchSize, cTotalItems - lCurrentValue + 1);
+      SetLength(lBatch, lBatchCount);
+      for i := 0 to lBatchCount - 1 do
+        lBatch[i] := TAsyncWorkItem.Create(lCurrentValue + i);
+
+      lProcessor.Add(lBatch);
+      Inc(lCurrentValue, lBatchCount);
+    end;
+
+    Assert.AreEqual<TWaitResult>(wrSignaled, lDone.WaitFor(cTimeoutMs),
+      'Long-run stress batch did not complete in time');
+    lProcessor.WaitFor;
+    Assert.AreEqual<Integer>(cTotalItems, lProcessedCount);
+  finally
+    lDone.Free;
+    lProcessor.Free;
+  end;
+end;
+
 procedure TAsyncCollectionProcessorTests.AddWithoutProcRaises;
 var
   lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
@@ -635,11 +917,20 @@ begin
       procedure
       begin
         lProcessor.Add(TAsyncWorkItem(nil));
-      end, Exception,
-      'Add should fail fast when Proc is not assigned');
+      end, Exception);
   finally
     lProcessor.Free;
   end;
+end;
+
+procedure TAsyncCollectionProcessorBoundedQueueScaffoldTests.BoundedQueueTryAddReportsFullQueue;
+begin
+  Assert.IsTrue(True);
+end;
+
+procedure TAsyncCollectionProcessorBoundedQueueScaffoldTests.BoundedQueueBlockingModeBackpressuresProducers;
+begin
+  Assert.IsTrue(True);
 end;
 
 procedure TAsyncDataStructuresTests.SafeValueNewInitializesAndStoresValue;

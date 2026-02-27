@@ -1,0 +1,14 @@
+{
+  "benchmark": "MaxLogic.Async.Benchmark",
+  "run_at_utc": "2026-02-27T23:47:12Z",
+  "date": "2026-02-27",
+  "metrics": {
+    "simple_async_call_ops_per_sec": 66157,
+    "async_loop_ops_per_sec": 41615803,
+    "async_collection_processor_ops_per_sec": 203323,
+    "async_collection_processor_batched_ops_per_sec": 1540990,
+    "async_collection_processor_multi_producer_ops_per_sec": 279676,
+    "async_timer_ops_per_sec": 64,
+    "portable_timer_ops_per_sec": 64
+  }
+}
