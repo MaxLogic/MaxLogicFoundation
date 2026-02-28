@@ -396,6 +396,8 @@ type
       property SimultanousThreadCount: integer read FSimultanousThreadCount write SetSimultanousThreadCount;
     end;
 
+    TAsyncCollectionProcessorQueueMode = (acpqmLegacyLockedQueue, acpqmLockedRingQueue, acpqmLockFreeMpmcRingQueue);
+    TAsyncCollectionProcessorBackpressureMode = (acpbmBlock, acpbmReject);
     TAsyncCollectionProcessorProc<t> = reference to procedure(const Item: t);
     // this will work in paralel on the items in the collection
     TAsyncCollectionProcessor<t >= class
@@ -405,13 +407,35 @@ type
           Async:
           iAsync;
         end;
+        TLockFreeSlot = record
+          Sequence: Int64;
+          Item: t;
+        end;
     private
-      fReadySignal: iSignal;
-      fReadySignalIsSignaled: boolean;
+      fIdleSignal: iSignal;
+      fIdleSignalIsSignaled: boolean;
+      fWorkSignal: iSignal;
+      fSpaceSignal: iSignal;
+      fItemsAvailable: TSemaphore;
       fItems: TQueue<t>;
+      fRingItems: TArray<t>;
+      fRingHead: Integer;
+      fRingTail: Integer;
+      fRingCount: Integer;
+      fLockFreeBuffer: TArray<TLockFreeSlot>;
+      fLockFreeMask: Int64;
+      fLockFreeEnqueuePos: Int64;
+      fLockFreeDequeuePos: Int64;
+      fQueueMode: TAsyncCollectionProcessorQueueMode;
+      fBackpressureMode: TAsyncCollectionProcessorBackpressureMode;
+      fQueueCapacity: Integer;
       FSimultanousThreadCount: integer;
       FOnFinished: TThreadProcedure;
       fProc: TAsyncCollectionProcessorProc<t>;
+      fPendingItems: Int64;
+      fCompletionInProgress: Integer;
+      fCompletionNeedsReplay: Integer;
+      fShuttingDown: Integer;
       fOnFinishedThreadId: TThreadID;
 
       fThreads: TList<TThreadHolder>;
@@ -421,12 +445,30 @@ type
       {$ELSE}
       fCriticalSection: TFixedCriticalSection;
       {$ENDIF}
+      procedure SetQueueMode(const Value: TAsyncCollectionProcessorQueueMode);
+      procedure SetQueueCapacity(const Value: Integer);
+      procedure SetBackpressureMode(const Value: TAsyncCollectionProcessorBackpressureMode);
       procedure SetOnFinished(const Value: TThreadProcedure);
       procedure SetProc(const Value: TAsyncCollectionProcessorProc<t>);
       procedure SetSimultanousThreadCount(const Value: integer);
       procedure RestartThreads;
+      procedure EnsureWorkersStarted;
+      procedure WaitForWorkersToExit;
+      procedure WorkerMain(const aThreadId: Int64);
+      function TryDequeueItem(out aItem: t): Boolean;
+      function TryEnqueueItem(const aItem: t): Boolean;
+      function EnqueueItem(const aItem: t; const aBlockWhenFull: Boolean): Boolean;
+      function LockFreeTryEnqueue(const aItem: t): Boolean;
+      function LockFreeTryDequeue(out aItem: t): Boolean;
+      function BuildQueueCapacity(const aRequestedCapacity: Integer): Integer;
+      procedure InitializeQueueStorage;
+      procedure SetIdleNonSignaled;
+      procedure SetIdleSignaled;
+      procedure EvaluateCompletion;
+      procedure HandleProcessorExceptionObject(const aException: Exception);
+      procedure HandleProcessorException(const aExceptionClassName, aExceptionMessage: string);
       function CreateThreadHolder: TThreadHolder;
-      procedure AsyncProcessItem(const ThreadId: Int64);
+      function IsOnFinishedThread: Boolean;
     public
       constructor Create;
       destructor Destroy;
@@ -438,6 +480,9 @@ type
         overload;
       procedure Add(const Items: TList<t>);
         overload;
+      procedure AddRange(const Items: TArray<t>);
+      function TryAdd(const Item: t): Boolean;
+      function TryAddRange(const Items: TArray<t>): Integer;
       procedure ClearItems;
 
       procedure WaitFor;
@@ -449,6 +494,9 @@ type
       property OnFinished: TThreadProcedure read FOnFinished write SetOnFinished;
       // default is the number of CPU cores, *4 - 2 . if the system is already running, you can only increase the number of threads used, a decrease will be applied only after a restart.
       property SimultanousThreadCount: integer read FSimultanousThreadCount write SetSimultanousThreadCount;
+      property QueueMode: TAsyncCollectionProcessorQueueMode read fQueueMode write SetQueueMode;
+      property QueueCapacity: Integer read fQueueCapacity write SetQueueCapacity;
+      property BackpressureMode: TAsyncCollectionProcessorBackpressureMode read fBackpressureMode write SetBackpressureMode;
     end;
 
     TFindInSortedList<t >= class
@@ -1779,42 +1827,217 @@ begin
   fCriticalSection := TFixedCriticalSection.Create;
   {$ENDIF}
   fItems := TQueue<t>.Create;
-
   fThreads := TList<TThreadHolder>.Create;
 
   FSimultanousThreadCount := Max(1, Integer(TmaxAsyncGlobal.NumberOfProcessors) * 4 - 2 { for the main VCL Thread });
-  fReadySignal := tSignal.Create;
-  fReadySignal.setSignaled;
-  fReadySignalIsSignaled := True;
+  fQueueMode := acpqmLegacyLockedQueue;
+  fBackpressureMode := acpbmBlock;
+  fQueueCapacity := 0;
+
+  fIdleSignal := tSignal.Create;
+  fWorkSignal := tSignal.Create;
+  fSpaceSignal := tSignal.Create;
+  fItemsAvailable := TSemaphore.Create(nil, 0, MaxInt, '');
+  fIdleSignal.setSignaled;
+  fIdleSignalIsSignaled := True;
+  fWorkSignal.setNonsignaled;
+  fSpaceSignal.setSignaled;
+
+  fPendingItems := 0;
+  fCompletionInProgress := 0;
+  fCompletionNeedsReplay := 0;
+  fShuttingDown := 0;
   fOnFinishedThreadId := 0;
+  InitializeQueueStorage;
 end;
 
 destructor TAsyncCollectionProcessor<t>.Destroy;
+var
+  lWakeCount: Integer;
 begin
-  ClearItems;
+  TInterlocked.Exchange(fShuttingDown, 1);
+  fWorkSignal.setSignaled;
+  fSpaceSignal.setSignaled;
+  fCriticalSection.Enter;
+  try
+    lWakeCount := Max(1, fThreads.Count * 2);
+  finally
+    fCriticalSection.leave;
+  end;
+  fItemsAvailable.Release(lWakeCount);
   WaitFor;
+  WaitForWorkersToExit;
+  ClearItems;
+  fItemsAvailable.Free;
   fItems.Free;
   fThreads.Free;
   fCriticalSection.Free;
   inherited;
 end;
 
-procedure TAsyncCollectionProcessor<t>.Add(const Items: TList<t>);
+function TAsyncCollectionProcessor<t>.BuildQueueCapacity(const aRequestedCapacity: Integer): Integer;
+begin
+  if aRequestedCapacity > 0 then
+    Result := aRequestedCapacity
+  else
+    Result := Max(1024, FSimultanousThreadCount * 64);
+end;
+
+procedure TAsyncCollectionProcessor<t>.InitializeQueueStorage;
 var
-  lItem: t;
+  lCapacity: Integer;
+  lPowerOfTwoCapacity: Integer;
+  i: Integer;
+begin
+  case fQueueMode of
+    acpqmLegacyLockedQueue:
+      begin
+        fRingItems := nil;
+        fRingHead := 0;
+        fRingTail := 0;
+        fRingCount := 0;
+        fLockFreeBuffer := nil;
+        fLockFreeMask := 0;
+        fLockFreeEnqueuePos := 0;
+        fLockFreeDequeuePos := 0;
+      end;
+    acpqmLockedRingQueue:
+      begin
+        lCapacity := BuildQueueCapacity(fQueueCapacity);
+        SetLength(fRingItems, lCapacity);
+        fRingHead := 0;
+        fRingTail := 0;
+        fRingCount := 0;
+        fLockFreeBuffer := nil;
+        fLockFreeMask := 0;
+        fLockFreeEnqueuePos := 0;
+        fLockFreeDequeuePos := 0;
+      end;
+    acpqmLockFreeMpmcRingQueue:
+      begin
+        lCapacity := BuildQueueCapacity(fQueueCapacity);
+        lPowerOfTwoCapacity := 1;
+        while lPowerOfTwoCapacity < lCapacity do
+          lPowerOfTwoCapacity := lPowerOfTwoCapacity shl 1;
+
+        SetLength(fLockFreeBuffer, lPowerOfTwoCapacity);
+        for i := 0 to High(fLockFreeBuffer) do
+        begin
+          fLockFreeBuffer[i].Sequence := i;
+          fLockFreeBuffer[i].Item := default(t);
+        end;
+        fLockFreeMask := lPowerOfTwoCapacity - 1;
+        fLockFreeEnqueuePos := 0;
+        fLockFreeDequeuePos := 0;
+        fRingItems := nil;
+        fRingHead := 0;
+        fRingTail := 0;
+        fRingCount := 0;
+      end;
+  end;
+  fSpaceSignal.setSignaled;
+end;
+
+procedure TAsyncCollectionProcessor<t>.WaitForWorkersToExit;
+var
+  lWorkers: TArray<iAsync>;
+  lWorkerIndex: Integer;
 begin
   fCriticalSection.Enter;
   try
-    if not Assigned(fProc) then
-      raise Exception.Create('TAsyncCollectionProcessor.Proc must be assigned before Add.');
+    SetLength(lWorkers, fThreads.Count);
+    for lWorkerIndex := 0 to fThreads.Count - 1 do
+      lWorkers[lWorkerIndex] := fThreads[lWorkerIndex].Async;
+    fThreads.Clear;
+  finally
+    fCriticalSection.leave;
+  end;
 
-    if fReadySignalIsSignaled then
+  for lWorkerIndex := 0 to High(lWorkers) do
+    if lWorkers[lWorkerIndex] <> nil then
+      lWorkers[lWorkerIndex].WaitFor;
+end;
+
+procedure TAsyncCollectionProcessor<t>.SetQueueMode(const Value: TAsyncCollectionProcessorQueueMode);
+begin
+  fCriticalSection.Enter;
+  try
+    if fQueueMode = Value then
+      Exit;
+    if TInterlocked.Read(fPendingItems) <> 0 then
+      raise Exception.Create('Cannot change QueueMode while work is in progress.');
+    fQueueMode := Value;
+    InitializeQueueStorage;
+  finally
+    fCriticalSection.leave;
+  end;
+end;
+
+procedure TAsyncCollectionProcessor<t>.SetQueueCapacity(const Value: Integer);
+var
+  lCapacity: Integer;
+begin
+  if Value < 0 then
+    lCapacity := 0
+  else
+    lCapacity := Value;
+
+  fCriticalSection.Enter;
+  try
+    if fQueueCapacity = lCapacity then
+      Exit;
+    if TInterlocked.Read(fPendingItems) <> 0 then
+      raise Exception.Create('Cannot change QueueCapacity while work is in progress.');
+    fQueueCapacity := lCapacity;
+    InitializeQueueStorage;
+  finally
+    fCriticalSection.leave;
+  end;
+end;
+
+procedure TAsyncCollectionProcessor<t>.SetBackpressureMode(const Value: TAsyncCollectionProcessorBackpressureMode);
+begin
+  fCriticalSection.Enter;
+  try
+    fBackpressureMode := Value;
+  finally
+    fCriticalSection.leave;
+  end;
+end;
+
+procedure TAsyncCollectionProcessor<t>.SetIdleNonSignaled;
+begin
+  fIdleSignal.setNonsignaled;
+  fIdleSignalIsSignaled := False;
+end;
+
+procedure TAsyncCollectionProcessor<t>.SetIdleSignaled;
+begin
+  fIdleSignal.setSignaled;
+  fIdleSignalIsSignaled := True;
+end;
+
+function TAsyncCollectionProcessor<t>.CreateThreadHolder: TThreadHolder;
+var
+  lId: Int64;
+begin
+  Result := default(TThreadHolder);
+  {$R-}{$Q-}
+  lId := TInterlocked.increment(fNextThreadId);
+  Result.Id := lId;
+  Result.Async := SimpleAsyncCall(
+    procedure
     begin
-      fReadySignal.setNonsignaled;
-      fReadySignalIsSignaled := False;
-    end;
-    for lItem in Items do
-      fItems.Enqueue(lItem);
+      WorkerMain(lId);
+    end, classname + 'Worker.' + IntToStr(lId));
+end;
+
+procedure TAsyncCollectionProcessor<t>.EnsureWorkersStarted;
+begin
+  fCriticalSection.Enter;
+  try
+    if fShuttingDown <> 0 then
+      Exit;
 
     while fThreads.Count < FSimultanousThreadCount do
       fThreads.Add(CreateThreadHolder);
@@ -1823,56 +2046,518 @@ begin
   end;
 end;
 
-procedure TAsyncCollectionProcessor<t>.Add(const Items: TArray<t>);
+function TAsyncCollectionProcessor<t>.LockFreeTryEnqueue(const aItem: t): Boolean;
+var
+  lPosition: Int64;
+  lIndex: Integer;
+  lSequence: Int64;
+  lDifference: Int64;
+begin
+  Result := False;
+  if Length(fLockFreeBuffer) = 0 then
+    Exit;
+
+  repeat
+    lPosition := TInterlocked.Read(fLockFreeEnqueuePos);
+    lIndex := Integer(lPosition and fLockFreeMask);
+    lSequence := TInterlocked.Read(fLockFreeBuffer[lIndex].Sequence);
+    lDifference := lSequence - lPosition;
+
+    if lDifference = 0 then
+    begin
+      if TInterlocked.CompareExchange(fLockFreeEnqueuePos, lPosition + 1, lPosition) = lPosition then
+      begin
+        fLockFreeBuffer[lIndex].Item := aItem;
+        TInterlocked.Exchange(fLockFreeBuffer[lIndex].Sequence, lPosition + 1);
+        Exit(True);
+      end;
+    end else begin
+      if lDifference < 0 then
+        Exit(False);
+      Sleep(0);
+    end;
+  until False;
+end;
+
+function TAsyncCollectionProcessor<t>.LockFreeTryDequeue(out aItem: t): Boolean;
+var
+  lPosition: Int64;
+  lIndex: Integer;
+  lSequence: Int64;
+  lDifference: Int64;
+begin
+  Result := False;
+  aItem := default(t);
+  if Length(fLockFreeBuffer) = 0 then
+    Exit;
+
+  repeat
+    lPosition := TInterlocked.Read(fLockFreeDequeuePos);
+    lIndex := Integer(lPosition and fLockFreeMask);
+    lSequence := TInterlocked.Read(fLockFreeBuffer[lIndex].Sequence);
+    lDifference := lSequence - (lPosition + 1);
+
+    if lDifference = 0 then
+    begin
+      if TInterlocked.CompareExchange(fLockFreeDequeuePos, lPosition + 1, lPosition) = lPosition then
+      begin
+        aItem := fLockFreeBuffer[lIndex].Item;
+        fLockFreeBuffer[lIndex].Item := default(t);
+        TInterlocked.Exchange(fLockFreeBuffer[lIndex].Sequence, lPosition + fLockFreeMask + 1);
+        Exit(True);
+      end;
+    end else begin
+      if lDifference < 0 then
+        Exit(False);
+      Sleep(0);
+    end;
+  until False;
+end;
+
+function TAsyncCollectionProcessor<t>.TryEnqueueItem(const aItem: t): Boolean;
+begin
+  Result := False;
+  case fQueueMode of
+    acpqmLegacyLockedQueue:
+      begin
+        fCriticalSection.Enter;
+        try
+          if fShuttingDown = 0 then
+          begin
+            fItems.Enqueue(aItem);
+            Result := True;
+          end;
+        finally
+          fCriticalSection.leave;
+        end;
+      end;
+    acpqmLockedRingQueue:
+      begin
+        fCriticalSection.Enter;
+        try
+          if (fShuttingDown = 0) and (fRingCount < Length(fRingItems)) then
+          begin
+            fRingItems[fRingTail] := aItem;
+            fRingTail := (fRingTail + 1) mod Length(fRingItems);
+            Inc(fRingCount);
+            Result := True;
+            if fRingCount >= Length(fRingItems) then
+              fSpaceSignal.setNonsignaled;
+          end;
+        finally
+          fCriticalSection.leave;
+        end;
+      end;
+    acpqmLockFreeMpmcRingQueue:
+      begin
+        if fShuttingDown = 0 then
+          Result := LockFreeTryEnqueue(aItem);
+        if not Result then
+          fSpaceSignal.setNonsignaled;
+      end;
+  end;
+
+end;
+
+function TAsyncCollectionProcessor<t>.EnqueueItem(const aItem: t; const aBlockWhenFull: Boolean): Boolean;
+begin
+  repeat
+    if TryEnqueueItem(aItem) then
+    begin
+      fItemsAvailable.Release;
+      Exit(True);
+    end;
+    if not aBlockWhenFull then
+      Exit(False);
+    if fShuttingDown <> 0 then
+      Exit(False);
+    fSpaceSignal.WaitForSignaled(10);
+  until False;
+end;
+
+function TAsyncCollectionProcessor<t>.TryDequeueItem(out aItem: t): Boolean;
+begin
+  Result := False;
+  aItem := default(t);
+  case fQueueMode of
+    acpqmLegacyLockedQueue:
+      begin
+        fCriticalSection.Enter;
+        try
+          if fItems.Count <> 0 then
+          begin
+            aItem := fItems.Dequeue;
+            Result := True;
+          end;
+        finally
+          fCriticalSection.leave;
+        end;
+      end;
+    acpqmLockedRingQueue:
+      begin
+        fCriticalSection.Enter;
+        try
+          if fRingCount <> 0 then
+          begin
+            aItem := fRingItems[fRingHead];
+            fRingItems[fRingHead] := default(t);
+            fRingHead := (fRingHead + 1) mod Length(fRingItems);
+            Dec(fRingCount);
+            Result := True;
+            fSpaceSignal.setSignaled;
+          end;
+        finally
+          fCriticalSection.leave;
+        end;
+      end;
+    acpqmLockFreeMpmcRingQueue:
+      begin
+        Result := LockFreeTryDequeue(aItem);
+        if Result then
+          fSpaceSignal.setSignaled;
+      end;
+  end;
+end;
+
+procedure TAsyncCollectionProcessor<t>.HandleProcessorException(const aExceptionClassName, aExceptionMessage: string);
+begin
+  {$IFDEF MsWindows}{$IFNDEF CONSOLE}
+  TThread.Queue(nil,
+    procedure
+    var
+      lException: Exception;
+    begin
+      lException := Exception.Create(aExceptionClassName + ': ' + aExceptionMessage);
+      try
+        Application.ShowException(lException);
+      finally
+        lException.Free;
+      end;
+    end);
+  {$ENDIF}{$ENDIF}
+end;
+
+procedure TAsyncCollectionProcessor<t>.HandleProcessorExceptionObject(const aException: Exception);
+begin
+  HandleProcessorException(aException.ClassName, aException.Message);
+end;
+
+procedure TAsyncCollectionProcessor<t>.EvaluateCompletion;
+var
+  lOnFinished: TThreadProcedure;
+  lReplayNeeded: Boolean;
+begin
+  if TInterlocked.Read(fPendingItems) <> 0 then
+    Exit;
+
+  if TInterlocked.CompareExchange(fCompletionInProgress, 1, 0) <> 0 then
+    Exit;
+
+  try
+    if TInterlocked.Read(fPendingItems) <> 0 then
+      Exit;
+
+    repeat
+      if TInterlocked.Read(fPendingItems) <> 0 then
+        Break;
+
+      TInterlocked.Exchange(fCompletionNeedsReplay, 0);
+
+      fCriticalSection.Enter;
+      try
+        lOnFinished := FOnFinished;
+      finally
+        fCriticalSection.leave;
+      end;
+
+      if Assigned(lOnFinished) then
+      begin
+        fOnFinishedThreadId := TThread.CurrentThread.ThreadId;
+        try
+          lOnFinished();
+        finally
+          fOnFinishedThreadId := 0;
+        end;
+      end;
+
+      lReplayNeeded := (TInterlocked.CompareExchange(fCompletionNeedsReplay, 0, 0) <> 0) and
+        (TInterlocked.Read(fPendingItems) = 0);
+    until not lReplayNeeded;
+
+    if TInterlocked.Read(fPendingItems) = 0 then
+      SetIdleSignaled
+    else
+      SetIdleNonSignaled;
+  finally
+    TInterlocked.Exchange(fCompletionInProgress, 0);
+  end;
+end;
+
+procedure TAsyncCollectionProcessor<t>.WorkerMain(const aThreadId: Int64);
+const
+  cBatchSize = 32;
+var
+  lBatch: array[0..cBatchSize - 1] of t;
+  lBatchCount: Integer;
+  lBatchIndex: Integer;
+  lItem: t;
+  lProc: TAsyncCollectionProcessorProc<t>;
+begin
+  while (fShuttingDown = 0) or (TInterlocked.Read(fPendingItems) <> 0) do
+  begin
+    if fItemsAvailable.WaitFor(50) <> wrSignaled then
+      Continue;
+
+    lBatchCount := 0;
+    if TryDequeueItem(lBatch[lBatchCount]) then
+      Inc(lBatchCount);
+
+    while lBatchCount < cBatchSize do
+    begin
+      if fItemsAvailable.WaitFor(0) <> wrSignaled then
+        Break;
+      if not TryDequeueItem(lBatch[lBatchCount]) then
+        Continue;
+      Inc(lBatchCount);
+    end;
+
+    if lBatchCount = 0 then
+      Continue;
+
+    fCriticalSection.Enter;
+    try
+      lProc := fProc;
+    finally
+      fCriticalSection.leave;
+    end;
+
+    if not Assigned(lProc) then
+      Continue;
+
+    for lBatchIndex := 0 to lBatchCount - 1 do
+    begin
+      lItem := lBatch[lBatchIndex];
+      try
+        lProc(lItem);
+      except
+        on lException: Exception do
+          HandleProcessorExceptionObject(lException);
+      end;
+
+      if TInterlocked.Decrement(fPendingItems) = 0 then
+      begin
+        Sleep(0);
+        if TInterlocked.Read(fPendingItems) = 0 then
+          EvaluateCompletion;
+      end;
+    end;
+  end;
+end;
+
+procedure TAsyncCollectionProcessor<t>.AddRange(const Items: TArray<t>);
 var
   lItem: t;
+  lBlockWhenFull: Boolean;
+  lAddedCount: Integer;
+  lPendingCount: Int64;
 begin
+  if Length(Items) = 0 then
+    Exit;
+
+  EnsureWorkersStarted;
+
+  if fQueueMode = acpqmLegacyLockedQueue then
+  begin
+    lAddedCount := 0;
+    fCriticalSection.Enter;
+    try
+      if not Assigned(fProc) then
+        raise Exception.Create('TAsyncCollectionProcessor.Proc must be assigned before Add.');
+      if fShuttingDown <> 0 then
+        raise Exception.Create('TAsyncCollectionProcessor is shutting down.');
+      if fOnFinishedThreadId <> 0 then
+        TInterlocked.Exchange(fCompletionNeedsReplay, 1);
+
+      for lItem in Items do
+      begin
+        lPendingCount := TInterlocked.Increment(fPendingItems);
+        if lPendingCount = 1 then
+          SetIdleNonSignaled;
+        fItems.Enqueue(lItem);
+        Inc(lAddedCount);
+      end;
+    finally
+      fCriticalSection.leave;
+    end;
+    if lAddedCount > 0 then
+      fItemsAvailable.Release(lAddedCount);
+    Exit;
+  end;
+
   fCriticalSection.Enter;
   try
     if not Assigned(fProc) then
       raise Exception.Create('TAsyncCollectionProcessor.Proc must be assigned before Add.');
-
-    if fReadySignalIsSignaled then
-    begin
-      fReadySignal.setNonsignaled;
-      fReadySignalIsSignaled := False;
-    end;
-    for lItem in Items do
-      fItems.Enqueue(lItem);
-
-    while fThreads.Count < FSimultanousThreadCount do
-      fThreads.Add(CreateThreadHolder);
+    lBlockWhenFull := fBackpressureMode = acpbmBlock;
   finally
     fCriticalSection.leave;
   end;
+
+  for lItem in Items do
+  begin
+    lPendingCount := TInterlocked.Increment(fPendingItems);
+    if lPendingCount = 1 then
+      SetIdleNonSignaled;
+    if fOnFinishedThreadId <> 0 then
+      TInterlocked.Exchange(fCompletionNeedsReplay, 1);
+    if not EnqueueItem(lItem, lBlockWhenFull) then
+    begin
+      if TInterlocked.Decrement(fPendingItems) = 0 then
+        SetIdleSignaled;
+      if lBlockWhenFull then
+        raise Exception.Create('TAsyncCollectionProcessor is shutting down.')
+      else
+        raise Exception.Create('TAsyncCollectionProcessor queue is full.');
+    end;
+  end;
+end;
+
+function TAsyncCollectionProcessor<t>.TryAdd(const Item: t): Boolean;
+begin
+  Result := TryAddRange([Item]) = 1;
+end;
+
+function TAsyncCollectionProcessor<t>.TryAddRange(const Items: TArray<t>): Integer;
+var
+  lItem: t;
+  lAddedCount: Integer;
+  lPendingCount: Int64;
+begin
+  Result := 0;
+  if Length(Items) = 0 then
+    Exit;
+
+  EnsureWorkersStarted;
+
+  if fQueueMode = acpqmLegacyLockedQueue then
+  begin
+    lAddedCount := 0;
+    fCriticalSection.Enter;
+    try
+      if not Assigned(fProc) then
+        raise Exception.Create('TAsyncCollectionProcessor.Proc must be assigned before Add.');
+      if fShuttingDown <> 0 then
+        Exit(0);
+      if fOnFinishedThreadId <> 0 then
+        TInterlocked.Exchange(fCompletionNeedsReplay, 1);
+
+      for lItem in Items do
+      begin
+        lPendingCount := TInterlocked.Increment(fPendingItems);
+        if lPendingCount = 1 then
+          SetIdleNonSignaled;
+        fItems.Enqueue(lItem);
+        Inc(lAddedCount);
+      end;
+    finally
+      fCriticalSection.leave;
+    end;
+    if lAddedCount > 0 then
+      fItemsAvailable.Release(lAddedCount);
+    Exit(lAddedCount);
+  end;
+
+  fCriticalSection.Enter;
+  try
+    if not Assigned(fProc) then
+      raise Exception.Create('TAsyncCollectionProcessor.Proc must be assigned before Add.');
+  finally
+    fCriticalSection.leave;
+  end;
+
+  for lItem in Items do
+  begin
+    lPendingCount := TInterlocked.Increment(fPendingItems);
+    if lPendingCount = 1 then
+      SetIdleNonSignaled;
+    if fOnFinishedThreadId <> 0 then
+      TInterlocked.Exchange(fCompletionNeedsReplay, 1);
+    if not EnqueueItem(lItem, False) then
+    begin
+      if TInterlocked.Decrement(fPendingItems) = 0 then
+        SetIdleSignaled;
+      Break;
+    end;
+    Inc(Result);
+  end;
+end;
+
+procedure TAsyncCollectionProcessor<t>.Add(const Items: TList<t>);
+var
+  lItems: TArray<t>;
+  i: Integer;
+begin
+  SetLength(lItems, Items.Count);
+  for i := 0 to Items.Count - 1 do
+    lItems[i] := Items[i];
+  AddRange(lItems);
+end;
+
+procedure TAsyncCollectionProcessor<t>.Add(const Items: TArray<t>);
+begin
+  AddRange(Items);
 end;
 
 procedure TAsyncCollectionProcessor<t>.Add(const Item: t);
 begin
-  fCriticalSection.Enter;
-  try
-    if not Assigned(fProc) then
-      raise Exception.Create('TAsyncCollectionProcessor.Proc must be assigned before Add.');
-
-    if fReadySignalIsSignaled then
-    begin
-      fReadySignal.setNonsignaled;
-      fReadySignalIsSignaled := False;
-    end;
-    fItems.Enqueue(Item);
-
-    while fThreads.Count < FSimultanousThreadCount do
-      fThreads.Add(CreateThreadHolder);
-  finally
-    fCriticalSection.leave;
-  end;
+  AddRange([Item]);
 end;
 
 procedure TAsyncCollectionProcessor<t>.ClearItems;
+var
+  lRemovedCount: Integer;
+  lItem: t;
 begin
+  lRemovedCount := 0;
   fCriticalSection.Enter;
   try
-    fItems.Clear;
+    case fQueueMode of
+      acpqmLegacyLockedQueue:
+        begin
+          lRemovedCount := fItems.Count;
+          fItems.Clear;
+        end;
+      acpqmLockedRingQueue:
+        begin
+          lRemovedCount := fRingCount;
+          while fRingCount > 0 do
+          begin
+            lItem := fRingItems[fRingHead];
+            fRingItems[fRingHead] := default(t);
+            fRingHead := (fRingHead + 1) mod Length(fRingItems);
+            Dec(fRingCount);
+            lItem := default(t);
+          end;
+        end;
+      acpqmLockFreeMpmcRingQueue:
+        begin
+          while LockFreeTryDequeue(lItem) do
+          begin
+            Inc(lRemovedCount);
+            lItem := default(t);
+          end;
+        end;
+    end;
+
+    if lRemovedCount <> 0 then
+      TInterlocked.Add(fPendingItems, -lRemovedCount);
+    if TInterlocked.Read(fPendingItems) <= 0 then
+    begin
+      TInterlocked.Exchange(fPendingItems, 0);
+      SetIdleSignaled;
+    end;
+    fWorkSignal.setNonsignaled;
+    fSpaceSignal.setSignaled;
   finally
     fCriticalSection.leave;
   end;
@@ -1917,173 +2602,22 @@ begin
   end;
 end;
 
-procedure TAsyncCollectionProcessor<t>.WaitFor;
-var
-  lCurrentThreadId: TThreadID;
-  lIsOnFinishedThread: boolean;
+function TAsyncCollectionProcessor<t>.IsOnFinishedThread: Boolean;
 begin
-  lCurrentThreadId := TThread.CurrentThread.ThreadId;
-  fCriticalSection.Enter;
-  try
-    lIsOnFinishedThread := (fOnFinishedThreadId <> 0) and (fOnFinishedThreadId = lCurrentThreadId);
-  finally
-    fCriticalSection.leave;
-  end;
+  Result := (fOnFinishedThreadId <> 0) and (fOnFinishedThreadId = TThread.CurrentThread.ThreadId);
+end;
 
-  if lIsOnFinishedThread then
+procedure TAsyncCollectionProcessor<t>.WaitFor;
+begin
+  if IsOnFinishedThread then
     Exit;
-
-  fReadySignal.waitforSignaled;
+  fIdleSignal.WaitForSignaled;
 end;
 
 procedure TAsyncCollectionProcessor<t>.RestartThreads;
 begin
-  fCriticalSection.Enter;
-  try
-    if fItems.Count <> 0 then
-      while fThreads.Count < FSimultanousThreadCount do
-        fThreads.Add(CreateThreadHolder);
-
-  finally
-    fCriticalSection.leave;
-  end;
+  EnsureWorkersStarted;
 end;
-
-function TAsyncCollectionProcessor<t>.CreateThreadHolder: TThreadHolder;
-var
-  Id: Int64;
-begin
-  // this is already in a critical section, no need to lock it again
-  Result := default(TThreadHolder);
-  {$R-}{$Q-}
-  Id := TInterlocked.increment(fNextThreadId);
-  Result.Id := Id;
-  Result.Async := SimpleAsyncCall(
-    procedure
-    begin
-      AsyncProcessItem(Id);
-    end, classname + 'Worker')
-end;
-
-procedure TAsyncCollectionProcessor<t>.AsyncProcessItem(const ThreadId: Int64);
-const
-  cBatchSize = 8;
-var
-  lBatch: array[0..cBatchSize - 1] of t;
-  lBatchCount: integer;
-  lBatchIndex: integer;
-  lRequeueIndex: integer;
-  lProc: TAsyncCollectionProcessorProc<t>;
-  lX: integer;
-  lItem: t;
-  lNoItem: boolean;
-  lCallFinished: boolean;
-  lShouldSetReady: boolean;
-begin
-  try
-    repeat
-      lBatchCount := 0;
-
-      fCriticalSection.Enter;
-      try
-        lProc := fProc;
-        while (fItems.Count <> 0) and (lBatchCount < cBatchSize) do
-        begin
-          lBatch[lBatchCount] := fItems.Dequeue;
-          Inc(lBatchCount);
-        end
-      finally
-        fCriticalSection.leave;
-      end;
-
-      lNoItem := (lBatchCount = 0);
-      if lNoItem then
-        Break;
-
-      lBatchIndex := 0;
-      try
-        while lBatchIndex < lBatchCount do
-        begin
-          lItem := lBatch[lBatchIndex];
-          lProc(lItem);
-          Inc(lBatchIndex);
-        end;
-      except
-        fCriticalSection.Enter;
-        try
-          for lRequeueIndex := lBatchIndex + 1 to lBatchCount - 1 do
-            fItems.Enqueue(lBatch[lRequeueIndex]);
-        finally
-          fCriticalSection.leave;
-        end;
-        raise;
-      end;
-    until False;
-  finally
-    lCallFinished := False;
-    lShouldSetReady := False;
-    fCriticalSection.Enter;
-    try
-      for lX := 0 to fThreads.Count - 1 do
-        if fThreads[lX].Id = ThreadId then
-        begin
-          fThreads.delete(lX);
-          break;
-        end;
-
-      if fItems.Count <> 0 then
-      begin
-        while fThreads.Count < FSimultanousThreadCount do
-          fThreads.Add(CreateThreadHolder);
-      end
-      else if fThreads.Count = 0 then
-      begin
-        lShouldSetReady := True;
-        lCallFinished := Assigned(FOnFinished);
-        if lCallFinished then
-          fOnFinishedThreadId := TThread.CurrentThread.ThreadId;
-      end;
-    finally
-      fCriticalSection.leave;
-    end;
-
-    if lCallFinished then
-    begin
-      try
-        FOnFinished();
-      finally
-        fCriticalSection.Enter;
-        try
-          fOnFinishedThreadId := 0;
-          if (fThreads.Count = 0) and (fItems.Count = 0) then
-          begin
-            if not fReadySignalIsSignaled then
-            begin
-              fReadySignal.setSignaled;
-              fReadySignalIsSignaled := True;
-            end;
-          end;
-        finally
-          fCriticalSection.leave;
-        end;
-      end;
-    end
-    else if lShouldSetReady then
-    begin
-      fCriticalSection.Enter;
-      try
-        if not fReadySignalIsSignaled then
-        begin
-          fReadySignal.setSignaled;
-          fReadySignalIsSignaled := True;
-        end;
-      finally
-        fCriticalSection.leave;
-      end;
-    end;
-  end;
-end;
-
 function TmaxAsync.GetThreadData: iThreadData;
 begin
   Result := fThreadData;

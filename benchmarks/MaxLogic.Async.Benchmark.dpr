@@ -5,7 +5,9 @@ program MaxLogicAsyncBenchmark;
 
 uses
   System.Classes,
+  System.DateUtils,
   System.Diagnostics,
+  System.IOUtils,
   System.Math,
   System.SyncObjs,
   System.SysUtils,
@@ -17,6 +19,16 @@ type
     Name: string;
     UnitsProcessed: Int64;
     DurationMs: Double;
+  end;
+
+  TBenchmarkMetrics = record
+    SimpleAsyncCallOpsPerSec: Int64;
+    AsyncLoopOpsPerSec: Int64;
+    AsyncCollectionProcessorOpsPerSec: Int64;
+    AsyncCollectionProcessorBatchedOpsPerSec: Int64;
+    AsyncCollectionProcessorMultiProducerOpsPerSec: Int64;
+    AsyncTimerOpsPerSec: Int64;
+    PortableTimerOpsPerSec: Int64;
   end;
 
   TWorkItem = class
@@ -75,6 +87,218 @@ begin
   if aDurationMs <= 0 then
     Exit(0);
   Result := aUnitsProcessed / (aDurationMs / 1000);
+end;
+
+function ThroughputAsInt64(const aUnitsProcessed: Int64; const aDurationMs: Double): Int64;
+begin
+  Result := Round(ThroughputPerSecond(aUnitsProcessed, aDurationMs));
+end;
+
+function EscapeJsonString(const aValue: string): string;
+begin
+  Result := StringReplace(aValue, '\', '\\', [rfReplaceAll]);
+  Result := StringReplace(Result, '"', '\"', [rfReplaceAll]);
+end;
+
+function FloatToInvariant(const aValue: Double): string;
+var
+  lFormatSettings: TFormatSettings;
+begin
+  lFormatSettings := TFormatSettings.Invariant;
+  Result := FloatToStrF(aValue, ffFixed, 15, 3, lFormatSettings);
+end;
+
+function FormatUtcIso8601Now: string;
+var
+  lUtcNow: TDateTime;
+begin
+  lUtcNow := TTimeZone.Local.ToUniversalTime(Now);
+  Result := FormatDateTime('yyyy"-"mm"-"dd"T"hh":"nn":"ss"Z"', lUtcNow);
+end;
+
+function FormatDateOnlyUtcNow: string;
+var
+  lUtcNow: TDateTime;
+begin
+  lUtcNow := TTimeZone.Local.ToUniversalTime(Now);
+  Result := FormatDateTime('yyyy"-"mm"-"dd', lUtcNow);
+end;
+
+function BuildBenchmarkDirectoryPath: string;
+begin
+  Result := TPath.GetFullPath(TPath.Combine(ExtractFilePath(ParamStr(0)), '..'));
+end;
+
+procedure CollectMetrics(
+  const aSimpleAsyncResult: TBenchmarkResult;
+  const aAsyncLoopResult: TBenchmarkResult;
+  const aCollectionResult: TBenchmarkResult;
+  const aCollectionBatchedResult: TBenchmarkResult;
+  const aCollectionMultiProducerResult: TBenchmarkResult;
+  const aAsyncTimerResult: TBenchmarkResult;
+  const aPortableTimerResult: TBenchmarkResult;
+  out aMetrics: TBenchmarkMetrics);
+begin
+  aMetrics.SimpleAsyncCallOpsPerSec := ThroughputAsInt64(aSimpleAsyncResult.UnitsProcessed, aSimpleAsyncResult.DurationMs);
+  aMetrics.AsyncLoopOpsPerSec := ThroughputAsInt64(aAsyncLoopResult.UnitsProcessed, aAsyncLoopResult.DurationMs);
+  aMetrics.AsyncCollectionProcessorOpsPerSec := ThroughputAsInt64(aCollectionResult.UnitsProcessed, aCollectionResult.DurationMs);
+  aMetrics.AsyncCollectionProcessorBatchedOpsPerSec := ThroughputAsInt64(aCollectionBatchedResult.UnitsProcessed, aCollectionBatchedResult.DurationMs);
+  aMetrics.AsyncCollectionProcessorMultiProducerOpsPerSec := ThroughputAsInt64(aCollectionMultiProducerResult.UnitsProcessed, aCollectionMultiProducerResult.DurationMs);
+  aMetrics.AsyncTimerOpsPerSec := ThroughputAsInt64(aAsyncTimerResult.UnitsProcessed, aAsyncTimerResult.DurationMs);
+  aMetrics.PortableTimerOpsPerSec := ThroughputAsInt64(aPortableTimerResult.UnitsProcessed, aPortableTimerResult.DurationMs);
+end;
+
+procedure WriteLatestJson(
+  const aFilePath: string;
+  const aRunAtUtc: string;
+  const aDateOnly: string;
+  const aMetrics: TBenchmarkMetrics);
+var
+  lJson: TStringList;
+begin
+  lJson := TStringList.Create;
+  try
+    lJson.Add('{');
+    lJson.Add('  "benchmark": "MaxLogic.Async.Benchmark",');
+    lJson.Add('  "run_at_utc": "' + EscapeJsonString(aRunAtUtc) + '",');
+    lJson.Add('  "date": "' + EscapeJsonString(aDateOnly) + '",');
+    lJson.Add('  "aggregation": "single_run",');
+    lJson.Add('  "metrics": {');
+    lJson.Add('    "simple_async_call_ops_per_sec": ' + IntToStr(aMetrics.SimpleAsyncCallOpsPerSec) + ',');
+    lJson.Add('    "async_loop_ops_per_sec": ' + IntToStr(aMetrics.AsyncLoopOpsPerSec) + ',');
+    lJson.Add('    "async_collection_processor_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorOpsPerSec) + ',');
+    lJson.Add('    "async_collection_processor_batched_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorBatchedOpsPerSec) + ',');
+    lJson.Add('    "async_collection_processor_multi_producer_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorMultiProducerOpsPerSec) + ',');
+    lJson.Add('    "async_timer_ops_per_sec": ' + IntToStr(aMetrics.AsyncTimerOpsPerSec) + ',');
+    lJson.Add('    "portable_timer_ops_per_sec": ' + IntToStr(aMetrics.PortableTimerOpsPerSec));
+    lJson.Add('  }');
+    lJson.Add('}');
+    lJson.SaveToFile(aFilePath, TEncoding.UTF8);
+  finally
+    lJson.Free;
+  end;
+end;
+
+procedure WriteResultsJson(
+  const aFilePath: string;
+  const aSimpleAsyncResult: TBenchmarkResult;
+  const aAsyncLoopResult: TBenchmarkResult;
+  const aCollectionResult: TBenchmarkResult;
+  const aCollectionBatchedResult: TBenchmarkResult;
+  const aCollectionMultiProducerResult: TBenchmarkResult;
+  const aAsyncTimerResult: TBenchmarkResult;
+  const aPortableTimerResult: TBenchmarkResult;
+  const aMetrics: TBenchmarkMetrics);
+var
+  lJson: TStringList;
+begin
+  lJson := TStringList.Create;
+  try
+    lJson.Add('{');
+    lJson.Add('  "benchmark": "MaxLogic.Async.Benchmark",');
+    lJson.Add('  "run_at_utc": "' + EscapeJsonString(FormatUtcIso8601Now) + '",');
+    lJson.Add('  "results": [');
+    lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
+      [EscapeJsonString(aSimpleAsyncResult.Name), aSimpleAsyncResult.UnitsProcessed, FloatToInvariant(aSimpleAsyncResult.DurationMs), aMetrics.SimpleAsyncCallOpsPerSec]));
+    lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
+      [EscapeJsonString(aAsyncLoopResult.Name), aAsyncLoopResult.UnitsProcessed, FloatToInvariant(aAsyncLoopResult.DurationMs), aMetrics.AsyncLoopOpsPerSec]));
+    lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
+      [EscapeJsonString(aCollectionResult.Name), aCollectionResult.UnitsProcessed, FloatToInvariant(aCollectionResult.DurationMs), aMetrics.AsyncCollectionProcessorOpsPerSec]));
+    lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
+      [EscapeJsonString(aCollectionBatchedResult.Name), aCollectionBatchedResult.UnitsProcessed, FloatToInvariant(aCollectionBatchedResult.DurationMs), aMetrics.AsyncCollectionProcessorBatchedOpsPerSec]));
+    lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
+      [EscapeJsonString(aCollectionMultiProducerResult.Name), aCollectionMultiProducerResult.UnitsProcessed, FloatToInvariant(aCollectionMultiProducerResult.DurationMs), aMetrics.AsyncCollectionProcessorMultiProducerOpsPerSec]));
+    lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
+      [EscapeJsonString(aAsyncTimerResult.Name), aAsyncTimerResult.UnitsProcessed, FloatToInvariant(aAsyncTimerResult.DurationMs), aMetrics.AsyncTimerOpsPerSec]));
+    lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d}',
+      [EscapeJsonString(aPortableTimerResult.Name), aPortableTimerResult.UnitsProcessed, FloatToInvariant(aPortableTimerResult.DurationMs), aMetrics.PortableTimerOpsPerSec]));
+    lJson.Add('  ]');
+    lJson.Add('}');
+    lJson.SaveToFile(aFilePath, TEncoding.UTF8);
+  finally
+    lJson.Free;
+  end;
+end;
+
+procedure AppendHistoryCsv(
+  const aFilePath: string;
+  const aRunAtUtc: string;
+  const aMetrics: TBenchmarkMetrics);
+const
+  cHeader = 'run_at_utc,simple_async_call_ops_per_sec,async_loop_ops_per_sec,async_collection_processor_ops_per_sec,async_collection_processor_batched_ops_per_sec,async_collection_processor_multi_producer_ops_per_sec,async_timer_ops_per_sec,portable_timer_ops_per_sec';
+var
+  lLines: TStringList;
+begin
+  lLines := TStringList.Create;
+  try
+    if TFile.Exists(aFilePath) then
+      lLines.LoadFromFile(aFilePath, TEncoding.UTF8);
+
+    if (lLines.Count = 0) or (Trim(lLines[0]) <> cHeader) then
+      lLines.Insert(0, cHeader);
+
+    lLines.Add(Format('%s,%d,%d,%d,%d,%d,%d,%d',
+      [aRunAtUtc,
+       aMetrics.SimpleAsyncCallOpsPerSec,
+       aMetrics.AsyncLoopOpsPerSec,
+       aMetrics.AsyncCollectionProcessorOpsPerSec,
+       aMetrics.AsyncCollectionProcessorBatchedOpsPerSec,
+       aMetrics.AsyncCollectionProcessorMultiProducerOpsPerSec,
+       aMetrics.AsyncTimerOpsPerSec,
+       aMetrics.PortableTimerOpsPerSec]));
+
+    lLines.SaveToFile(aFilePath, TEncoding.UTF8);
+  finally
+    lLines.Free;
+  end;
+end;
+
+procedure SaveBenchmarkArtifacts(
+  const aSimpleAsyncResult: TBenchmarkResult;
+  const aAsyncLoopResult: TBenchmarkResult;
+  const aCollectionResult: TBenchmarkResult;
+  const aCollectionBatchedResult: TBenchmarkResult;
+  const aCollectionMultiProducerResult: TBenchmarkResult;
+  const aAsyncTimerResult: TBenchmarkResult;
+  const aPortableTimerResult: TBenchmarkResult);
+var
+  lBenchmarkDir: string;
+  lLatestJsonPath: string;
+  lResultsJsonPath: string;
+  lHistoryCsvPath: string;
+  lRunAtUtc: string;
+  lDateOnly: string;
+  lMetrics: TBenchmarkMetrics;
+begin
+  CollectMetrics(
+    aSimpleAsyncResult,
+    aAsyncLoopResult,
+    aCollectionResult,
+    aCollectionBatchedResult,
+    aCollectionMultiProducerResult,
+    aAsyncTimerResult,
+    aPortableTimerResult,
+    lMetrics);
+
+  lBenchmarkDir := BuildBenchmarkDirectoryPath;
+  lLatestJsonPath := TPath.Combine(lBenchmarkDir, 'MaxLogic.Async.Benchmark.latest.json');
+  lResultsJsonPath := TPath.Combine(lBenchmarkDir, 'MaxLogic.Async.Benchmark.results.json');
+  lHistoryCsvPath := TPath.Combine(lBenchmarkDir, 'MaxLogic.Async.Benchmark.history.csv');
+  lRunAtUtc := FormatUtcIso8601Now;
+  lDateOnly := FormatDateOnlyUtcNow;
+
+  WriteLatestJson(lLatestJsonPath, lRunAtUtc, lDateOnly, lMetrics);
+  WriteResultsJson(
+    lResultsJsonPath,
+    aSimpleAsyncResult,
+    aAsyncLoopResult,
+    aCollectionResult,
+    aCollectionBatchedResult,
+    aCollectionMultiProducerResult,
+    aAsyncTimerResult,
+    aPortableTimerResult,
+    lMetrics);
+  AppendHistoryCsv(lHistoryCsvPath, lRunAtUtc, lMetrics);
 end;
 
 procedure PrintResult(const aResult: TBenchmarkResult);
@@ -388,18 +612,43 @@ begin
   Writeln(StringOfChar('-', 92));
 end;
 
+var
+  lSimpleAsyncResult: TBenchmarkResult;
+  lAsyncLoopResult: TBenchmarkResult;
+  lCollectionResult: TBenchmarkResult;
+  lCollectionBatchedResult: TBenchmarkResult;
+  lCollectionMultiProducerResult: TBenchmarkResult;
+  lAsyncTimerResult: TBenchmarkResult;
+  lPortableTimerResult: TBenchmarkResult;
 begin
   try
     PrintHeader;
-    PrintResult(BenchmarkSimpleAsyncCall);
-    PrintResult(BenchmarkAsyncLoop);
-    PrintResult(BenchmarkAsyncCollectionProcessor);
-    PrintResult(BenchmarkAsyncCollectionProcessorBatched);
-    PrintResult(BenchmarkAsyncCollectionProcessorMultiProducer);
-    PrintResult(BenchmarkAsyncTimerCompatibility);
-    PrintResult(BenchmarkPortableTimer);
+    lSimpleAsyncResult := BenchmarkSimpleAsyncCall;
+    lAsyncLoopResult := BenchmarkAsyncLoop;
+    lCollectionResult := BenchmarkAsyncCollectionProcessor;
+    lCollectionBatchedResult := BenchmarkAsyncCollectionProcessorBatched;
+    lCollectionMultiProducerResult := BenchmarkAsyncCollectionProcessorMultiProducer;
+    lAsyncTimerResult := BenchmarkAsyncTimerCompatibility;
+    lPortableTimerResult := BenchmarkPortableTimer;
+
+    PrintResult(lSimpleAsyncResult);
+    PrintResult(lAsyncLoopResult);
+    PrintResult(lCollectionResult);
+    PrintResult(lCollectionBatchedResult);
+    PrintResult(lCollectionMultiProducerResult);
+    PrintResult(lAsyncTimerResult);
+    PrintResult(lPortableTimerResult);
 
     Writeln(StringOfChar('-', 92));
+
+    SaveBenchmarkArtifacts(
+      lSimpleAsyncResult,
+      lAsyncLoopResult,
+      lCollectionResult,
+      lCollectionBatchedResult,
+      lCollectionMultiProducerResult,
+      lAsyncTimerResult,
+      lPortableTimerResult);
   except
     on lException: Exception do
     begin

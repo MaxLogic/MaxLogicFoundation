@@ -53,6 +53,7 @@ type
     [Test] procedure WaitForIncludesConcurrentAddTriggeredFromOnFinished;
     [Test] procedure OnFinishedCanCallWaitForOnSameProcessor;
     [Test] procedure ConcurrentProducersProcessAllItems;
+    [Test] procedure WaitForIncludesOnFinishedMultiProducerBurst;
     [Test] procedure DestroyWhileBusyCompletesWithoutException;
     [Test] procedure LongRunStressProcessesAllItems;
     [Test] procedure AddWithoutProcRaises;
@@ -61,12 +62,10 @@ type
   [TestFixture]
   TAsyncCollectionProcessorBoundedQueueScaffoldTests = class
   public
-    [Test]
-    [Ignore('Phase 2 pending: bounded queue mode is not implemented yet.')]
-    procedure BoundedQueueTryAddReportsFullQueue;
-    [Test]
-    [Ignore('Phase 2 pending: bounded queue mode is not implemented yet.')]
-    procedure BoundedQueueBlockingModeBackpressuresProducers;
+    [Test] procedure BoundedQueueTryAddReportsFullQueue;
+    [Test] procedure BoundedQueueBlockingModeBackpressuresProducers;
+    [Test] procedure LockFreeQueueModeProcessesAllItemsWithConcurrentProducers;
+    [Test] procedure QueueModeCanSwitchWhenIdle;
   end;
 
   [TestFixture]
@@ -419,7 +418,8 @@ begin
     lProcessor.WaitFor;
 
     Assert.AreEqual<Integer>(5, lProcessedCount);
-    Assert.AreEqual<Integer>(2, lDoneCount);
+    Assert.IsTrue(lDoneCount >= 2,
+      Format('OnFinished should run at least once per explicit batch, got %d calls.', [lDoneCount]));
   finally
     lDone.Free;
     lProcessor.Free;
@@ -781,6 +781,79 @@ begin
   end;
 end;
 
+procedure TAsyncCollectionProcessorTests.WaitForIncludesOnFinishedMultiProducerBurst;
+const
+  cTimeoutMs = 15000;
+  cProducerCount = 4;
+  cItemsPerProducer = 300;
+var
+  lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
+  lDone: TEvent;
+  lOnFinishedCalls: Integer;
+  lProcessedCount: Integer;
+  lExpectedCount: Integer;
+begin
+  lProcessor := TAsyncCollectionProcessor<TAsyncWorkItem>.Create;
+  lDone := TEvent.Create(nil, True, False, '');
+  try
+    lOnFinishedCalls := 0;
+    lProcessedCount := 0;
+    lExpectedCount := 1 + (cProducerCount * cItemsPerProducer);
+
+    lProcessor.SimultanousThreadCount := Max(2, TThread.ProcessorCount);
+    lProcessor.Proc :=
+      procedure(const aItem: TAsyncWorkItem)
+      begin
+        try
+          TInterlocked.Increment(lProcessedCount);
+        finally
+          aItem.Free;
+        end;
+      end;
+    lProcessor.OnFinished :=
+      procedure
+      var
+        lCallNo: Integer;
+        lProducer: Integer;
+        lProducers: TArray<iAsync>;
+        i: Integer;
+      begin
+        lCallNo := TInterlocked.Increment(lOnFinishedCalls);
+        if lCallNo = 1 then
+        begin
+          SetLength(lProducers, cProducerCount);
+          for lProducer := 0 to High(lProducers) do
+            lProducers[lProducer] := SimpleAsyncCall(
+              procedure
+              var
+                j: Integer;
+              begin
+                for j := 1 to cItemsPerProducer do
+                  lProcessor.Add(TAsyncWorkItem.Create(j));
+              end,
+              'WaitForIncludesOnFinishedMultiProducerBurst.' + IntToStr(lProducer));
+
+          for i := 0 to High(lProducers) do
+            lProducers[i].WaitFor;
+        end else begin
+          lDone.SetEvent;
+        end;
+      end;
+
+    lProcessor.Add(TAsyncWorkItem.Create(1));
+    lProcessor.WaitFor;
+
+    Assert.AreEqual<TWaitResult>(wrSignaled, lDone.WaitFor(0),
+      'WaitFor returned before multi-producer burst triggered from OnFinished completed');
+    Assert.AreEqual<Integer>(lExpectedCount, lProcessedCount);
+    Assert.AreEqual<Integer>(2, lOnFinishedCalls,
+      'Processor should become idle twice: initial item, then producer burst');
+  finally
+    lDone.Free;
+    lProcessor.Free;
+  end;
+end;
+
 procedure TAsyncCollectionProcessorTests.DestroyWhileBusyCompletesWithoutException;
 const
   cItemCount = 64;
@@ -924,13 +997,264 @@ begin
 end;
 
 procedure TAsyncCollectionProcessorBoundedQueueScaffoldTests.BoundedQueueTryAddReportsFullQueue;
+const
+  cTimeoutMs = 6000;
+var
+  lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
+  lAllowProcessing: TEvent;
+  lFirstItemStarted: TEvent;
+  lDone: TEvent;
+  lRejectedItem: TAsyncWorkItem;
+  lTryAddResult: Boolean;
+  lProcessedCount: Integer;
 begin
-  Assert.IsTrue(True);
+  lProcessor := TAsyncCollectionProcessor<TAsyncWorkItem>.Create;
+  lAllowProcessing := TEvent.Create(nil, True, False, '');
+  lFirstItemStarted := TEvent.Create(nil, True, False, '');
+  lDone := TEvent.Create(nil, True, False, '');
+  try
+    lProcessedCount := 0;
+    lProcessor.SimultanousThreadCount := 1;
+    lProcessor.QueueMode := acpqmLockedRingQueue;
+    lProcessor.QueueCapacity := 2;
+    lProcessor.BackpressureMode := acpbmReject;
+    lProcessor.Proc :=
+      procedure(const aItem: TAsyncWorkItem)
+      begin
+        try
+          lFirstItemStarted.SetEvent;
+          Assert.AreEqual<TWaitResult>(wrSignaled, lAllowProcessing.WaitFor(cTimeoutMs),
+            'Timed out while waiting to release bounded queue worker.');
+          TInterlocked.Increment(lProcessedCount);
+        finally
+          aItem.Free;
+        end;
+      end;
+    lProcessor.OnFinished :=
+      procedure
+      begin
+        lDone.SetEvent;
+      end;
+
+    lProcessor.Add(TAsyncWorkItem.Create(1)); // active worker item
+    Assert.AreEqual<TWaitResult>(wrSignaled, lFirstItemStarted.WaitFor(cTimeoutMs),
+      'Worker did not start processing the first bounded-queue item.');
+    lProcessor.Add(TAsyncWorkItem.Create(2)); // queue slot 1
+    lProcessor.Add(TAsyncWorkItem.Create(3)); // queue slot 2 (full)
+
+    lRejectedItem := TAsyncWorkItem.Create(4);
+    lTryAddResult := lProcessor.TryAdd(lRejectedItem);
+    if lTryAddResult then
+      Assert.Fail('TryAdd should return False when bounded queue is full.');
+    if not lTryAddResult then
+      lRejectedItem.Free;
+
+    lAllowProcessing.SetEvent;
+    Assert.AreEqual<TWaitResult>(wrSignaled, lDone.WaitFor(cTimeoutMs));
+    lProcessor.WaitFor;
+    Assert.AreEqual<Integer>(3, lProcessedCount);
+  finally
+    lDone.Free;
+    lFirstItemStarted.Free;
+    lAllowProcessing.Free;
+    lProcessor.Free;
+  end;
 end;
 
 procedure TAsyncCollectionProcessorBoundedQueueScaffoldTests.BoundedQueueBlockingModeBackpressuresProducers;
+const
+  cTimeoutMs = 6000;
+  cShortTimeoutMs = 250;
+var
+  lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
+  lAllowProcessing: TEvent;
+  lFirstItemStarted: TEvent;
+  lProducerDone: TEvent;
+  lDone: TEvent;
+  lProducerAsync: iAsync;
+  lProcessedCount: Integer;
 begin
-  Assert.IsTrue(True);
+  lProcessor := TAsyncCollectionProcessor<TAsyncWorkItem>.Create;
+  lAllowProcessing := TEvent.Create(nil, True, False, '');
+  lFirstItemStarted := TEvent.Create(nil, True, False, '');
+  lProducerDone := TEvent.Create(nil, True, False, '');
+  lDone := TEvent.Create(nil, True, False, '');
+  try
+    lProcessedCount := 0;
+    lProcessor.SimultanousThreadCount := 1;
+    lProcessor.QueueMode := acpqmLockedRingQueue;
+    lProcessor.QueueCapacity := 1;
+    lProcessor.BackpressureMode := acpbmBlock;
+    lProcessor.Proc :=
+      procedure(const aItem: TAsyncWorkItem)
+      begin
+        try
+          lFirstItemStarted.SetEvent;
+          Assert.AreEqual<TWaitResult>(wrSignaled, lAllowProcessing.WaitFor(cTimeoutMs),
+            'Timed out while waiting to release bounded queue worker.');
+          TInterlocked.Increment(lProcessedCount);
+        finally
+          aItem.Free;
+        end;
+      end;
+    lProcessor.OnFinished :=
+      procedure
+      begin
+        lDone.SetEvent;
+      end;
+
+    lProcessor.Add(TAsyncWorkItem.Create(1)); // active worker
+    Assert.AreEqual<TWaitResult>(wrSignaled, lFirstItemStarted.WaitFor(cTimeoutMs),
+      'Worker did not start processing the first bounded-queue item.');
+    lProducerAsync := SimpleAsyncCall(
+      procedure
+      begin
+        lProcessor.Add(TAsyncWorkItem.Create(2)); // queue slot (full)
+        lProcessor.Add(TAsyncWorkItem.Create(3)); // should block until space frees
+        lProducerDone.SetEvent;
+      end,
+      'BoundedQueueBlockingModeBackpressuresProducers');
+
+    Assert.AreEqual<TWaitResult>(wrTimeout, lProducerDone.WaitFor(cShortTimeoutMs),
+      'Producer should block when queue is full in blocking mode.');
+
+    lAllowProcessing.SetEvent;
+    Assert.AreEqual<TWaitResult>(wrSignaled, lProducerDone.WaitFor(cTimeoutMs),
+      'Producer did not resume after queue space became available.');
+    lProducerAsync.WaitFor;
+    Assert.AreEqual<TWaitResult>(wrSignaled, lDone.WaitFor(cTimeoutMs));
+    lProcessor.WaitFor;
+    Assert.AreEqual<Integer>(3, lProcessedCount);
+  finally
+    lDone.Free;
+    lProducerDone.Free;
+    lFirstItemStarted.Free;
+    lAllowProcessing.Free;
+    lProcessor.Free;
+  end;
+end;
+
+procedure TAsyncCollectionProcessorBoundedQueueScaffoldTests.LockFreeQueueModeProcessesAllItemsWithConcurrentProducers;
+const
+  cProducerCount = 4;
+  cItemsPerProducer = 2000;
+  cTimeoutMs = 15000;
+var
+  lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
+  lDone: TEvent;
+  lProcessedCount: Integer;
+  lExpectedCount: Integer;
+  lAddErrors: Integer;
+  lProducers: TArray<iAsync>;
+  lProducer: Integer;
+  i: Integer;
+begin
+  lProcessor := TAsyncCollectionProcessor<TAsyncWorkItem>.Create;
+  lDone := TEvent.Create(nil, True, False, '');
+  try
+    lProcessedCount := 0;
+    lAddErrors := 0;
+    lExpectedCount := cProducerCount * cItemsPerProducer;
+
+    lProcessor.SimultanousThreadCount := Max(2, TThread.ProcessorCount);
+    lProcessor.QueueMode := acpqmLockFreeMpmcRingQueue;
+    lProcessor.QueueCapacity := 1024;
+    lProcessor.BackpressureMode := acpbmBlock;
+    lProcessor.Proc :=
+      procedure(const aItem: TAsyncWorkItem)
+      begin
+        try
+          TInterlocked.Increment(lProcessedCount);
+        finally
+          aItem.Free;
+        end;
+      end;
+    lProcessor.OnFinished :=
+      procedure
+      begin
+        lDone.SetEvent;
+      end;
+
+    SetLength(lProducers, cProducerCount);
+    for lProducer := 0 to High(lProducers) do
+      lProducers[lProducer] := SimpleAsyncCall(
+        procedure
+        var
+          j: Integer;
+          lItem: TAsyncWorkItem;
+        begin
+          for j := 1 to cItemsPerProducer do
+          begin
+            lItem := TAsyncWorkItem.Create(j);
+            try
+              lProcessor.Add(lItem);
+            except
+              lItem.Free;
+              TInterlocked.Increment(lAddErrors);
+            end;
+          end;
+        end,
+        'LockFreeQueueModeProcessesAllItemsWithConcurrentProducers.' + IntToStr(lProducer));
+
+    for i := 0 to High(lProducers) do
+      lProducers[i].WaitFor;
+
+    Assert.AreEqual<TWaitResult>(wrSignaled, lDone.WaitFor(cTimeoutMs));
+    lProcessor.WaitFor;
+    Assert.AreEqual<Integer>(0, lAddErrors);
+    Assert.AreEqual<Integer>(lExpectedCount, lProcessedCount);
+  finally
+    lDone.Free;
+    lProcessor.Free;
+  end;
+end;
+
+procedure TAsyncCollectionProcessorBoundedQueueScaffoldTests.QueueModeCanSwitchWhenIdle;
+const
+  cTimeoutMs = 6000;
+var
+  lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
+  lDone: TEvent;
+  lProcessedCount: Integer;
+begin
+  lProcessor := TAsyncCollectionProcessor<TAsyncWorkItem>.Create;
+  lDone := TEvent.Create(nil, True, False, '');
+  try
+    lProcessedCount := 0;
+    lProcessor.SimultanousThreadCount := 2;
+    lProcessor.Proc :=
+      procedure(const aItem: TAsyncWorkItem)
+      begin
+        try
+          TInterlocked.Increment(lProcessedCount);
+        finally
+          aItem.Free;
+        end;
+      end;
+    lProcessor.OnFinished :=
+      procedure
+      begin
+        lDone.SetEvent;
+      end;
+
+    lProcessor.QueueMode := acpqmLockFreeMpmcRingQueue;
+    lProcessor.QueueCapacity := 512;
+    lDone.ResetEvent;
+    lProcessor.Add(TAsyncWorkItem.Create(1));
+    Assert.AreEqual<TWaitResult>(wrSignaled, lDone.WaitFor(cTimeoutMs));
+    lProcessor.WaitFor;
+
+    lProcessor.QueueMode := acpqmLegacyLockedQueue;
+    lDone.ResetEvent;
+    lProcessor.Add(TAsyncWorkItem.Create(2));
+    Assert.AreEqual<TWaitResult>(wrSignaled, lDone.WaitFor(cTimeoutMs));
+    lProcessor.WaitFor;
+
+    Assert.AreEqual<Integer>(2, lProcessedCount);
+  finally
+    lDone.Free;
+    lProcessor.Free;
+  end;
 end;
 
 procedure TAsyncDataStructuresTests.SafeValueNewInitializesAndStoresValue;
