@@ -67,6 +67,7 @@ type
     [Test] procedure TryAddRangeReturnsPartialCountWhenQueueIsFull;
     [Test] procedure LockFreeAddRangeProcessesBatchAndSignalsFinished;
     [Test] procedure LockFreeQueueModeProcessesAllItemsWithConcurrentProducers;
+    [Test] procedure LockFreeQueueModeHighContentionCompletesWithoutPermitLoss;
     [Test] procedure QueueModeCanSwitchWhenIdle;
   end;
 
@@ -1321,6 +1322,88 @@ begin
       lProducers[i].WaitFor;
 
     Assert.AreEqual<TWaitResult>(wrSignaled, lDone.WaitFor(cTimeoutMs));
+    lProcessor.WaitFor;
+    Assert.AreEqual<Integer>(0, lAddErrors);
+    Assert.AreEqual<Integer>(lExpectedCount, lProcessedCount);
+  finally
+    lDone.Free;
+    lProcessor.Free;
+  end;
+end;
+
+procedure TAsyncCollectionProcessorBoundedQueueScaffoldTests.LockFreeQueueModeHighContentionCompletesWithoutPermitLoss;
+const
+  cProducerCount = 8;
+  cItemsPerProducer = 40000;
+  cTimeoutMs = 20000;
+var
+  lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
+  lDone: TEvent;
+  lProcessedCount: Integer;
+  lExpectedCount: Integer;
+  lAddErrors: Integer;
+  lProducers: TArray<iAsync>;
+  lProducer: Integer;
+  i: Integer;
+  lWaitResult: TWaitResult;
+begin
+  lProcessor := TAsyncCollectionProcessor<TAsyncWorkItem>.Create;
+  lDone := TEvent.Create(nil, True, False, '');
+  try
+    lProcessedCount := 0;
+    lAddErrors := 0;
+    lExpectedCount := cProducerCount * cItemsPerProducer;
+
+    lProcessor.SimultanousThreadCount := Max(2, TThread.ProcessorCount);
+    lProcessor.QueueMode := acpqmLockFreeMpmcRingQueue;
+    lProcessor.QueueCapacity := 1024;
+    lProcessor.BackpressureMode := acpbmBlock;
+    lProcessor.Proc :=
+      procedure(const aItem: TAsyncWorkItem)
+      begin
+        try
+          TInterlocked.Increment(lProcessedCount);
+        finally
+          aItem.Free;
+        end;
+      end;
+    lProcessor.OnFinished :=
+      procedure
+      begin
+        lDone.SetEvent;
+      end;
+
+    SetLength(lProducers, cProducerCount);
+    for lProducer := 0 to High(lProducers) do
+      lProducers[lProducer] := SimpleAsyncCall(
+        procedure
+        var
+          j: Integer;
+          lItem: TAsyncWorkItem;
+        begin
+          for j := 1 to cItemsPerProducer do
+          begin
+            lItem := TAsyncWorkItem.Create(j);
+            try
+              lProcessor.Add(lItem);
+            except
+              lItem.Free;
+              TInterlocked.Increment(lAddErrors);
+            end;
+          end;
+        end,
+        'LockFreeQueueModeHighContentionCompletesWithoutPermitLoss.' + IntToStr(lProducer));
+
+    for i := 0 to High(lProducers) do
+      lProducers[i].WaitFor;
+
+    lWaitResult := lDone.WaitFor(cTimeoutMs);
+    if lWaitResult <> wrSignaled then
+      lProcessor.ClearItems;
+
+    Assert.AreEqual<TWaitResult>(wrSignaled, lWaitResult,
+      Format('Lock-free queue did not reach idle state in time. processed=%d expected=%d addErrors=%d',
+        [lProcessedCount, lExpectedCount, lAddErrors]));
     lProcessor.WaitFor;
     Assert.AreEqual<Integer>(0, lAddErrors);
     Assert.AreEqual<Integer>(lExpectedCount, lProcessedCount);

@@ -2386,6 +2386,7 @@ var
   lBatch: array[0..cBatchSize - 1] of t;
   lRequestedCount: Integer;
   lBatchCount: Integer;
+  lUnconsumedCount: Integer;
   lBatchIndex: Integer;
   lItem: t;
   lProc: TAsyncCollectionProcessorProc<t>;
@@ -2404,6 +2405,9 @@ begin
     end;
 
     lBatchCount := DequeueBatch(lBatch, lRequestedCount);
+    lUnconsumedCount := lRequestedCount - lBatchCount;
+    if lUnconsumedCount > 0 then
+      fItemsAvailable.Release(lUnconsumedCount);
 
     if lBatchCount = 0 then
       Continue;

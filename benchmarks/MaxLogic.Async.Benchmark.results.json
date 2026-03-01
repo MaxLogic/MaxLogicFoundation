@@ -1,16 +1,16 @@
 ﻿{
   "benchmark": "MaxLogic.Async.Benchmark",
-  "run_at_utc": "2026-03-01T17:06:01Z",
+  "run_at_utc": "2026-03-01T20:38:02Z",
   "results": [
-    {"name":"SimpleAsyncCall (sequential wait)","units_processed":25000,"duration_ms":438.424,"ops_per_sec":57022},
-    {"name":"TTask.Run (sequential wait)","units_processed":25000,"duration_ms":159.945,"ops_per_sec":156304},
-    {"name":"TAsyncLoop.RunAndWait","units_processed":300000,"duration_ms":15.555,"ops_per_sec":19286651},
-    {"name":"TParallel.For","units_processed":300000,"duration_ms":5.117,"ops_per_sec":58624665},
-    {"name":"TAsyncCollectionProcessor","units_processed":300000,"duration_ms":678.826,"ops_per_sec":441939},
-    {"name":"TAsyncCollectionProcessor.BatchedAddStorm","units_processed":300000,"duration_ms":142.152,"ops_per_sec":2110413},
-    {"name":"TAsyncCollectionProcessor.MultiProducerContention","units_processed":320000,"duration_ms":692.066,"ops_per_sec":462384},
-    {"name":"TTask + TThreadedQueue","units_processed":300000,"duration_ms":1143.962,"ops_per_sec":262246},
-    {"name":"TAsyncTimer (compat wrapper)","units_processed":200,"duration_ms":3103.157,"ops_per_sec":64},
-    {"name":"TPortableTimer","units_processed":200,"duration_ms":3096.321,"ops_per_sec":65}
+    {"name":"SimpleAsyncCall (sequential wait)","units_processed":25000,"duration_ms":380.278,"ops_per_sec":65741},
+    {"name":"TTask.Run (sequential wait)","units_processed":25000,"duration_ms":158.848,"ops_per_sec":157384},
+    {"name":"TAsyncLoop.RunAndWait","units_processed":300000,"duration_ms":12.693,"ops_per_sec":23634888},
+    {"name":"TParallel.For","units_processed":300000,"duration_ms":8.538,"ops_per_sec":35135388},
+    {"name":"TAsyncCollectionProcessor","units_processed":300000,"duration_ms":606.653,"ops_per_sec":494517},
+    {"name":"TAsyncCollectionProcessor.BatchedAddStorm","units_processed":300000,"duration_ms":145.124,"ops_per_sec":2067205},
+    {"name":"TAsyncCollectionProcessor.MultiProducerContention","units_processed":320000,"duration_ms":706.701,"ops_per_sec":452808},
+    {"name":"TTask + TThreadedQueue","units_processed":300000,"duration_ms":819.904,"ops_per_sec":365896},
+    {"name":"TAsyncTimer (compat wrapper)","units_processed":200,"duration_ms":3108.695,"ops_per_sec":64},
+    {"name":"TPortableTimer","units_processed":200,"duration_ms":3107.852,"ops_per_sec":64}
   ]
 }
