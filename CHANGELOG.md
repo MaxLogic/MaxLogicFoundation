@@ -30,3 +30,6 @@ All notable changes to MaxLogicFoundation are documented here.
 - `maxAsync.TAsyncCollectionProcessor<T>.Add(...)` now starts workers inside the same critical-section pass used for enqueue, reducing lock churn in hot paths.
 - `maxAsync.TAsyncCollectionProcessor<T>.AsyncProcessItem` now invokes a captured procedure reference per dequeued item, avoiding repeated branch checks in the worker loop.
 - `maxAsync.TAsyncCollectionProcessor<T>` now dequeues work in small batches and avoids redundant ready-event resets, improving processing throughput under high enqueue rates.
+- `maxAsync.TAsyncCollectionProcessor<T>` now publishes enqueue batches with one pending-counter update and one semaphore release, reducing atomic and signal overhead in `Add/AddRange/TryAddRange`.
+- `maxAsync.TAsyncCollectionProcessor<T>.Add(const Item)` and `.TryAdd(const Item)` now use direct single-item enqueue paths instead of allocating one-element temporary arrays.
+- Async benchmark artifacts now include pure RTL baselines (`TTask.Run`, `TParallel.For`, `TTask + TThreadedQueue`) and persist those metrics in JSON/CSV outputs.

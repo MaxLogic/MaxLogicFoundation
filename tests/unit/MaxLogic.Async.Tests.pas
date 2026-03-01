@@ -64,6 +64,8 @@ type
   public
     [Test] procedure BoundedQueueTryAddReportsFullQueue;
     [Test] procedure BoundedQueueBlockingModeBackpressuresProducers;
+    [Test] procedure TryAddRangeReturnsPartialCountWhenQueueIsFull;
+    [Test] procedure LockFreeAddRangeProcessesBatchAndSignalsFinished;
     [Test] procedure LockFreeQueueModeProcessesAllItemsWithConcurrentProducers;
     [Test] procedure QueueModeCanSwitchWhenIdle;
   end;
@@ -1130,6 +1132,125 @@ begin
     lProducerDone.Free;
     lFirstItemStarted.Free;
     lAllowProcessing.Free;
+    lProcessor.Free;
+  end;
+end;
+
+procedure TAsyncCollectionProcessorBoundedQueueScaffoldTests.TryAddRangeReturnsPartialCountWhenQueueIsFull;
+const
+  cTimeoutMs = 6000;
+var
+  lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
+  lAllowProcessing: TEvent;
+  lFirstItemStarted: TEvent;
+  lDone: TEvent;
+  lBatch: TArray<TAsyncWorkItem>;
+  lAddedCount: Integer;
+  lProcessedCount: Integer;
+  i: Integer;
+begin
+  lProcessor := TAsyncCollectionProcessor<TAsyncWorkItem>.Create;
+  lAllowProcessing := TEvent.Create(nil, True, False, '');
+  lFirstItemStarted := TEvent.Create(nil, True, False, '');
+  lDone := TEvent.Create(nil, True, False, '');
+  try
+    lProcessedCount := 0;
+    lProcessor.SimultanousThreadCount := 1;
+    lProcessor.QueueMode := acpqmLockFreeMpmcRingQueue;
+    lProcessor.QueueCapacity := 2;
+    lProcessor.BackpressureMode := acpbmReject;
+    lProcessor.Proc :=
+      procedure(const aItem: TAsyncWorkItem)
+      begin
+        try
+          lFirstItemStarted.SetEvent;
+          Assert.AreEqual<TWaitResult>(wrSignaled, lAllowProcessing.WaitFor(cTimeoutMs),
+            'Timed out while waiting to release lock-free queue worker.');
+          TInterlocked.Increment(lProcessedCount);
+        finally
+          aItem.Free;
+        end;
+      end;
+    lProcessor.OnFinished :=
+      procedure
+      begin
+        lDone.SetEvent;
+      end;
+
+    lProcessor.Add(TAsyncWorkItem.Create(1)); // active worker item
+    Assert.AreEqual<TWaitResult>(wrSignaled, lFirstItemStarted.WaitFor(cTimeoutMs),
+      'Worker did not start processing the first lock-free item.');
+    lProcessor.Add(TAsyncWorkItem.Create(2)); // queued item
+
+    SetLength(lBatch, 3);
+    for i := 0 to High(lBatch) do
+      lBatch[i] := TAsyncWorkItem.Create(100 + i);
+
+    lAddedCount := lProcessor.TryAddRange(lBatch);
+    Assert.AreEqual<Integer>(1, lAddedCount,
+      'TryAddRange should accept only the remaining free slot when queue is full.');
+
+    for i := lAddedCount to High(lBatch) do
+      lBatch[i].Free;
+
+    lAllowProcessing.SetEvent;
+    Assert.AreEqual<TWaitResult>(wrSignaled, lDone.WaitFor(cTimeoutMs),
+      'Processor did not finish after releasing queue worker.');
+    lProcessor.WaitFor;
+    Assert.AreEqual<Integer>(3, lProcessedCount);
+  finally
+    lDone.Free;
+    lFirstItemStarted.Free;
+    lAllowProcessing.Free;
+    lProcessor.Free;
+  end;
+end;
+
+procedure TAsyncCollectionProcessorBoundedQueueScaffoldTests.LockFreeAddRangeProcessesBatchAndSignalsFinished;
+const
+  cItemCount = 1200;
+  cTimeoutMs = 12000;
+var
+  lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
+  lDone: TEvent;
+  lItems: TArray<TAsyncWorkItem>;
+  lProcessedCount: Integer;
+  i: Integer;
+begin
+  lProcessor := TAsyncCollectionProcessor<TAsyncWorkItem>.Create;
+  lDone := TEvent.Create(nil, True, False, '');
+  try
+    lProcessedCount := 0;
+    lProcessor.SimultanousThreadCount := Max(2, TThread.ProcessorCount);
+    lProcessor.QueueMode := acpqmLockFreeMpmcRingQueue;
+    lProcessor.QueueCapacity := 2048;
+    lProcessor.BackpressureMode := acpbmBlock;
+    lProcessor.Proc :=
+      procedure(const aItem: TAsyncWorkItem)
+      begin
+        try
+          TInterlocked.Increment(lProcessedCount);
+        finally
+          aItem.Free;
+        end;
+      end;
+    lProcessor.OnFinished :=
+      procedure
+      begin
+        lDone.SetEvent;
+      end;
+
+    SetLength(lItems, cItemCount);
+    for i := 0 to High(lItems) do
+      lItems[i] := TAsyncWorkItem.Create(i + 1);
+
+    lProcessor.AddRange(lItems);
+    Assert.AreEqual<TWaitResult>(wrSignaled, lDone.WaitFor(cTimeoutMs),
+      'Lock-free AddRange batch did not complete in time.');
+    lProcessor.WaitFor;
+    Assert.AreEqual<Integer>(cItemCount, lProcessedCount);
+  finally
+    lDone.Free;
     lProcessor.Free;
   end;
 end;

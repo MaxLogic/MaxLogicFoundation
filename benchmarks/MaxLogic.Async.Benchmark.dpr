@@ -7,6 +7,8 @@ uses
   System.Classes,
   System.DateUtils,
   System.Diagnostics,
+  System.Generics.Collections,
+  System.Threading,
   System.IOUtils,
   System.Math,
   System.SyncObjs,
@@ -23,10 +25,13 @@ type
 
   TBenchmarkMetrics = record
     SimpleAsyncCallOpsPerSec: Int64;
+    TaskSimpleAsyncCallOpsPerSec: Int64;
     AsyncLoopOpsPerSec: Int64;
+    TaskParallelForOpsPerSec: Int64;
     AsyncCollectionProcessorOpsPerSec: Int64;
     AsyncCollectionProcessorBatchedOpsPerSec: Int64;
     AsyncCollectionProcessorMultiProducerOpsPerSec: Int64;
+    TaskThreadedQueueProcessorOpsPerSec: Int64;
     AsyncTimerOpsPerSec: Int64;
     PortableTimerOpsPerSec: Int64;
   end;
@@ -55,6 +60,7 @@ const
   cCollectionBatchSize = 128;
   cMultiProducerCount = 8;
   cMultiProducerItemsPerProducer = 40000;
+  cTaskQueueBound = 4096;
   cTimerTicks = 200;
   cTimerIntervalMs = 5;
   cTimerTimeoutMs = 30000;
@@ -131,19 +137,25 @@ end;
 
 procedure CollectMetrics(
   const aSimpleAsyncResult: TBenchmarkResult;
+  const aTaskSimpleAsyncResult: TBenchmarkResult;
   const aAsyncLoopResult: TBenchmarkResult;
+  const aTaskParallelForResult: TBenchmarkResult;
   const aCollectionResult: TBenchmarkResult;
   const aCollectionBatchedResult: TBenchmarkResult;
   const aCollectionMultiProducerResult: TBenchmarkResult;
+  const aTaskQueueProcessorResult: TBenchmarkResult;
   const aAsyncTimerResult: TBenchmarkResult;
   const aPortableTimerResult: TBenchmarkResult;
   out aMetrics: TBenchmarkMetrics);
 begin
   aMetrics.SimpleAsyncCallOpsPerSec := ThroughputAsInt64(aSimpleAsyncResult.UnitsProcessed, aSimpleAsyncResult.DurationMs);
+  aMetrics.TaskSimpleAsyncCallOpsPerSec := ThroughputAsInt64(aTaskSimpleAsyncResult.UnitsProcessed, aTaskSimpleAsyncResult.DurationMs);
   aMetrics.AsyncLoopOpsPerSec := ThroughputAsInt64(aAsyncLoopResult.UnitsProcessed, aAsyncLoopResult.DurationMs);
+  aMetrics.TaskParallelForOpsPerSec := ThroughputAsInt64(aTaskParallelForResult.UnitsProcessed, aTaskParallelForResult.DurationMs);
   aMetrics.AsyncCollectionProcessorOpsPerSec := ThroughputAsInt64(aCollectionResult.UnitsProcessed, aCollectionResult.DurationMs);
   aMetrics.AsyncCollectionProcessorBatchedOpsPerSec := ThroughputAsInt64(aCollectionBatchedResult.UnitsProcessed, aCollectionBatchedResult.DurationMs);
   aMetrics.AsyncCollectionProcessorMultiProducerOpsPerSec := ThroughputAsInt64(aCollectionMultiProducerResult.UnitsProcessed, aCollectionMultiProducerResult.DurationMs);
+  aMetrics.TaskThreadedQueueProcessorOpsPerSec := ThroughputAsInt64(aTaskQueueProcessorResult.UnitsProcessed, aTaskQueueProcessorResult.DurationMs);
   aMetrics.AsyncTimerOpsPerSec := ThroughputAsInt64(aAsyncTimerResult.UnitsProcessed, aAsyncTimerResult.DurationMs);
   aMetrics.PortableTimerOpsPerSec := ThroughputAsInt64(aPortableTimerResult.UnitsProcessed, aPortableTimerResult.DurationMs);
 end;
@@ -165,10 +177,13 @@ begin
     lJson.Add('  "aggregation": "single_run",');
     lJson.Add('  "metrics": {');
     lJson.Add('    "simple_async_call_ops_per_sec": ' + IntToStr(aMetrics.SimpleAsyncCallOpsPerSec) + ',');
+    lJson.Add('    "ttask_simple_async_call_ops_per_sec": ' + IntToStr(aMetrics.TaskSimpleAsyncCallOpsPerSec) + ',');
     lJson.Add('    "async_loop_ops_per_sec": ' + IntToStr(aMetrics.AsyncLoopOpsPerSec) + ',');
+    lJson.Add('    "ttask_parallel_for_ops_per_sec": ' + IntToStr(aMetrics.TaskParallelForOpsPerSec) + ',');
     lJson.Add('    "async_collection_processor_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorOpsPerSec) + ',');
     lJson.Add('    "async_collection_processor_batched_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorBatchedOpsPerSec) + ',');
     lJson.Add('    "async_collection_processor_multi_producer_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorMultiProducerOpsPerSec) + ',');
+    lJson.Add('    "ttask_threaded_queue_processor_ops_per_sec": ' + IntToStr(aMetrics.TaskThreadedQueueProcessorOpsPerSec) + ',');
     lJson.Add('    "async_timer_ops_per_sec": ' + IntToStr(aMetrics.AsyncTimerOpsPerSec) + ',');
     lJson.Add('    "portable_timer_ops_per_sec": ' + IntToStr(aMetrics.PortableTimerOpsPerSec));
     lJson.Add('  }');
@@ -182,10 +197,13 @@ end;
 procedure WriteResultsJson(
   const aFilePath: string;
   const aSimpleAsyncResult: TBenchmarkResult;
+  const aTaskSimpleAsyncResult: TBenchmarkResult;
   const aAsyncLoopResult: TBenchmarkResult;
+  const aTaskParallelForResult: TBenchmarkResult;
   const aCollectionResult: TBenchmarkResult;
   const aCollectionBatchedResult: TBenchmarkResult;
   const aCollectionMultiProducerResult: TBenchmarkResult;
+  const aTaskQueueProcessorResult: TBenchmarkResult;
   const aAsyncTimerResult: TBenchmarkResult;
   const aPortableTimerResult: TBenchmarkResult;
   const aMetrics: TBenchmarkMetrics);
@@ -201,13 +219,19 @@ begin
     lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
       [EscapeJsonString(aSimpleAsyncResult.Name), aSimpleAsyncResult.UnitsProcessed, FloatToInvariant(aSimpleAsyncResult.DurationMs), aMetrics.SimpleAsyncCallOpsPerSec]));
     lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
+      [EscapeJsonString(aTaskSimpleAsyncResult.Name), aTaskSimpleAsyncResult.UnitsProcessed, FloatToInvariant(aTaskSimpleAsyncResult.DurationMs), aMetrics.TaskSimpleAsyncCallOpsPerSec]));
+    lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
       [EscapeJsonString(aAsyncLoopResult.Name), aAsyncLoopResult.UnitsProcessed, FloatToInvariant(aAsyncLoopResult.DurationMs), aMetrics.AsyncLoopOpsPerSec]));
+    lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
+      [EscapeJsonString(aTaskParallelForResult.Name), aTaskParallelForResult.UnitsProcessed, FloatToInvariant(aTaskParallelForResult.DurationMs), aMetrics.TaskParallelForOpsPerSec]));
     lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
       [EscapeJsonString(aCollectionResult.Name), aCollectionResult.UnitsProcessed, FloatToInvariant(aCollectionResult.DurationMs), aMetrics.AsyncCollectionProcessorOpsPerSec]));
     lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
       [EscapeJsonString(aCollectionBatchedResult.Name), aCollectionBatchedResult.UnitsProcessed, FloatToInvariant(aCollectionBatchedResult.DurationMs), aMetrics.AsyncCollectionProcessorBatchedOpsPerSec]));
     lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
       [EscapeJsonString(aCollectionMultiProducerResult.Name), aCollectionMultiProducerResult.UnitsProcessed, FloatToInvariant(aCollectionMultiProducerResult.DurationMs), aMetrics.AsyncCollectionProcessorMultiProducerOpsPerSec]));
+    lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
+      [EscapeJsonString(aTaskQueueProcessorResult.Name), aTaskQueueProcessorResult.UnitsProcessed, FloatToInvariant(aTaskQueueProcessorResult.DurationMs), aMetrics.TaskThreadedQueueProcessorOpsPerSec]));
     lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
       [EscapeJsonString(aAsyncTimerResult.Name), aAsyncTimerResult.UnitsProcessed, FloatToInvariant(aAsyncTimerResult.DurationMs), aMetrics.AsyncTimerOpsPerSec]));
     lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d}',
@@ -225,25 +249,49 @@ procedure AppendHistoryCsv(
   const aRunAtUtc: string;
   const aMetrics: TBenchmarkMetrics);
 const
-  cHeader = 'run_at_utc,simple_async_call_ops_per_sec,async_loop_ops_per_sec,async_collection_processor_ops_per_sec,async_collection_processor_batched_ops_per_sec,async_collection_processor_multi_producer_ops_per_sec,async_timer_ops_per_sec,portable_timer_ops_per_sec';
+  cHeader = 'run_at_utc,simple_async_call_ops_per_sec,ttask_simple_async_call_ops_per_sec,async_loop_ops_per_sec,ttask_parallel_for_ops_per_sec,async_collection_processor_ops_per_sec,async_collection_processor_batched_ops_per_sec,async_collection_processor_multi_producer_ops_per_sec,ttask_threaded_queue_processor_ops_per_sec,async_timer_ops_per_sec,portable_timer_ops_per_sec';
+  cLegacyHeader = 'run_at_utc,simple_async_call_ops_per_sec,async_loop_ops_per_sec,async_collection_processor_ops_per_sec,async_collection_processor_batched_ops_per_sec,async_collection_processor_multi_producer_ops_per_sec,async_timer_ops_per_sec,portable_timer_ops_per_sec';
 var
   lLines: TStringList;
+  i: Integer;
+  lParts: TArray<string>;
 begin
   lLines := TStringList.Create;
   try
     if TFile.Exists(aFilePath) then
       lLines.LoadFromFile(aFilePath, TEncoding.UTF8);
 
-    if (lLines.Count = 0) or (Trim(lLines[0]) <> cHeader) then
+    if lLines.Count = 0 then
+      lLines.Add(cHeader)
+    else if Trim(lLines[0]) = cLegacyHeader then
+    begin
+      lLines[0] := cHeader;
+      for i := 1 to lLines.Count - 1 do
+      begin
+        if Trim(lLines[i]) <> '' then
+        begin
+          lParts := lLines[i].Split([',']);
+          if Length(lParts) >= 8 then
+          begin
+            lLines[i] := Format('%s,%s,,%s,,%s,%s,%s,,%s,%s',
+              [lParts[0], lParts[1], lParts[2], lParts[3], lParts[4], lParts[5], lParts[6], lParts[7]]);
+          end else
+            lLines[i] := lLines[i] + ',,,';
+        end;
+      end;
+    end else if Trim(lLines[0]) <> cHeader then
       lLines.Insert(0, cHeader);
 
-    lLines.Add(Format('%s,%d,%d,%d,%d,%d,%d,%d',
+    lLines.Add(Format('%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d',
       [aRunAtUtc,
        aMetrics.SimpleAsyncCallOpsPerSec,
+       aMetrics.TaskSimpleAsyncCallOpsPerSec,
        aMetrics.AsyncLoopOpsPerSec,
+       aMetrics.TaskParallelForOpsPerSec,
        aMetrics.AsyncCollectionProcessorOpsPerSec,
        aMetrics.AsyncCollectionProcessorBatchedOpsPerSec,
        aMetrics.AsyncCollectionProcessorMultiProducerOpsPerSec,
+       aMetrics.TaskThreadedQueueProcessorOpsPerSec,
        aMetrics.AsyncTimerOpsPerSec,
        aMetrics.PortableTimerOpsPerSec]));
 
@@ -255,10 +303,13 @@ end;
 
 procedure SaveBenchmarkArtifacts(
   const aSimpleAsyncResult: TBenchmarkResult;
+  const aTaskSimpleAsyncResult: TBenchmarkResult;
   const aAsyncLoopResult: TBenchmarkResult;
+  const aTaskParallelForResult: TBenchmarkResult;
   const aCollectionResult: TBenchmarkResult;
   const aCollectionBatchedResult: TBenchmarkResult;
   const aCollectionMultiProducerResult: TBenchmarkResult;
+  const aTaskQueueProcessorResult: TBenchmarkResult;
   const aAsyncTimerResult: TBenchmarkResult;
   const aPortableTimerResult: TBenchmarkResult);
 var
@@ -272,10 +323,13 @@ var
 begin
   CollectMetrics(
     aSimpleAsyncResult,
+    aTaskSimpleAsyncResult,
     aAsyncLoopResult,
+    aTaskParallelForResult,
     aCollectionResult,
     aCollectionBatchedResult,
     aCollectionMultiProducerResult,
+    aTaskQueueProcessorResult,
     aAsyncTimerResult,
     aPortableTimerResult,
     lMetrics);
@@ -291,10 +345,13 @@ begin
   WriteResultsJson(
     lResultsJsonPath,
     aSimpleAsyncResult,
+    aTaskSimpleAsyncResult,
     aAsyncLoopResult,
+    aTaskParallelForResult,
     aCollectionResult,
     aCollectionBatchedResult,
     aCollectionMultiProducerResult,
+    aTaskQueueProcessorResult,
     aAsyncTimerResult,
     aPortableTimerResult,
     lMetrics);
@@ -334,6 +391,29 @@ begin
   Result.DurationMs := lStopwatch.Elapsed.TotalMilliseconds;
 end;
 
+function BenchmarkTTaskSimpleAsyncCall: TBenchmarkResult;
+var
+  lTask: ITask;
+  i: Integer;
+  lStopwatch: TStopwatch;
+begin
+  Result.Name := 'TTask.Run (sequential wait)';
+  Result.UnitsProcessed := cSimpleAsyncCalls;
+
+  lStopwatch := TStopwatch.StartNew;
+  for i := 1 to cSimpleAsyncCalls do
+  begin
+    lTask := TTask.Run(
+      procedure
+      begin
+      end);
+    lTask.Wait;
+  end;
+  lStopwatch.Stop;
+
+  Result.DurationMs := lStopwatch.Elapsed.TotalMilliseconds;
+end;
+
 function BenchmarkAsyncLoop: TBenchmarkResult;
 var
   lIterationsDone: Integer;
@@ -358,6 +438,29 @@ begin
 
   if lIterationsDone <> cAsyncLoopIterations then
     raise Exception.CreateFmt('TAsyncLoop processed %d/%d iterations.', [lIterationsDone, cAsyncLoopIterations]);
+
+  Result.DurationMs := lStopwatch.Elapsed.TotalMilliseconds;
+end;
+
+function BenchmarkTTaskParallelFor: TBenchmarkResult;
+var
+  lIterationsDone: Integer;
+  lStopwatch: TStopwatch;
+begin
+  Result.Name := 'TParallel.For';
+  Result.UnitsProcessed := cAsyncLoopIterations;
+  lIterationsDone := 0;
+
+  lStopwatch := TStopwatch.StartNew;
+  TParallel.&For(0, cAsyncLoopIterations - 1,
+    procedure(aIndex: Integer)
+    begin
+      TInterlocked.Increment(lIterationsDone);
+    end);
+  lStopwatch.Stop;
+
+  if lIterationsDone <> cAsyncLoopIterations then
+    raise Exception.CreateFmt('TParallel.For processed %d/%d iterations.', [lIterationsDone, cAsyncLoopIterations]);
 
   Result.DurationMs := lStopwatch.Elapsed.TotalMilliseconds;
 end;
@@ -522,6 +625,74 @@ begin
   Result.DurationMs := lStopwatch.Elapsed.TotalMilliseconds;
 end;
 
+function BenchmarkTTaskThreadedQueueProcessor: TBenchmarkResult;
+var
+  lWorkerCount: Integer;
+  lQueue: TThreadedQueue<TWorkItem>;
+  lWorkers: TArray<ITask>;
+  lProcessedCount: Integer;
+  lStopwatch: TStopwatch;
+  lWorkerIndex: Integer;
+  i: Integer;
+begin
+  Result.Name := 'TTask + TThreadedQueue';
+  Result.UnitsProcessed := cCollectionItems;
+
+  lWorkerCount := Max(1, TThread.ProcessorCount);
+  lProcessedCount := 0;
+  lQueue := TThreadedQueue<TWorkItem>.Create(cTaskQueueBound, 1000, 1000);
+  try
+    SetLength(lWorkers, lWorkerCount);
+    for lWorkerIndex := 0 to High(lWorkers) do
+    begin
+      lWorkers[lWorkerIndex] := TTask.Run(
+        procedure
+        var
+          lItem: TWorkItem;
+          lPopResult: TWaitResult;
+        begin
+          repeat
+            lPopResult := lQueue.PopItem(lItem);
+            if lPopResult <> wrSignaled then
+              Continue;
+
+            if lItem = nil then
+              Break;
+
+            try
+              TInterlocked.Increment(lProcessedCount);
+            finally
+              lItem.Free;
+            end;
+          until False;
+        end);
+    end;
+
+    lStopwatch := TStopwatch.StartNew;
+    for i := 1 to cCollectionItems do
+    begin
+      if lQueue.PushItem(TWorkItem.Create(i)) <> wrSignaled then
+        raise Exception.Create('TThreadedQueue push failed.');
+    end;
+
+    for i := 1 to lWorkerCount do
+    begin
+      if lQueue.PushItem(nil) <> wrSignaled then
+        raise Exception.Create('TThreadedQueue sentinel push failed.');
+    end;
+
+    TTask.WaitForAll(lWorkers);
+    lStopwatch.Stop;
+  finally
+    lQueue.Free;
+  end;
+
+  if lProcessedCount <> cCollectionItems then
+    raise Exception.CreateFmt('TTask queue processor processed %d/%d items.', [lProcessedCount, cCollectionItems]);
+
+  Result.DurationMs := lStopwatch.Elapsed.TotalMilliseconds;
+end;
+
 function BenchmarkAsyncTimerCompatibility: TBenchmarkResult;
 var
   lDone: TEvent;
@@ -614,28 +785,37 @@ end;
 
 var
   lSimpleAsyncResult: TBenchmarkResult;
+  lTaskSimpleAsyncResult: TBenchmarkResult;
   lAsyncLoopResult: TBenchmarkResult;
+  lTaskParallelForResult: TBenchmarkResult;
   lCollectionResult: TBenchmarkResult;
   lCollectionBatchedResult: TBenchmarkResult;
   lCollectionMultiProducerResult: TBenchmarkResult;
+  lTaskQueueProcessorResult: TBenchmarkResult;
   lAsyncTimerResult: TBenchmarkResult;
   lPortableTimerResult: TBenchmarkResult;
 begin
   try
     PrintHeader;
     lSimpleAsyncResult := BenchmarkSimpleAsyncCall;
+    lTaskSimpleAsyncResult := BenchmarkTTaskSimpleAsyncCall;
     lAsyncLoopResult := BenchmarkAsyncLoop;
+    lTaskParallelForResult := BenchmarkTTaskParallelFor;
     lCollectionResult := BenchmarkAsyncCollectionProcessor;
     lCollectionBatchedResult := BenchmarkAsyncCollectionProcessorBatched;
     lCollectionMultiProducerResult := BenchmarkAsyncCollectionProcessorMultiProducer;
+    lTaskQueueProcessorResult := BenchmarkTTaskThreadedQueueProcessor;
     lAsyncTimerResult := BenchmarkAsyncTimerCompatibility;
     lPortableTimerResult := BenchmarkPortableTimer;
 
     PrintResult(lSimpleAsyncResult);
+    PrintResult(lTaskSimpleAsyncResult);
     PrintResult(lAsyncLoopResult);
+    PrintResult(lTaskParallelForResult);
     PrintResult(lCollectionResult);
     PrintResult(lCollectionBatchedResult);
     PrintResult(lCollectionMultiProducerResult);
+    PrintResult(lTaskQueueProcessorResult);
     PrintResult(lAsyncTimerResult);
     PrintResult(lPortableTimerResult);
 
@@ -643,10 +823,13 @@ begin
 
     SaveBenchmarkArtifacts(
       lSimpleAsyncResult,
+      lTaskSimpleAsyncResult,
       lAsyncLoopResult,
+      lTaskParallelForResult,
       lCollectionResult,
       lCollectionBatchedResult,
       lCollectionMultiProducerResult,
+      lTaskQueueProcessorResult,
       lAsyncTimerResult,
       lPortableTimerResult);
   except

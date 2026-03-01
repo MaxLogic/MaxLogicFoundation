@@ -457,11 +457,14 @@ type
       procedure WorkerMain(const aThreadId: Int64);
       function TryDequeueItem(out aItem: t): Boolean;
       function TryEnqueueItem(const aItem: t): Boolean;
+      function TryEnqueueItemRaw(const aItem: t): Boolean;
       function EnqueueItem(const aItem: t; const aBlockWhenFull: Boolean): Boolean;
+      function DequeueBatch(var aBatch: array of t; const aRequestedCount: Integer): Integer;
       function LockFreeTryEnqueue(const aItem: t): Boolean;
       function LockFreeTryDequeue(out aItem: t): Boolean;
       function BuildQueueCapacity(const aRequestedCapacity: Integer): Integer;
       procedure InitializeQueueStorage;
+      procedure PublishAddedCount(const aAddedCount: Integer; const aReplayCompletion: Boolean);
       procedure SetIdleNonSignaled;
       procedure SetIdleSignaled;
       procedure EvaluateCompletion;
@@ -2114,7 +2117,7 @@ begin
   until False;
 end;
 
-function TAsyncCollectionProcessor<t>.TryEnqueueItem(const aItem: t): Boolean;
+function TAsyncCollectionProcessor<t>.TryEnqueueItemRaw(const aItem: t): Boolean;
 begin
   Result := False;
   case fQueueMode of
@@ -2157,6 +2160,13 @@ begin
       end;
   end;
 
+end;
+
+function TAsyncCollectionProcessor<t>.TryEnqueueItem(const aItem: t): Boolean;
+begin
+  Result := TryEnqueueItemRaw(aItem);
+  if Result then
+    fItemsAvailable.Release;
 end;
 
 function TAsyncCollectionProcessor<t>.EnqueueItem(const aItem: t; const aBlockWhenFull: Boolean): Boolean;
@@ -2217,6 +2227,82 @@ begin
           fSpaceSignal.setSignaled;
       end;
   end;
+end;
+
+function TAsyncCollectionProcessor<t>.DequeueBatch(var aBatch: array of t; const aRequestedCount: Integer): Integer;
+var
+  lMaxCount: Integer;
+  lIndex: Integer;
+begin
+  Result := 0;
+  if aRequestedCount <= 0 then
+    Exit;
+
+  lMaxCount := Min(aRequestedCount, Length(aBatch));
+  if lMaxCount <= 0 then
+    Exit;
+
+  case fQueueMode of
+    acpqmLegacyLockedQueue:
+      begin
+        fCriticalSection.Enter;
+        try
+          lMaxCount := Min(lMaxCount, fItems.Count);
+          for lIndex := 0 to lMaxCount - 1 do
+            aBatch[lIndex] := fItems.Dequeue;
+          Result := lMaxCount;
+        finally
+          fCriticalSection.leave;
+        end;
+      end;
+    acpqmLockedRingQueue:
+      begin
+        fCriticalSection.Enter;
+        try
+          lMaxCount := Min(lMaxCount, fRingCount);
+          for lIndex := 0 to lMaxCount - 1 do
+          begin
+            aBatch[lIndex] := fRingItems[fRingHead];
+            fRingItems[fRingHead] := default(t);
+            fRingHead := (fRingHead + 1) mod Length(fRingItems);
+            Dec(fRingCount);
+          end;
+          Result := lMaxCount;
+          if Result > 0 then
+            fSpaceSignal.setSignaled;
+        finally
+          fCriticalSection.leave;
+        end;
+      end;
+    acpqmLockFreeMpmcRingQueue:
+      begin
+        while Result < lMaxCount do
+        begin
+          if not LockFreeTryDequeue(aBatch[Result]) then
+            Break;
+          Inc(Result);
+        end;
+        if Result > 0 then
+          fSpaceSignal.setSignaled;
+      end;
+  end;
+end;
+
+procedure TAsyncCollectionProcessor<t>.PublishAddedCount(const aAddedCount: Integer; const aReplayCompletion: Boolean);
+var
+  lPending: Int64;
+begin
+  if aAddedCount <= 0 then
+    Exit;
+
+  if aReplayCompletion then
+    TInterlocked.Exchange(fCompletionNeedsReplay, 1);
+
+  lPending := TInterlocked.Add(fPendingItems, aAddedCount);
+  if lPending = aAddedCount then
+    SetIdleNonSignaled;
+
+  fItemsAvailable.Release(aAddedCount);
 end;
 
 procedure TAsyncCollectionProcessor<t>.HandleProcessorException(const aExceptionClassName, aExceptionMessage: string);
@@ -2298,6 +2384,7 @@ const
   cBatchSize = 32;
 var
   lBatch: array[0..cBatchSize - 1] of t;
+  lRequestedCount: Integer;
   lBatchCount: Integer;
   lBatchIndex: Integer;
   lItem: t;
@@ -2308,18 +2395,15 @@ begin
     if fItemsAvailable.WaitFor(50) <> wrSignaled then
       Continue;
 
-    lBatchCount := 0;
-    if TryDequeueItem(lBatch[lBatchCount]) then
-      Inc(lBatchCount);
-
-    while lBatchCount < cBatchSize do
+    lRequestedCount := 1;
+    while lRequestedCount < cBatchSize do
     begin
       if fItemsAvailable.WaitFor(0) <> wrSignaled then
         Break;
-      if not TryDequeueItem(lBatch[lBatchCount]) then
-        Continue;
-      Inc(lBatchCount);
+      Inc(lRequestedCount);
     end;
+
+    lBatchCount := DequeueBatch(lBatch, lRequestedCount);
 
     if lBatchCount = 0 then
       Continue;
@@ -2343,14 +2427,10 @@ begin
         on lException: Exception do
           HandleProcessorExceptionObject(lException);
       end;
-
-      if TInterlocked.Decrement(fPendingItems) = 0 then
-      begin
-        Sleep(0);
-        if TInterlocked.Read(fPendingItems) = 0 then
-          EvaluateCompletion;
-      end;
     end;
+
+    if TInterlocked.Add(fPendingItems, -lBatchCount) = 0 then
+      EvaluateCompletion;
   end;
 end;
 
@@ -2359,38 +2439,39 @@ var
   lItem: t;
   lBlockWhenFull: Boolean;
   lAddedCount: Integer;
-  lPendingCount: Int64;
+  lReplayCompletion: Boolean;
+  lFailed: Boolean;
+  lFailedBecauseShutdown: Boolean;
 begin
   if Length(Items) = 0 then
     Exit;
 
   EnsureWorkersStarted;
 
+  lAddedCount := 0;
+  lReplayCompletion := False;
+  lFailed := False;
+  lFailedBecauseShutdown := False;
+
   if fQueueMode = acpqmLegacyLockedQueue then
   begin
-    lAddedCount := 0;
     fCriticalSection.Enter;
     try
       if not Assigned(fProc) then
         raise Exception.Create('TAsyncCollectionProcessor.Proc must be assigned before Add.');
       if fShuttingDown <> 0 then
         raise Exception.Create('TAsyncCollectionProcessor is shutting down.');
-      if fOnFinishedThreadId <> 0 then
-        TInterlocked.Exchange(fCompletionNeedsReplay, 1);
+      lReplayCompletion := fOnFinishedThreadId <> 0;
 
       for lItem in Items do
       begin
-        lPendingCount := TInterlocked.Increment(fPendingItems);
-        if lPendingCount = 1 then
-          SetIdleNonSignaled;
         fItems.Enqueue(lItem);
         Inc(lAddedCount);
       end;
     finally
       fCriticalSection.leave;
     end;
-    if lAddedCount > 0 then
-      fItemsAvailable.Release(lAddedCount);
+    PublishAddedCount(lAddedCount, lReplayCompletion);
     Exit;
   end;
 
@@ -2399,39 +2480,94 @@ begin
     if not Assigned(fProc) then
       raise Exception.Create('TAsyncCollectionProcessor.Proc must be assigned before Add.');
     lBlockWhenFull := fBackpressureMode = acpbmBlock;
+    lReplayCompletion := fOnFinishedThreadId <> 0;
   finally
     fCriticalSection.leave;
   end;
 
   for lItem in Items do
   begin
-    lPendingCount := TInterlocked.Increment(fPendingItems);
-    if lPendingCount = 1 then
-      SetIdleNonSignaled;
-    if fOnFinishedThreadId <> 0 then
-      TInterlocked.Exchange(fCompletionNeedsReplay, 1);
-    if not EnqueueItem(lItem, lBlockWhenFull) then
+    while not TryEnqueueItemRaw(lItem) do
     begin
-      if TInterlocked.Decrement(fPendingItems) = 0 then
-        SetIdleSignaled;
-      if lBlockWhenFull then
-        raise Exception.Create('TAsyncCollectionProcessor is shutting down.')
-      else
-        raise Exception.Create('TAsyncCollectionProcessor queue is full.');
+      if fShuttingDown <> 0 then
+      begin
+        lFailed := True;
+        lFailedBecauseShutdown := True;
+        Break;
+      end;
+
+      if not lBlockWhenFull then
+      begin
+        lFailed := True;
+        Break;
+      end;
+
+      fSpaceSignal.WaitForSignaled(10);
     end;
+
+    if lFailed then
+      Break;
+
+    Inc(lAddedCount);
+  end;
+
+  PublishAddedCount(lAddedCount, lReplayCompletion);
+
+  if lFailed then
+  begin
+    if lFailedBecauseShutdown then
+      raise Exception.Create('TAsyncCollectionProcessor is shutting down.')
+    else
+      raise Exception.Create('TAsyncCollectionProcessor queue is full.');
   end;
 end;
 
 function TAsyncCollectionProcessor<t>.TryAdd(const Item: t): Boolean;
+var
+  lReplayCompletion: Boolean;
 begin
-  Result := TryAddRange([Item]) = 1;
+  EnsureWorkersStarted;
+
+  lReplayCompletion := False;
+
+  if fQueueMode = acpqmLegacyLockedQueue then
+  begin
+    fCriticalSection.Enter;
+    try
+      if not Assigned(fProc) then
+        raise Exception.Create('TAsyncCollectionProcessor.Proc must be assigned before Add.');
+      if fShuttingDown <> 0 then
+        Exit(False);
+      lReplayCompletion := fOnFinishedThreadId <> 0;
+      fItems.Enqueue(Item);
+      Result := True;
+    finally
+      fCriticalSection.leave;
+    end;
+    if Result then
+      PublishAddedCount(1, lReplayCompletion);
+    Exit;
+  end;
+
+  fCriticalSection.Enter;
+  try
+    if not Assigned(fProc) then
+      raise Exception.Create('TAsyncCollectionProcessor.Proc must be assigned before Add.');
+    lReplayCompletion := fOnFinishedThreadId <> 0;
+  finally
+    fCriticalSection.leave;
+  end;
+
+  Result := TryEnqueueItemRaw(Item);
+  if Result then
+    PublishAddedCount(1, lReplayCompletion);
 end;
 
 function TAsyncCollectionProcessor<t>.TryAddRange(const Items: TArray<t>): Integer;
 var
   lItem: t;
   lAddedCount: Integer;
-  lPendingCount: Int64;
+  lReplayCompletion: Boolean;
 begin
   Result := 0;
   if Length(Items) = 0 then
@@ -2439,31 +2575,28 @@ begin
 
   EnsureWorkersStarted;
 
+  lAddedCount := 0;
+  lReplayCompletion := False;
+
   if fQueueMode = acpqmLegacyLockedQueue then
   begin
-    lAddedCount := 0;
     fCriticalSection.Enter;
     try
       if not Assigned(fProc) then
         raise Exception.Create('TAsyncCollectionProcessor.Proc must be assigned before Add.');
       if fShuttingDown <> 0 then
         Exit(0);
-      if fOnFinishedThreadId <> 0 then
-        TInterlocked.Exchange(fCompletionNeedsReplay, 1);
+      lReplayCompletion := fOnFinishedThreadId <> 0;
 
       for lItem in Items do
       begin
-        lPendingCount := TInterlocked.Increment(fPendingItems);
-        if lPendingCount = 1 then
-          SetIdleNonSignaled;
         fItems.Enqueue(lItem);
         Inc(lAddedCount);
       end;
     finally
       fCriticalSection.leave;
     end;
-    if lAddedCount > 0 then
-      fItemsAvailable.Release(lAddedCount);
+    PublishAddedCount(lAddedCount, lReplayCompletion);
     Exit(lAddedCount);
   end;
 
@@ -2471,25 +2604,21 @@ begin
   try
     if not Assigned(fProc) then
       raise Exception.Create('TAsyncCollectionProcessor.Proc must be assigned before Add.');
+    lReplayCompletion := fOnFinishedThreadId <> 0;
   finally
     fCriticalSection.leave;
   end;
 
   for lItem in Items do
   begin
-    lPendingCount := TInterlocked.Increment(fPendingItems);
-    if lPendingCount = 1 then
-      SetIdleNonSignaled;
-    if fOnFinishedThreadId <> 0 then
-      TInterlocked.Exchange(fCompletionNeedsReplay, 1);
-    if not EnqueueItem(lItem, False) then
-    begin
-      if TInterlocked.Decrement(fPendingItems) = 0 then
-        SetIdleSignaled;
+    if not TryEnqueueItemRaw(lItem) then
       Break;
-    end;
-    Inc(Result);
+
+    Inc(lAddedCount);
   end;
+
+  PublishAddedCount(lAddedCount, lReplayCompletion);
+  Result := lAddedCount;
 end;
 
 procedure TAsyncCollectionProcessor<t>.Add(const Items: TList<t>);
@@ -2509,8 +2638,53 @@ begin
 end;
 
 procedure TAsyncCollectionProcessor<t>.Add(const Item: t);
+var
+  lBlockWhenFull: Boolean;
+  lReplayCompletion: Boolean;
 begin
-  AddRange([Item]);
+  EnsureWorkersStarted;
+
+  lReplayCompletion := False;
+
+  if fQueueMode = acpqmLegacyLockedQueue then
+  begin
+    fCriticalSection.Enter;
+    try
+      if not Assigned(fProc) then
+        raise Exception.Create('TAsyncCollectionProcessor.Proc must be assigned before Add.');
+      if fShuttingDown <> 0 then
+        raise Exception.Create('TAsyncCollectionProcessor is shutting down.');
+      lReplayCompletion := fOnFinishedThreadId <> 0;
+      fItems.Enqueue(Item);
+    finally
+      fCriticalSection.leave;
+    end;
+    PublishAddedCount(1, lReplayCompletion);
+    Exit;
+  end;
+
+  fCriticalSection.Enter;
+  try
+    if not Assigned(fProc) then
+      raise Exception.Create('TAsyncCollectionProcessor.Proc must be assigned before Add.');
+    lBlockWhenFull := fBackpressureMode = acpbmBlock;
+    lReplayCompletion := fOnFinishedThreadId <> 0;
+  finally
+    fCriticalSection.leave;
+  end;
+
+  while not TryEnqueueItemRaw(Item) do
+  begin
+    if fShuttingDown <> 0 then
+      raise Exception.Create('TAsyncCollectionProcessor is shutting down.');
+
+    if not lBlockWhenFull then
+      raise Exception.Create('TAsyncCollectionProcessor queue is full.');
+
+    fSpaceSignal.WaitForSignaled(10);
+  end;
+
+  PublishAddedCount(1, lReplayCompletion);
 end;
 
 procedure TAsyncCollectionProcessor<t>.ClearItems;
