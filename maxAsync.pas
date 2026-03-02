@@ -868,6 +868,7 @@ procedure TmaxThread.Execute;
 var
   CoInitialized: boolean;
   sName: string;
+  lShouldRenameThread: boolean;
 begin
   fThreadData.StartSignal.waitforSignaled;
 
@@ -900,15 +901,24 @@ begin
         fThreadData.Finished := False;
 
         sName := classname + '.' + fThreadData.TaskName;
-        FName := sName;
-        {$IFDEF DEBUG_MAXASYNC}
-        OutputDebugString(PWideChar('maxAsync: naming Thread:' + fThreadData.GetFullThreadId + ' >> ' + sName));
-        {$ENDIF}
-        NameThreadForDebugging(AnsiString(sName));
+        lShouldRenameThread := (sName <> FName);
+        if lShouldRenameThread then
+        begin
+          {$IFDEF DEBUG_MAXASYNC}
+          OutputDebugString(PWideChar('maxAsync: naming Thread:' + fThreadData.GetFullThreadId + ' >> ' + sName));
+          {$ENDIF}
+          {$IFDEF MsWindows}
+          if IsDebuggerPresent then
+            NameThreadForDebugging(AnsiString(sName));
+          {$ELSE}
+          NameThreadForDebugging(AnsiString(sName));
+          {$ENDIF}
 
-        {$IFDEF madExcept}
-        madExcept.NameThread(TThread.CurrentThread.ThreadID, sName);
-        {$ENDIF}
+          {$IFDEF madExcept}
+          madExcept.NameThread(TThread.CurrentThread.ThreadID, sName);
+          {$ENDIF}
+        end;
+        FName := sName;
         if fThreadData.Proc <> nil then
         begin
           try
