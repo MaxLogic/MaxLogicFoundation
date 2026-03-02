@@ -27,6 +27,7 @@ type
   TSimpleAsyncCallTests = class
   public
     [Test] procedure SimpleAsyncCallRunsProcedure;
+    [Test] procedure SequentialSimpleAsyncCallReleasesAndReacquiresWorker;
     [Test] procedure WakeUpRunsProcedureAgain;
     [Test] procedure WakeUpCanReplaceProcedure;
     [Test] procedure InsideMainThreadReflectsThreadContext;
@@ -110,6 +111,31 @@ begin
   lAsync.WaitFor;
   Assert.AreEqual<Integer>(1, lCalls);
   Assert.IsTrue(lAsync.Finished);
+end;
+
+procedure TSimpleAsyncCallTests.SequentialSimpleAsyncCallReleasesAndReacquiresWorker;
+const
+  cIterations = 250;
+var
+  lAsync: iAsync;
+  lCalls: Integer;
+  i: Integer;
+begin
+  lCalls := 0;
+
+  for i := 1 to cIterations do
+  begin
+    lAsync := SimpleAsyncCall(
+      procedure
+      begin
+        TInterlocked.Increment(lCalls);
+      end,
+      'SequentialSimpleAsyncCallReleasesAndReacquiresWorker');
+    lAsync.WaitFor;
+    lAsync := nil;
+  end;
+
+  Assert.AreEqual<Integer>(cIterations, lCalls);
 end;
 
 procedure TSimpleAsyncCallTests.WakeUpRunsProcedureAgain;

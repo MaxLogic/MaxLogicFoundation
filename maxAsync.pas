@@ -141,9 +141,11 @@ type
 
     function GetWakeSignal: iSignal;
     function GetKeepAlive: boolean;
+    function GetPoolWakeMode: boolean;
     function GetProc: TThreadProcedure;
     function GetTaskName: string;
     procedure SetKeepAlive(const Value: boolean);
+    procedure SetPoolWakeMode(const Value: boolean);
     procedure SetThreadToTerminated;
     procedure SetProc(const Value: TThreadProcedure);
     procedure SetTaskName(const Value: string);
@@ -154,6 +156,7 @@ type
     property WakeUpSignal: iSignal read GetWakeSignal;
     property Proc: TThreadProcedure read GetProc write SetProc;
     property KeepAlive: boolean read GetKeepAlive write SetKeepAlive;
+    property PoolWakeMode: boolean read GetPoolWakeMode write SetPoolWakeMode;
     property TaskName: string read GetTaskName write SetTaskName;
 
     property StartSignal: iSignal read GetStartSignal;
@@ -269,6 +272,7 @@ type
       FWakeSignal: iSignal;
       fTaskName: string;
       fKeepAlive: boolean;
+      fPoolWakeMode: boolean;
       fProc: TThreadProcedure;
       fTerminated: boolean;
       fStartSignal: iSignal;
@@ -285,9 +289,11 @@ type
       function GetWakeSignal: iSignal;
 
       function GetKeepAlive: boolean;
+      function GetPoolWakeMode: boolean;
       function GetProc: TThreadProcedure;
       function GetTaskName: string;
       procedure SetKeepAlive(const Value: boolean);
+      procedure SetPoolWakeMode(const Value: boolean);
       procedure SetThreadToTerminated;
       procedure SetProc(const Value: TThreadProcedure);
       procedure SetTaskName(const Value: string);
@@ -311,6 +317,7 @@ type
 
       property Proc: TThreadProcedure read GetProc write SetProc;
       property KeepAlive: boolean read GetKeepAlive write SetKeepAlive;
+      property PoolWakeMode: boolean read GetPoolWakeMode write SetPoolWakeMode;
       property TaskName: string read GetTaskName write SetTaskName;
     end;
 
@@ -582,7 +589,7 @@ property Value: t read getValue write SetValue;
       class destructor DestroyClass;
       class procedure ReleaseThreadData(const aThreadData: iThreadData);
       class function GetThreadData: iThreadData;
-      class procedure AddToWaiting(ThreadData: iThreadData);
+      class procedure AddToWaiting(ThreadData: iThreadData; const aPoolWakeMode: boolean = False);
 
       class procedure addToAllThreadList(aData: TThreadData);
       class procedure removeFromAllThreadList(aData: TThreadData);
@@ -790,7 +797,11 @@ begin
     Async.fThreadData.Proc := merge();
 
   Async.fThreadData.TaskName := TaskName;
-  Async.fThreadData.StartSignal.setSignaled;
+  if Async.fThreadData.PoolWakeMode then
+    Async.fThreadData.WakeUpSignal.setSignaled
+  else
+    Async.fThreadData.StartSignal.setSignaled;
+  Async.fThreadData.PoolWakeMode := False;
 end;
 
 destructor TmaxThread.Destroy;
@@ -928,7 +939,7 @@ begin
         {$IFDEF DEBUG_MAXASYNC}
         OutputDebugString(PWideChar('maxAsync: after wait for awake signal Thread:' + fThreadData.GetFullThreadId));
         {$ENDIF}
-      until terminated or (not fThreadData.KeepAlive);
+      until terminated or ((not fThreadData.KeepAlive) and fThreadData.Finished);
 
       if not terminated then
       begin
@@ -1000,8 +1011,16 @@ end;
 
 destructor TmaxAsync.Destroy;
 begin
-  fThreadData.KeepAlive := False;
-  fThreadData.WakeUpSignal.setSignaled;
+  if fThreadData <> nil then
+  begin
+    if (fThreadData.Finished) and (not fThreadData.terminated) then
+      TmaxAsyncGlobal.AddToWaiting(fThreadData, True)
+    else
+    begin
+      fThreadData.KeepAlive := False;
+      fThreadData.WakeUpSignal.setSignaled;
+    end;
+  end;
 
   fThreadData := nil;
   inherited;
@@ -1095,6 +1114,11 @@ begin
   Result := fKeepAlive;
 end;
 
+function TThreadData.GetPoolWakeMode: boolean;
+begin
+  Result := fPoolWakeMode;
+end;
+
 function TThreadData.GetProc: TThreadProcedure;
 begin
   Result := fProc;
@@ -1150,6 +1174,11 @@ begin
   fKeepAlive := Value;
 end;
 
+procedure TThreadData.SetPoolWakeMode(const Value: boolean);
+begin
+  fPoolWakeMode := Value;
+end;
+
 procedure TThreadData.SetProc(const Value: TThreadProcedure);
 begin
   fProc := Value;
@@ -1200,6 +1229,7 @@ end;
 
 procedure TThreadData.SetDefaultValues;
 begin
+  fPoolWakeMode := False;
   fTaskName := '';
   fKeepAlive := True;
   fFinished := False;
@@ -1611,6 +1641,7 @@ end;
 class function TmaxAsyncGlobal.GetThreadData: iThreadData;
 var
   i: integer;
+  lPoolWakeMode: boolean;
 begin
   Result := nil;
   fCS.Enter;
@@ -1623,7 +1654,9 @@ begin
       fWaitingThreadDataList[i] := nil;
       fWaitingThreadDataList.delete(i);
 
+      lPoolWakeMode := Result.PoolWakeMode;
       Result.SetDefaultValues;
+      Result.PoolWakeMode := lPoolWakeMode;
     end;
   finally
     fCS.leave;
@@ -1633,7 +1666,7 @@ begin
     Result := TThreadData.Create;
 end;
 
-class procedure TmaxAsyncGlobal.AddToWaiting(ThreadData: iThreadData);
+class procedure TmaxAsyncGlobal.AddToWaiting(ThreadData: iThreadData; const aPoolWakeMode: boolean);
 begin
   fCS.Enter;
   try
@@ -1646,6 +1679,7 @@ begin
     begin
       if not assigned(fWaitingThreadDataList) then
         fWaitingThreadDataList := TList<iThreadData>.Create;
+      ThreadData.PoolWakeMode := aPoolWakeMode;
       fWaitingThreadDataList.Add(ThreadData);
     end;
   finally
