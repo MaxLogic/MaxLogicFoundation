@@ -8,11 +8,13 @@ uses
   System.DateUtils,
   System.Diagnostics,
   System.Generics.Collections,
-  System.Threading,
+  System.Generics.Defaults,
   System.IOUtils,
   System.Math,
+  System.StrUtils,
   System.SyncObjs,
   System.SysUtils,
+  System.Threading,
   maxAsync in '..\maxAsync.pas',
   MaxLogic.PortableTimer in '..\MaxLogic.PortableTimer.pas';
 
@@ -34,6 +36,20 @@ type
     TaskThreadedQueueProcessorOpsPerSec: Int64;
     AsyncTimerOpsPerSec: Int64;
     PortableTimerOpsPerSec: Int64;
+  end;
+
+  TBenchmarkRun = record
+    SimpleAsyncResult: TBenchmarkResult;
+    TaskSimpleAsyncResult: TBenchmarkResult;
+    AsyncLoopResult: TBenchmarkResult;
+    TaskParallelForResult: TBenchmarkResult;
+    CollectionResult: TBenchmarkResult;
+    CollectionBatchedResult: TBenchmarkResult;
+    CollectionMultiProducerResult: TBenchmarkResult;
+    TaskQueueProcessorResult: TBenchmarkResult;
+    AsyncTimerResult: TBenchmarkResult;
+    PortableTimerResult: TBenchmarkResult;
+    Metrics: TBenchmarkMetrics;
   end;
 
   TWorkItem = class
@@ -64,6 +80,8 @@ const
   cTimerTicks = 200;
   cTimerIntervalMs = 5;
   cTimerTimeoutMs = 30000;
+  cDefaultWarmupRuns = 1;
+  cDefaultMeasuredRuns = 5;
 
 constructor TWorkItem.Create(const aValue: Integer);
 begin
@@ -164,6 +182,9 @@ procedure WriteLatestJson(
   const aFilePath: string;
   const aRunAtUtc: string;
   const aDateOnly: string;
+  const aAggregation: string;
+  const aMeasuredRuns: Integer;
+  const aWarmupRuns: Integer;
   const aMetrics: TBenchmarkMetrics);
 var
   lJson: TStringList;
@@ -174,7 +195,9 @@ begin
     lJson.Add('  "benchmark": "MaxLogic.Async.Benchmark",');
     lJson.Add('  "run_at_utc": "' + EscapeJsonString(aRunAtUtc) + '",');
     lJson.Add('  "date": "' + EscapeJsonString(aDateOnly) + '",');
-    lJson.Add('  "aggregation": "single_run",');
+    lJson.Add('  "aggregation": "' + EscapeJsonString(aAggregation) + '",');
+    lJson.Add('  "measured_runs": ' + IntToStr(aMeasuredRuns) + ',');
+    lJson.Add('  "warmup_runs": ' + IntToStr(aWarmupRuns) + ',');
     lJson.Add('  "metrics": {');
     lJson.Add('    "simple_async_call_ops_per_sec": ' + IntToStr(aMetrics.SimpleAsyncCallOpsPerSec) + ',');
     lJson.Add('    "ttask_simple_async_call_ops_per_sec": ' + IntToStr(aMetrics.TaskSimpleAsyncCallOpsPerSec) + ',');
@@ -206,6 +229,9 @@ procedure WriteResultsJson(
   const aTaskQueueProcessorResult: TBenchmarkResult;
   const aAsyncTimerResult: TBenchmarkResult;
   const aPortableTimerResult: TBenchmarkResult;
+  const aAggregation: string;
+  const aMeasuredRuns: Integer;
+  const aWarmupRuns: Integer;
   const aMetrics: TBenchmarkMetrics);
 var
   lJson: TStringList;
@@ -215,6 +241,21 @@ begin
     lJson.Add('{');
     lJson.Add('  "benchmark": "MaxLogic.Async.Benchmark",');
     lJson.Add('  "run_at_utc": "' + EscapeJsonString(FormatUtcIso8601Now) + '",');
+    lJson.Add('  "aggregation": "' + EscapeJsonString(aAggregation) + '",');
+    lJson.Add('  "measured_runs": ' + IntToStr(aMeasuredRuns) + ',');
+    lJson.Add('  "warmup_runs": ' + IntToStr(aWarmupRuns) + ',');
+    lJson.Add('  "metrics": {');
+    lJson.Add('    "simple_async_call_ops_per_sec": ' + IntToStr(aMetrics.SimpleAsyncCallOpsPerSec) + ',');
+    lJson.Add('    "ttask_simple_async_call_ops_per_sec": ' + IntToStr(aMetrics.TaskSimpleAsyncCallOpsPerSec) + ',');
+    lJson.Add('    "async_loop_ops_per_sec": ' + IntToStr(aMetrics.AsyncLoopOpsPerSec) + ',');
+    lJson.Add('    "ttask_parallel_for_ops_per_sec": ' + IntToStr(aMetrics.TaskParallelForOpsPerSec) + ',');
+    lJson.Add('    "async_collection_processor_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorOpsPerSec) + ',');
+    lJson.Add('    "async_collection_processor_batched_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorBatchedOpsPerSec) + ',');
+    lJson.Add('    "async_collection_processor_multi_producer_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorMultiProducerOpsPerSec) + ',');
+    lJson.Add('    "ttask_threaded_queue_processor_ops_per_sec": ' + IntToStr(aMetrics.TaskThreadedQueueProcessorOpsPerSec) + ',');
+    lJson.Add('    "async_timer_ops_per_sec": ' + IntToStr(aMetrics.AsyncTimerOpsPerSec) + ',');
+    lJson.Add('    "portable_timer_ops_per_sec": ' + IntToStr(aMetrics.PortableTimerOpsPerSec));
+    lJson.Add('  },');
     lJson.Add('  "results": [');
     lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
       [EscapeJsonString(aSimpleAsyncResult.Name), aSimpleAsyncResult.UnitsProcessed, FloatToInvariant(aSimpleAsyncResult.DurationMs), aMetrics.SimpleAsyncCallOpsPerSec]));
@@ -302,16 +343,10 @@ begin
 end;
 
 procedure SaveBenchmarkArtifacts(
-  const aSimpleAsyncResult: TBenchmarkResult;
-  const aTaskSimpleAsyncResult: TBenchmarkResult;
-  const aAsyncLoopResult: TBenchmarkResult;
-  const aTaskParallelForResult: TBenchmarkResult;
-  const aCollectionResult: TBenchmarkResult;
-  const aCollectionBatchedResult: TBenchmarkResult;
-  const aCollectionMultiProducerResult: TBenchmarkResult;
-  const aTaskQueueProcessorResult: TBenchmarkResult;
-  const aAsyncTimerResult: TBenchmarkResult;
-  const aPortableTimerResult: TBenchmarkResult);
+  const aRun: TBenchmarkRun;
+  const aAggregation: string;
+  const aMeasuredRuns: Integer;
+  const aWarmupRuns: Integer);
 var
   lBenchmarkDir: string;
   lLatestJsonPath: string;
@@ -319,21 +354,7 @@ var
   lHistoryCsvPath: string;
   lRunAtUtc: string;
   lDateOnly: string;
-  lMetrics: TBenchmarkMetrics;
 begin
-  CollectMetrics(
-    aSimpleAsyncResult,
-    aTaskSimpleAsyncResult,
-    aAsyncLoopResult,
-    aTaskParallelForResult,
-    aCollectionResult,
-    aCollectionBatchedResult,
-    aCollectionMultiProducerResult,
-    aTaskQueueProcessorResult,
-    aAsyncTimerResult,
-    aPortableTimerResult,
-    lMetrics);
-
   lBenchmarkDir := BuildBenchmarkDirectoryPath;
   lLatestJsonPath := TPath.Combine(lBenchmarkDir, 'MaxLogic.Async.Benchmark.latest.json');
   lResultsJsonPath := TPath.Combine(lBenchmarkDir, 'MaxLogic.Async.Benchmark.results.json');
@@ -341,30 +362,270 @@ begin
   lRunAtUtc := FormatUtcIso8601Now;
   lDateOnly := FormatDateOnlyUtcNow;
 
-  WriteLatestJson(lLatestJsonPath, lRunAtUtc, lDateOnly, lMetrics);
+  WriteLatestJson(lLatestJsonPath, lRunAtUtc, lDateOnly, aAggregation, aMeasuredRuns, aWarmupRuns, aRun.Metrics);
   WriteResultsJson(
     lResultsJsonPath,
-    aSimpleAsyncResult,
-    aTaskSimpleAsyncResult,
-    aAsyncLoopResult,
-    aTaskParallelForResult,
-    aCollectionResult,
-    aCollectionBatchedResult,
-    aCollectionMultiProducerResult,
-    aTaskQueueProcessorResult,
-    aAsyncTimerResult,
-    aPortableTimerResult,
-    lMetrics);
-  AppendHistoryCsv(lHistoryCsvPath, lRunAtUtc, lMetrics);
+    aRun.SimpleAsyncResult,
+    aRun.TaskSimpleAsyncResult,
+    aRun.AsyncLoopResult,
+    aRun.TaskParallelForResult,
+    aRun.CollectionResult,
+    aRun.CollectionBatchedResult,
+    aRun.CollectionMultiProducerResult,
+    aRun.TaskQueueProcessorResult,
+    aRun.AsyncTimerResult,
+    aRun.PortableTimerResult,
+    aAggregation,
+    aMeasuredRuns,
+    aWarmupRuns,
+    aRun.Metrics);
+  AppendHistoryCsv(lHistoryCsvPath, lRunAtUtc, aRun.Metrics);
 end;
 
-procedure PrintResult(const aResult: TBenchmarkResult);
-var
-  lThroughput: Double;
+procedure PrintResult(const aResult: TBenchmarkResult; const aOpsPerSec: Int64);
 begin
-  lThroughput := ThroughputPerSecond(aResult.UnitsProcessed, aResult.DurationMs);
-  Writeln(Format('%-38s %12d units  %10.3f ms  %14.0f units/s',
-    [aResult.Name, aResult.UnitsProcessed, aResult.DurationMs, lThroughput]));
+  Writeln(Format('%-38s %12d units  %10.3f ms  %14d units/s',
+    [aResult.Name, aResult.UnitsProcessed, aResult.DurationMs, aOpsPerSec]));
+end;
+
+function TryReadIntegerOption(const aOptionName: string; out aOptionValue: Integer): Boolean;
+var
+  i: Integer;
+  lArgument: string;
+  lPrefix: string;
+  lValueText: string;
+begin
+  Result := False;
+  aOptionValue := 0;
+  lPrefix := '--' + aOptionName + '=';
+
+  for i := 1 to ParamCount do
+  begin
+    lArgument := ParamStr(i);
+    if StartsText(lPrefix, lArgument) then
+    begin
+      lValueText := Copy(lArgument, Length(lPrefix) + 1, MaxInt);
+      if not TryStrToInt(Trim(lValueText), aOptionValue) then
+        raise Exception.CreateFmt('Invalid --%s option value: %s', [aOptionName, lValueText]);
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+procedure ParseBenchmarkConfig(out aWarmupRuns: Integer; out aMeasuredRuns: Integer);
+var
+  i: Integer;
+  lArgument: string;
+  lOptionValue: Integer;
+begin
+  aWarmupRuns := cDefaultWarmupRuns;
+  aMeasuredRuns := cDefaultMeasuredRuns;
+
+  for i := 1 to ParamCount do
+  begin
+    lArgument := ParamStr(i);
+    if SameText(lArgument, '--help') then
+    begin
+      Writeln('Usage: MaxLogic.Async.Benchmark.exe [--warmup=<n>] [--repeats=<n>]');
+      Writeln('  --warmup=<n>   Number of warmup runs (default 1, minimum 0).');
+      Writeln('  --repeats=<n>  Number of measured runs (default 5, minimum 1).');
+      Halt(0);
+    end;
+  end;
+
+  if TryReadIntegerOption('warmup', lOptionValue) then
+  begin
+    if lOptionValue < 0 then
+      raise Exception.Create('--warmup must be >= 0.');
+    aWarmupRuns := lOptionValue;
+  end;
+
+  if TryReadIntegerOption('repeats', lOptionValue) then
+  begin
+    if lOptionValue <= 0 then
+      raise Exception.Create('--repeats must be >= 1.');
+    aMeasuredRuns := lOptionValue;
+  end;
+end;
+
+function MedianInt64(const aValues: TArray<Int64>): Int64;
+var
+  lSorted: TArray<Int64>;
+  lCount: Integer;
+  lMiddleIndex: Integer;
+begin
+  if Length(aValues) = 0 then
+    raise Exception.Create('Cannot compute median for empty Int64 array.');
+
+  lSorted := Copy(aValues);
+  TArray.Sort<Int64>(lSorted);
+  lCount := Length(lSorted);
+  lMiddleIndex := lCount div 2;
+
+  if Odd(lCount) then
+    Exit(lSorted[lMiddleIndex]);
+
+  Result := (lSorted[lMiddleIndex - 1] + lSorted[lMiddleIndex]) div 2;
+end;
+
+function MedianDouble(const aValues: TArray<Double>): Double;
+var
+  lSorted: TArray<Double>;
+  lCount: Integer;
+  lMiddleIndex: Integer;
+begin
+  if Length(aValues) = 0 then
+    raise Exception.Create('Cannot compute median for empty Double array.');
+
+  lSorted := Copy(aValues);
+  TArray.Sort<Double>(lSorted);
+  lCount := Length(lSorted);
+  lMiddleIndex := lCount div 2;
+
+  if Odd(lCount) then
+    Exit(lSorted[lMiddleIndex]);
+
+  Result := (lSorted[lMiddleIndex - 1] + lSorted[lMiddleIndex]) / 2;
+end;
+
+function BenchmarkSimpleAsyncCall: TBenchmarkResult; forward;
+function BenchmarkTTaskSimpleAsyncCall: TBenchmarkResult; forward;
+function BenchmarkAsyncLoop: TBenchmarkResult; forward;
+function BenchmarkTTaskParallelFor: TBenchmarkResult; forward;
+function BenchmarkAsyncCollectionProcessor: TBenchmarkResult; forward;
+function BenchmarkAsyncCollectionProcessorBatched: TBenchmarkResult; forward;
+function BenchmarkAsyncCollectionProcessorMultiProducer: TBenchmarkResult; forward;
+function BenchmarkTTaskThreadedQueueProcessor: TBenchmarkResult; forward;
+function BenchmarkAsyncTimerCompatibility: TBenchmarkResult; forward;
+function BenchmarkPortableTimer: TBenchmarkResult; forward;
+
+procedure RunBenchmarks(out aRun: TBenchmarkRun);
+begin
+  aRun.SimpleAsyncResult := BenchmarkSimpleAsyncCall;
+  aRun.TaskSimpleAsyncResult := BenchmarkTTaskSimpleAsyncCall;
+  aRun.AsyncLoopResult := BenchmarkAsyncLoop;
+  aRun.TaskParallelForResult := BenchmarkTTaskParallelFor;
+  aRun.CollectionResult := BenchmarkAsyncCollectionProcessor;
+  aRun.CollectionBatchedResult := BenchmarkAsyncCollectionProcessorBatched;
+  aRun.CollectionMultiProducerResult := BenchmarkAsyncCollectionProcessorMultiProducer;
+  aRun.TaskQueueProcessorResult := BenchmarkTTaskThreadedQueueProcessor;
+  aRun.AsyncTimerResult := BenchmarkAsyncTimerCompatibility;
+  aRun.PortableTimerResult := BenchmarkPortableTimer;
+
+  CollectMetrics(
+    aRun.SimpleAsyncResult,
+    aRun.TaskSimpleAsyncResult,
+    aRun.AsyncLoopResult,
+    aRun.TaskParallelForResult,
+    aRun.CollectionResult,
+    aRun.CollectionBatchedResult,
+    aRun.CollectionMultiProducerResult,
+    aRun.TaskQueueProcessorResult,
+    aRun.AsyncTimerResult,
+    aRun.PortableTimerResult,
+    aRun.Metrics);
+end;
+
+function BuildAggregatedRun(const aRuns: TArray<TBenchmarkRun>): TBenchmarkRun;
+var
+  lCount: Integer;
+  i: Integer;
+  lSimpleOps: TArray<Int64>;
+  lTaskSimpleOps: TArray<Int64>;
+  lAsyncLoopOps: TArray<Int64>;
+  lTaskParallelOps: TArray<Int64>;
+  lCollectionOps: TArray<Int64>;
+  lCollectionBatchedOps: TArray<Int64>;
+  lCollectionMultiProducerOps: TArray<Int64>;
+  lTaskQueueOps: TArray<Int64>;
+  lAsyncTimerOps: TArray<Int64>;
+  lPortableTimerOps: TArray<Int64>;
+  lSimpleDurationMs: TArray<Double>;
+  lTaskSimpleDurationMs: TArray<Double>;
+  lAsyncLoopDurationMs: TArray<Double>;
+  lTaskParallelDurationMs: TArray<Double>;
+  lCollectionDurationMs: TArray<Double>;
+  lCollectionBatchedDurationMs: TArray<Double>;
+  lCollectionMultiProducerDurationMs: TArray<Double>;
+  lTaskQueueDurationMs: TArray<Double>;
+  lAsyncTimerDurationMs: TArray<Double>;
+  lPortableTimerDurationMs: TArray<Double>;
+begin
+  if Length(aRuns) = 0 then
+    raise Exception.Create('Cannot aggregate benchmark runs because no measured runs are available.');
+
+  Result := aRuns[High(aRuns)];
+  lCount := Length(aRuns);
+
+  SetLength(lSimpleOps, lCount);
+  SetLength(lTaskSimpleOps, lCount);
+  SetLength(lAsyncLoopOps, lCount);
+  SetLength(lTaskParallelOps, lCount);
+  SetLength(lCollectionOps, lCount);
+  SetLength(lCollectionBatchedOps, lCount);
+  SetLength(lCollectionMultiProducerOps, lCount);
+  SetLength(lTaskQueueOps, lCount);
+  SetLength(lAsyncTimerOps, lCount);
+  SetLength(lPortableTimerOps, lCount);
+
+  SetLength(lSimpleDurationMs, lCount);
+  SetLength(lTaskSimpleDurationMs, lCount);
+  SetLength(lAsyncLoopDurationMs, lCount);
+  SetLength(lTaskParallelDurationMs, lCount);
+  SetLength(lCollectionDurationMs, lCount);
+  SetLength(lCollectionBatchedDurationMs, lCount);
+  SetLength(lCollectionMultiProducerDurationMs, lCount);
+  SetLength(lTaskQueueDurationMs, lCount);
+  SetLength(lAsyncTimerDurationMs, lCount);
+  SetLength(lPortableTimerDurationMs, lCount);
+
+  for i := 0 to lCount - 1 do
+  begin
+    lSimpleOps[i] := aRuns[i].Metrics.SimpleAsyncCallOpsPerSec;
+    lTaskSimpleOps[i] := aRuns[i].Metrics.TaskSimpleAsyncCallOpsPerSec;
+    lAsyncLoopOps[i] := aRuns[i].Metrics.AsyncLoopOpsPerSec;
+    lTaskParallelOps[i] := aRuns[i].Metrics.TaskParallelForOpsPerSec;
+    lCollectionOps[i] := aRuns[i].Metrics.AsyncCollectionProcessorOpsPerSec;
+    lCollectionBatchedOps[i] := aRuns[i].Metrics.AsyncCollectionProcessorBatchedOpsPerSec;
+    lCollectionMultiProducerOps[i] := aRuns[i].Metrics.AsyncCollectionProcessorMultiProducerOpsPerSec;
+    lTaskQueueOps[i] := aRuns[i].Metrics.TaskThreadedQueueProcessorOpsPerSec;
+    lAsyncTimerOps[i] := aRuns[i].Metrics.AsyncTimerOpsPerSec;
+    lPortableTimerOps[i] := aRuns[i].Metrics.PortableTimerOpsPerSec;
+
+    lSimpleDurationMs[i] := aRuns[i].SimpleAsyncResult.DurationMs;
+    lTaskSimpleDurationMs[i] := aRuns[i].TaskSimpleAsyncResult.DurationMs;
+    lAsyncLoopDurationMs[i] := aRuns[i].AsyncLoopResult.DurationMs;
+    lTaskParallelDurationMs[i] := aRuns[i].TaskParallelForResult.DurationMs;
+    lCollectionDurationMs[i] := aRuns[i].CollectionResult.DurationMs;
+    lCollectionBatchedDurationMs[i] := aRuns[i].CollectionBatchedResult.DurationMs;
+    lCollectionMultiProducerDurationMs[i] := aRuns[i].CollectionMultiProducerResult.DurationMs;
+    lTaskQueueDurationMs[i] := aRuns[i].TaskQueueProcessorResult.DurationMs;
+    lAsyncTimerDurationMs[i] := aRuns[i].AsyncTimerResult.DurationMs;
+    lPortableTimerDurationMs[i] := aRuns[i].PortableTimerResult.DurationMs;
+  end;
+
+  Result.Metrics.SimpleAsyncCallOpsPerSec := MedianInt64(lSimpleOps);
+  Result.Metrics.TaskSimpleAsyncCallOpsPerSec := MedianInt64(lTaskSimpleOps);
+  Result.Metrics.AsyncLoopOpsPerSec := MedianInt64(lAsyncLoopOps);
+  Result.Metrics.TaskParallelForOpsPerSec := MedianInt64(lTaskParallelOps);
+  Result.Metrics.AsyncCollectionProcessorOpsPerSec := MedianInt64(lCollectionOps);
+  Result.Metrics.AsyncCollectionProcessorBatchedOpsPerSec := MedianInt64(lCollectionBatchedOps);
+  Result.Metrics.AsyncCollectionProcessorMultiProducerOpsPerSec := MedianInt64(lCollectionMultiProducerOps);
+  Result.Metrics.TaskThreadedQueueProcessorOpsPerSec := MedianInt64(lTaskQueueOps);
+  Result.Metrics.AsyncTimerOpsPerSec := MedianInt64(lAsyncTimerOps);
+  Result.Metrics.PortableTimerOpsPerSec := MedianInt64(lPortableTimerOps);
+
+  Result.SimpleAsyncResult.DurationMs := MedianDouble(lSimpleDurationMs);
+  Result.TaskSimpleAsyncResult.DurationMs := MedianDouble(lTaskSimpleDurationMs);
+  Result.AsyncLoopResult.DurationMs := MedianDouble(lAsyncLoopDurationMs);
+  Result.TaskParallelForResult.DurationMs := MedianDouble(lTaskParallelDurationMs);
+  Result.CollectionResult.DurationMs := MedianDouble(lCollectionDurationMs);
+  Result.CollectionBatchedResult.DurationMs := MedianDouble(lCollectionBatchedDurationMs);
+  Result.CollectionMultiProducerResult.DurationMs := MedianDouble(lCollectionMultiProducerDurationMs);
+  Result.TaskQueueProcessorResult.DurationMs := MedianDouble(lTaskQueueDurationMs);
+  Result.AsyncTimerResult.DurationMs := MedianDouble(lAsyncTimerDurationMs);
+  Result.PortableTimerResult.DurationMs := MedianDouble(lPortableTimerDurationMs);
 end;
 
 function BenchmarkSimpleAsyncCall: TBenchmarkResult;
@@ -768,10 +1029,12 @@ begin
   Result.DurationMs := lStopwatch.Elapsed.TotalMilliseconds;
 end;
 
-procedure PrintHeader;
+procedure PrintHeader(const aWarmupRuns: Integer; const aMeasuredRuns: Integer);
 begin
   Writeln('maxAsync baseline benchmark');
   Writeln(Format('CPU threads: %d', [TThread.ProcessorCount]));
+  Writeln(Format('Warmup runs: %d', [aWarmupRuns]));
+  Writeln(Format('Measured runs: %d (median aggregation)', [aMeasuredRuns]));
   Writeln(Format('SimpleAsyncCall calls: %d', [cSimpleAsyncCalls]));
   Writeln(Format('AsyncLoop iterations: %d', [cAsyncLoopIterations]));
   Writeln(Format('Collection items: %d', [cCollectionItems]));
@@ -783,55 +1046,58 @@ begin
   Writeln(StringOfChar('-', 92));
 end;
 
+procedure PrintAggregatedResults(const aRun: TBenchmarkRun);
+begin
+  PrintResult(aRun.SimpleAsyncResult, aRun.Metrics.SimpleAsyncCallOpsPerSec);
+  PrintResult(aRun.TaskSimpleAsyncResult, aRun.Metrics.TaskSimpleAsyncCallOpsPerSec);
+  PrintResult(aRun.AsyncLoopResult, aRun.Metrics.AsyncLoopOpsPerSec);
+  PrintResult(aRun.TaskParallelForResult, aRun.Metrics.TaskParallelForOpsPerSec);
+  PrintResult(aRun.CollectionResult, aRun.Metrics.AsyncCollectionProcessorOpsPerSec);
+  PrintResult(aRun.CollectionBatchedResult, aRun.Metrics.AsyncCollectionProcessorBatchedOpsPerSec);
+  PrintResult(aRun.CollectionMultiProducerResult, aRun.Metrics.AsyncCollectionProcessorMultiProducerOpsPerSec);
+  PrintResult(aRun.TaskQueueProcessorResult, aRun.Metrics.TaskThreadedQueueProcessorOpsPerSec);
+  PrintResult(aRun.AsyncTimerResult, aRun.Metrics.AsyncTimerOpsPerSec);
+  PrintResult(aRun.PortableTimerResult, aRun.Metrics.PortableTimerOpsPerSec);
+end;
+
 var
-  lSimpleAsyncResult: TBenchmarkResult;
-  lTaskSimpleAsyncResult: TBenchmarkResult;
-  lAsyncLoopResult: TBenchmarkResult;
-  lTaskParallelForResult: TBenchmarkResult;
-  lCollectionResult: TBenchmarkResult;
-  lCollectionBatchedResult: TBenchmarkResult;
-  lCollectionMultiProducerResult: TBenchmarkResult;
-  lTaskQueueProcessorResult: TBenchmarkResult;
-  lAsyncTimerResult: TBenchmarkResult;
-  lPortableTimerResult: TBenchmarkResult;
+  lWarmupRuns: Integer;
+  lMeasuredRuns: Integer;
+  lWarmupRunIndex: Integer;
+  lMeasuredRunIndex: Integer;
+  lMeasuredRunResults: TArray<TBenchmarkRun>;
+  lRun: TBenchmarkRun;
+  lAggregatedRun: TBenchmarkRun;
 begin
   try
-    PrintHeader;
-    lSimpleAsyncResult := BenchmarkSimpleAsyncCall;
-    lTaskSimpleAsyncResult := BenchmarkTTaskSimpleAsyncCall;
-    lAsyncLoopResult := BenchmarkAsyncLoop;
-    lTaskParallelForResult := BenchmarkTTaskParallelFor;
-    lCollectionResult := BenchmarkAsyncCollectionProcessor;
-    lCollectionBatchedResult := BenchmarkAsyncCollectionProcessorBatched;
-    lCollectionMultiProducerResult := BenchmarkAsyncCollectionProcessorMultiProducer;
-    lTaskQueueProcessorResult := BenchmarkTTaskThreadedQueueProcessor;
-    lAsyncTimerResult := BenchmarkAsyncTimerCompatibility;
-    lPortableTimerResult := BenchmarkPortableTimer;
+    ParseBenchmarkConfig(lWarmupRuns, lMeasuredRuns);
+    PrintHeader(lWarmupRuns, lMeasuredRuns);
 
-    PrintResult(lSimpleAsyncResult);
-    PrintResult(lTaskSimpleAsyncResult);
-    PrintResult(lAsyncLoopResult);
-    PrintResult(lTaskParallelForResult);
-    PrintResult(lCollectionResult);
-    PrintResult(lCollectionBatchedResult);
-    PrintResult(lCollectionMultiProducerResult);
-    PrintResult(lTaskQueueProcessorResult);
-    PrintResult(lAsyncTimerResult);
-    PrintResult(lPortableTimerResult);
+    for lWarmupRunIndex := 1 to lWarmupRuns do
+    begin
+      Writeln(Format('Warmup run %d/%d ...', [lWarmupRunIndex, lWarmupRuns]));
+      RunBenchmarks(lRun);
+    end;
+
+    SetLength(lMeasuredRunResults, lMeasuredRuns);
+    for lMeasuredRunIndex := 1 to lMeasuredRuns do
+    begin
+      Writeln(Format('Measured run %d/%d ...', [lMeasuredRunIndex, lMeasuredRuns]));
+      RunBenchmarks(lMeasuredRunResults[Pred(lMeasuredRunIndex)]);
+    end;
+
+    lAggregatedRun := BuildAggregatedRun(lMeasuredRunResults);
+    Writeln(StringOfChar('-', 92));
+    Writeln('Aggregated results (median):');
+    PrintAggregatedResults(lAggregatedRun);
 
     Writeln(StringOfChar('-', 92));
 
     SaveBenchmarkArtifacts(
-      lSimpleAsyncResult,
-      lTaskSimpleAsyncResult,
-      lAsyncLoopResult,
-      lTaskParallelForResult,
-      lCollectionResult,
-      lCollectionBatchedResult,
-      lCollectionMultiProducerResult,
-      lTaskQueueProcessorResult,
-      lAsyncTimerResult,
-      lPortableTimerResult);
+      lAggregatedRun,
+      'median_of_runs',
+      lMeasuredRuns,
+      lWarmupRuns);
   except
     on lException: Exception do
     begin

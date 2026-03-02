@@ -1,18 +1,20 @@
 ﻿{
   "benchmark": "MaxLogic.Async.Benchmark",
-  "run_at_utc": "2026-03-01T20:38:02Z",
-  "date": "2026-03-01",
-  "aggregation": "single_run",
+  "run_at_utc": "2026-03-02T10:56:07Z",
+  "date": "2026-03-02",
+  "aggregation": "median_of_runs",
+  "measured_runs": 5,
+  "warmup_runs": 1,
   "metrics": {
-    "simple_async_call_ops_per_sec": 65741,
-    "ttask_simple_async_call_ops_per_sec": 157384,
-    "async_loop_ops_per_sec": 23634888,
-    "ttask_parallel_for_ops_per_sec": 35135388,
-    "async_collection_processor_ops_per_sec": 494517,
-    "async_collection_processor_batched_ops_per_sec": 2067205,
-    "async_collection_processor_multi_producer_ops_per_sec": 452808,
-    "ttask_threaded_queue_processor_ops_per_sec": 365896,
-    "async_timer_ops_per_sec": 64,
-    "portable_timer_ops_per_sec": 64
+    "simple_async_call_ops_per_sec": 38356,
+    "ttask_simple_async_call_ops_per_sec": 113823,
+    "async_loop_ops_per_sec": 22800684,
+    "ttask_parallel_for_ops_per_sec": 36959012,
+    "async_collection_processor_ops_per_sec": 267765,
+    "async_collection_processor_batched_ops_per_sec": 1925142,
+    "async_collection_processor_multi_producer_ops_per_sec": 501089,
+    "ttask_threaded_queue_processor_ops_per_sec": 200572,
+    "async_timer_ops_per_sec": 65,
+    "portable_timer_ops_per_sec": 65
   }
 }
