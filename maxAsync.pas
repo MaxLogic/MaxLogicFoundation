@@ -680,7 +680,49 @@ uses
   {$IFDEF MsWindows}
   Winapi.mmSystem, Winapi.ActiveX,
   {$ENDIF}
-  System.Math, System.diagnostics;
+  System.Diagnostics, System.Math, System.Threading;
+
+var
+  gAsyncLoopThreadPoolMap: TDictionary<Integer, TThreadPool>;
+  gAsyncLoopThreadPoolLock: TObject;
+
+function GetAsyncLoopThreadPool(const aThreadCount: Integer): TThreadPool;
+begin
+  if aThreadCount <= 0 then
+    Exit(TThreadPool.Current);
+
+  System.TMonitor.Enter(gAsyncLoopThreadPoolLock);
+  try
+    if not gAsyncLoopThreadPoolMap.TryGetValue(aThreadCount, Result) then
+    begin
+      Result := TThreadPool.Create;
+      if not Result.SetMaxWorkerThreads(aThreadCount) then
+        raise Exception.CreateFmt('Invalid ThreadCount for TAsyncLoop thread pool (max=%d).', [aThreadCount]);
+      if not Result.SetMinWorkerThreads(aThreadCount) then
+        raise Exception.CreateFmt('Invalid ThreadCount for TAsyncLoop thread pool (min=%d).', [aThreadCount]);
+      Result.UnlimitedWorkerThreadsWhenBlocked := False;
+      gAsyncLoopThreadPoolMap.Add(aThreadCount, Result);
+    end;
+  finally
+    System.TMonitor.Exit(gAsyncLoopThreadPoolLock);
+  end;
+end;
+
+procedure CleanupAsyncLoopThreadPools;
+var
+  lPool: TThreadPool;
+begin
+  if gAsyncLoopThreadPoolMap <> nil then
+  begin
+    for lPool in gAsyncLoopThreadPoolMap.Values do
+      lPool.Free;
+    gAsyncLoopThreadPoolMap.Free;
+    gAsyncLoopThreadPoolMap := nil;
+  end;
+
+  gAsyncLoopThreadPoolLock.Free;
+  gAsyncLoopThreadPoolLock := nil;
+end;
 
 {$IFDEF MsWindows}{$IFNDEF CONSOLE}
 
@@ -1351,49 +1393,46 @@ begin
 end;
 
 class procedure TAsyncLoop.Run(const aMin, aMax: integer; aProc: TAsyncEnumProcWithCancel; OnDone: TProc; ThreadCount: integer);
-var
-  Loop: TAsyncLoop;
 begin
-  Loop := TAsyncLoop.Create;
-  try
-    if ThreadCount <> 0 then
-      Loop.SimultanousThreadCount := ThreadCount;
-
-    Loop.fRunProcWithCancel := aProc;
-    Loop.fRunOnDone := OnDone;
-    Loop.OnFinished := Loop.RunFinished;
-
-    Loop.Execute(aMin, aMax, Loop.RunIteration);
-  except
-    Loop.Free;
-    raise;
-  end;
+  SimpleAsyncCall(
+    procedure
+    begin
+      try
+        RunAndWait(aMin, aMax, aProc, ThreadCount);
+      finally
+        if Assigned(OnDone) then
+          OnDone();
+      end;
+    end,
+    classname + '.Run');
 end;
 
 class procedure TAsyncLoop.RunAndWait(const aMin, aMax: integer; aProc: TAsyncEnumProcWithCancel; ThreadCount: integer);
 var
-  Loop: TAsyncLoop;
+  lPool: TThreadPool;
 begin
-  Loop := TAsyncLoop.Create;
-  try
-    if ThreadCount <> 0 then
-      Loop.SimultanousThreadCount := ThreadCount;
+  if aMax < aMin then
+    Exit;
 
-    Loop.Execute(aMin, aMax,
-      procedure(i: integer)
-      var
-        aCancel: boolean;
-      begin
-        aCancel := False;
-        aProc(i, aCancel);
-        if aCancel then
-          Loop.Cancel;
-      end);
+  lPool := GetAsyncLoopThreadPool(ThreadCount);
 
-    Loop.WaitFor;
-  finally
-    Loop.Free;
-  end;
+  TParallel.&For(aMin, aMax,
+    procedure(aCurIndex: Integer; aState: TParallel.TLoopState)
+    var
+      lCancel: Boolean;
+    begin
+      lCancel := False;
+      try
+        aProc(aCurIndex, lCancel);
+      except
+        // Preserve legacy behavior: loop body exceptions should stop the run but not be re-raised.
+        aState.Stop;
+        Exit;
+      end;
+      if lCancel then
+        aState.Stop;
+    end,
+    lPool);
 end;
 
 procedure TAsyncLoop.WaitFor;
@@ -3037,9 +3076,14 @@ begin
 end;
 
 initialization
+  gAsyncLoopThreadPoolLock := TObject.Create;
+  gAsyncLoopThreadPoolMap := TDictionary<Integer, TThreadPool>.Create;
   {$IFDEF madExcept}
   madExcept.NameThread(TThread.CurrentThread.ThreadID, 'MainVclThread');
   {$ENDIF}
   System.NeverSleepOnMMThreadContention := True;
+
+finalization
+  CleanupAsyncLoopThreadPools;
 
 end.
