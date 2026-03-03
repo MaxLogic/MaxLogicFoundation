@@ -28,6 +28,7 @@ type
   public
     [Test] procedure SimpleAsyncCallRunsProcedure;
     [Test] procedure SequentialSimpleAsyncCallReleasesAndReacquiresWorker;
+    [Test] procedure ConcurrentBurstReuseCompletesWithoutErrors;
     [Test] procedure WakeUpRunsProcedureAgain;
     [Test] procedure WakeUpCanReplaceProcedure;
     [Test] procedure InsideMainThreadReflectsThreadContext;
@@ -139,6 +140,65 @@ begin
   end;
 
   Assert.AreEqual<Integer>(cIterations, lCalls);
+end;
+
+procedure TSimpleAsyncCallTests.ConcurrentBurstReuseCompletesWithoutErrors;
+const
+  cProducerCount = 8;
+  cCallsPerProducer = 300;
+  cTimeoutMs = 15000;
+var
+  lProducers: TArray<iAsync>;
+  lProducerDone: TEvent;
+  lCallCount: Integer;
+  lErrorCount: Integer;
+  lProducerIndex: Integer;
+  lWaitIndex: Integer;
+begin
+  lProducerDone := TEvent.Create(nil, True, False, '');
+  try
+    lCallCount := 0;
+    lErrorCount := 0;
+    SetLength(lProducers, cProducerCount);
+
+    for lProducerIndex := 0 to High(lProducers) do
+      lProducers[lProducerIndex] := SimpleAsyncCall(
+        procedure
+        var
+          lI: Integer;
+          lAsync: iAsync;
+        begin
+          try
+            for lI := 1 to cCallsPerProducer do
+            begin
+              lAsync := SimpleAsyncCall(
+                procedure
+                begin
+                  TInterlocked.Increment(lCallCount);
+                end,
+                'ConcurrentBurstReuseCompletesWithoutErrors.Inner');
+              lAsync.WaitFor;
+              lAsync := nil;
+            end;
+          except
+            TInterlocked.Increment(lErrorCount);
+          end;
+        end,
+        'ConcurrentBurstReuseCompletesWithoutErrors.Producer');
+
+    for lWaitIndex := 0 to High(lProducers) do
+      lProducers[lWaitIndex].WaitFor;
+
+    lProducerDone.SetEvent;
+    Assert.AreEqual<TWaitResult>(wrSignaled, lProducerDone.WaitFor(cTimeoutMs),
+      'Concurrent simple async burst did not finish in time.');
+    Assert.AreEqual<Integer>(0, lErrorCount,
+      'Concurrent simple async burst should not raise.');
+    Assert.AreEqual<Integer>(cProducerCount * cCallsPerProducer, lCallCount,
+      'All nested simple async calls should complete exactly once.');
+  finally
+    lProducerDone.Free;
+  end;
 end;
 
 procedure TSimpleAsyncCallTests.WakeUpRunsProcedureAgain;

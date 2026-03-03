@@ -577,20 +577,25 @@ property Value: t read getValue write SetValue;
     TmaxAsyncGlobal = class
     strict private
       class var FNumberOfProcessors: dword;
-      class var fWaitingThreadDataList: TList<iThreadData>;
+      class var fWaitingThreadDataBuckets: TArray<TList<iThreadData>>;
+      class var fWaitingThreadDataLocks: TArray<TObject>;
       class var fAllThreads: TList<TThreadData>;
         {$IFDEF MsWindows}
       class var fCS: TRTLCriticalSection;
         {$ELSE}
       class var fCS: TCriticalSection;
         {$ENDIF}
-      class var fGlobalThreadListDestroyed: boolean;
+      class var fGlobalThreadListDestroyed: Integer;
     private
       class constructor CreateClass;
       class destructor DestroyClass;
       class procedure ReleaseThreadData(const aThreadData: iThreadData);
       class function GetThreadData: iThreadData;
       class procedure AddToWaiting(ThreadData: iThreadData; const aPoolWakeMode: boolean = False);
+      class function GetWaitingBucketIndex(const aThreadId: TThreadId): Integer; static;
+      class function GetCurrentThreadIdValue: TThreadId; static;
+      class function TryPopWaitingThreadData(const aPreferredBucket: Integer; out aThreadData: iThreadData): Boolean; static;
+      class procedure PushWaitingThreadData(const aBucketIndex: Integer; const aThreadData: iThreadData); static;
 
       class procedure addToAllThreadList(aData: TThreadData);
       class procedure removeFromAllThreadList(aData: TThreadData);
@@ -1631,7 +1636,77 @@ end;
 
 { TmaxAsyncGlobal }
 
+const
+  cWaitingThreadBucketCount = 8;
+
+class function TmaxAsyncGlobal.GetCurrentThreadIdValue: TThreadId;
+begin
+  {$IFDEF MsWindows}
+  Result := GetCurrentThreadId;
+  {$ELSE}
+  Result := TThread.CurrentThread.ThreadId;
+  {$ENDIF}
+end;
+
+class function TmaxAsyncGlobal.GetWaitingBucketIndex(const aThreadId: TThreadId): Integer;
+var
+  lThreadIdValue: UInt64;
+begin
+  {$R-}{$Q-}
+  lThreadIdValue := UInt64(aThreadId);
+  Result := Integer(lThreadIdValue mod cWaitingThreadBucketCount);
+end;
+
+class function TmaxAsyncGlobal.TryPopWaitingThreadData(const aPreferredBucket: Integer; out aThreadData: iThreadData): Boolean;
+var
+  lOffset: Integer;
+  lBucketIndex: Integer;
+  lItemIndex: Integer;
+  lBucket: TList<iThreadData>;
+begin
+  aThreadData := nil;
+  Result := False;
+  for lOffset := 0 to cWaitingThreadBucketCount - 1 do
+  begin
+    lBucketIndex := (aPreferredBucket + lOffset) mod cWaitingThreadBucketCount;
+    System.TMonitor.Enter(fWaitingThreadDataLocks[lBucketIndex]);
+    try
+      lBucket := fWaitingThreadDataBuckets[lBucketIndex];
+      if (lBucket <> nil) and (lBucket.Count <> 0) then
+      begin
+        lItemIndex := lBucket.Count - 1;
+        aThreadData := lBucket[lItemIndex];
+        lBucket[lItemIndex] := nil;
+        lBucket.Delete(lItemIndex);
+        Exit(True);
+      end;
+    finally
+      System.TMonitor.Exit(fWaitingThreadDataLocks[lBucketIndex]);
+    end;
+  end;
+end;
+
+class procedure TmaxAsyncGlobal.PushWaitingThreadData(const aBucketIndex: Integer; const aThreadData: iThreadData);
+var
+  lBucket: TList<iThreadData>;
+begin
+  System.TMonitor.Enter(fWaitingThreadDataLocks[aBucketIndex]);
+  try
+    lBucket := fWaitingThreadDataBuckets[aBucketIndex];
+    if lBucket = nil then
+    begin
+      lBucket := TList<iThreadData>.Create;
+      fWaitingThreadDataBuckets[aBucketIndex] := lBucket;
+    end;
+    lBucket.Add(aThreadData);
+  finally
+    System.TMonitor.Exit(fWaitingThreadDataLocks[aBucketIndex]);
+  end;
+end;
+
 class constructor TmaxAsyncGlobal.CreateClass;
+var
+  lBucketIndex: Integer;
 begin
   {$IFDEF MsWindows}
   InitializeCriticalSection(fCS);
@@ -1642,29 +1717,49 @@ begin
   HideLeak(@fCS);
   {$ENDIF}
   FNumberOfProcessors := TThread.ProcessorCount;
-  fWaitingThreadDataList := nil;
+  fGlobalThreadListDestroyed := 0;
+  SetLength(fWaitingThreadDataBuckets, cWaitingThreadBucketCount);
+  SetLength(fWaitingThreadDataLocks, cWaitingThreadBucketCount);
+  for lBucketIndex := 0 to cWaitingThreadBucketCount - 1 do
+    fWaitingThreadDataLocks[lBucketIndex] := TObject.Create;
   fAllThreads := TList<TThreadData>.Create;
 end;
 
 class destructor TmaxAsyncGlobal.DestroyClass;
 var
-  X: integer;
+  lBucketIndex: Integer;
+  lItemIndex: Integer;
+  lBucket: TList<iThreadData>;
 begin
+  TInterlocked.Exchange(fGlobalThreadListDestroyed, 1);
+
+  for lBucketIndex := 0 to High(fWaitingThreadDataBuckets) do
+  begin
+    System.TMonitor.Enter(fWaitingThreadDataLocks[lBucketIndex]);
+    try
+      lBucket := fWaitingThreadDataBuckets[lBucketIndex];
+      if lBucket <> nil then
+      begin
+        for lItemIndex := 0 to lBucket.Count - 1 do
+        begin
+          ReleaseThreadData(lBucket[lItemIndex]);
+          lBucket[lItemIndex] := nil;
+        end;
+        lBucket.Clear;
+        lBucket.Free;
+        fWaitingThreadDataBuckets[lBucketIndex] := nil;
+      end;
+    finally
+      System.TMonitor.Exit(fWaitingThreadDataLocks[lBucketIndex]);
+    end;
+    fWaitingThreadDataLocks[lBucketIndex].Free;
+    fWaitingThreadDataLocks[lBucketIndex] := nil;
+  end;
+  SetLength(fWaitingThreadDataBuckets, 0);
+  SetLength(fWaitingThreadDataLocks, 0);
+
   fCS.Enter;
   try
-    fGlobalThreadListDestroyed := True;
-    if assigned(fWaitingThreadDataList) then
-    begin
-      for X := 0 to fWaitingThreadDataList.Count - 1 do
-      begin
-        ReleaseThreadData(fWaitingThreadDataList[X]);
-        fWaitingThreadDataList[X] := nil;
-      end;
-      fWaitingThreadDataList.Clear;
-      fWaitingThreadDataList.Free;
-      fWaitingThreadDataList := nil;
-    end;
-
     fAllThreads.Free;
   finally
     fCS.leave;
@@ -1675,26 +1770,16 @@ end;
 
 class function TmaxAsyncGlobal.GetThreadData: iThreadData;
 var
-  i: integer;
   lPoolWakeMode: boolean;
+  lBucketIndex: Integer;
 begin
   Result := nil;
-  fCS.Enter;
-  try
-    // if there are some threads waiting... use them... otherwise we will need to create a new one
-    if (assigned(fWaitingThreadDataList)) and (fWaitingThreadDataList.Count <> 0) then
-    begin
-      i := fWaitingThreadDataList.Count - 1;
-      Result := fWaitingThreadDataList[i];
-      fWaitingThreadDataList[i] := nil;
-      fWaitingThreadDataList.delete(i);
-
-      lPoolWakeMode := Result.PoolWakeMode;
-      Result.SetDefaultValues;
-      Result.PoolWakeMode := lPoolWakeMode;
-    end;
-  finally
-    fCS.leave;
+  lBucketIndex := GetWaitingBucketIndex(GetCurrentThreadIdValue);
+  if TryPopWaitingThreadData(lBucketIndex, Result) then
+  begin
+    lPoolWakeMode := Result.PoolWakeMode;
+    Result.SetDefaultValues;
+    Result.PoolWakeMode := lPoolWakeMode;
   end;
 
   if Result = nil then
@@ -1702,24 +1787,21 @@ begin
 end;
 
 class procedure TmaxAsyncGlobal.AddToWaiting(ThreadData: iThreadData; const aPoolWakeMode: boolean);
+var
+  lBucketIndex: Integer;
 begin
-  fCS.Enter;
-  try
-    if fGlobalThreadListDestroyed then
-    begin
-      ReleaseThreadData(ThreadData);
-      ThreadData := nil;
-    end
-    else
-    begin
-      if not assigned(fWaitingThreadDataList) then
-        fWaitingThreadDataList := TList<iThreadData>.Create;
-      ThreadData.PoolWakeMode := aPoolWakeMode;
-      fWaitingThreadDataList.Add(ThreadData);
-    end;
-  finally
-    fCS.leave;
+  if ThreadData = nil then
+    Exit;
+
+  if TInterlocked.CompareExchange(fGlobalThreadListDestroyed, 0, 0) <> 0 then
+  begin
+    ReleaseThreadData(ThreadData);
+    Exit;
   end;
+
+  ThreadData.PoolWakeMode := aPoolWakeMode;
+  lBucketIndex := GetWaitingBucketIndex(GetCurrentThreadIdValue);
+  PushWaitingThreadData(lBucketIndex, ThreadData);
 end;
 
 class procedure TmaxAsyncGlobal.ReleaseThreadData(const aThreadData: iThreadData);
@@ -1732,12 +1814,12 @@ end;
 
 class procedure TmaxAsyncGlobal.addToAllThreadList(aData: TThreadData);
 begin
-  if fGlobalThreadListDestroyed then
+  if TInterlocked.CompareExchange(fGlobalThreadListDestroyed, 0, 0) <> 0 then
     exit;
 
   fCS.Enter;
   try
-    if not fGlobalThreadListDestroyed then
+    if TInterlocked.CompareExchange(fGlobalThreadListDestroyed, 0, 0) = 0 then
       fAllThreads.Add(aData);
 
   finally
@@ -1749,12 +1831,12 @@ class procedure TmaxAsyncGlobal.removeFromAllThreadList(aData: TThreadData);
 var
   i: integer;
 begin
-  if fGlobalThreadListDestroyed then
+  if TInterlocked.CompareExchange(fGlobalThreadListDestroyed, 0, 0) <> 0 then
     exit;
 
   fCS.Enter;
   try
-    if not fGlobalThreadListDestroyed then
+    if TInterlocked.CompareExchange(fGlobalThreadListDestroyed, 0, 0) = 0 then
     begin
       i := fAllThreads.IndexOf(aData);
       if i <> -1 then
@@ -1770,7 +1852,7 @@ var
   X: integer;
 begin
   Result := '';
-  if fGlobalThreadListDestroyed then
+  if TInterlocked.CompareExchange(fGlobalThreadListDestroyed, 0, 0) <> 0 then
     exit;
 
   if aThreadId = MainThreadID then
@@ -1778,7 +1860,7 @@ begin
 
   fCS.Enter;
   try
-    if not fGlobalThreadListDestroyed then
+    if TInterlocked.CompareExchange(fGlobalThreadListDestroyed, 0, 0) = 0 then
     begin
       for X := 0 to fAllThreads.Count - 1 do
         if fAllThreads[X].fThreadId = aThreadId then
