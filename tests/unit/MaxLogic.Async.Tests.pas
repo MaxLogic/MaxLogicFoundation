@@ -29,6 +29,7 @@ type
     [Test] procedure SimpleAsyncCallRunsProcedure;
     [Test] procedure SequentialSimpleAsyncCallReleasesAndReacquiresWorker;
     [Test] procedure ConcurrentBurstReuseCompletesWithoutErrors;
+    [Test] procedure SimpleAsyncCallAppliesCustomPriority;
     [Test] procedure WakeUpRunsProcedureAgain;
     [Test] procedure WakeUpCanReplaceProcedure;
     [Test] procedure InsideMainThreadReflectsThreadContext;
@@ -53,6 +54,7 @@ type
     [Test] procedure IncreasingThreadCountAfterStartScalesConcurrency;
     [Test] procedure ProcessorCompletesWhenProcRaises;
     [Test] procedure ProcChangeAppliesToSubsequentItems;
+    [Test] procedure ProcChangeUnderLoadProcessesAllItemsExactlyOnce;
     [Test] procedure RepeatedSingleItemBurstsDoNotMissWakeups;
     [Test] procedure WaitForIncludesWorkQueuedFromOnFinished;
     [Test] procedure WaitForIncludesConcurrentAddTriggeredFromOnFinished;
@@ -200,6 +202,31 @@ begin
     lProducerDone.Free;
   end;
 end;
+
+procedure TSimpleAsyncCallTests.SimpleAsyncCallAppliesCustomPriority;
+{$IFDEF MsWindows}
+var
+  lAsync: iAsync;
+  lObservedPriority: TThreadPriority;
+begin
+  lObservedPriority := tpNormal;
+  lAsync := SimpleAsyncCall(
+    procedure
+    begin
+      lObservedPriority := TThread.CurrentThread.Priority;
+    end,
+    'SimpleAsyncCallAppliesCustomPriority',
+    nil,
+    tpHighest);
+  lAsync.WaitFor;
+  Assert.AreEqual<Integer>(Ord(tpHighest), Ord(lObservedPriority),
+    'SimpleAsyncCall should apply explicit non-default thread priority.');
+end;
+{$ELSE}
+begin
+  Assert.Pass('Thread priority is Windows-only.');
+end;
+{$ENDIF}
 
 procedure TSimpleAsyncCallTests.WakeUpRunsProcedureAgain;
 var
@@ -756,6 +783,69 @@ begin
     lDone.Free;
     lReleaseFirst.Free;
     lFirstStarted.Free;
+    lProcessor.Free;
+  end;
+end;
+
+procedure TAsyncCollectionProcessorTests.ProcChangeUnderLoadProcessesAllItemsExactlyOnce;
+const
+  cFirstWave = 300;
+  cSecondWave = 300;
+var
+  lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
+  lOldProcCount: Integer;
+  lNewProcCount: Integer;
+  lOldProcessed: TArray<Integer>;
+  lNewProcessed: TArray<Integer>;
+  lFirstWaveEnd: Integer;
+  lSecondWaveEnd: Integer;
+  lItemValue: Integer;
+begin
+  lProcessor := TAsyncCollectionProcessor<TAsyncWorkItem>.Create;
+  try
+    lProcessor.SimultanousThreadCount := Max(2, TThread.ProcessorCount);
+    lOldProcCount := 0;
+    lNewProcCount := 0;
+    lFirstWaveEnd := cFirstWave;
+    lSecondWaveEnd := cFirstWave + cSecondWave;
+    SetLength(lOldProcessed, lSecondWaveEnd + 1);
+    SetLength(lNewProcessed, lSecondWaveEnd + 1);
+
+    lProcessor.Proc := procedure(const aItem: TAsyncWorkItem)
+      begin
+        try
+          TInterlocked.Increment(lOldProcCount);
+          TInterlocked.Increment(lOldProcessed[aItem.Value]);
+        finally
+          aItem.Free;
+        end;
+      end;
+
+    for lItemValue := 1 to lFirstWaveEnd do
+      lProcessor.Add(TAsyncWorkItem.Create(lItemValue));
+
+    lProcessor.Proc := procedure(const aItem: TAsyncWorkItem)
+      begin
+        try
+          TInterlocked.Increment(lNewProcCount);
+          TInterlocked.Increment(lNewProcessed[aItem.Value]);
+        finally
+          aItem.Free;
+        end;
+      end;
+
+    for lItemValue := lFirstWaveEnd + 1 to lSecondWaveEnd do
+      lProcessor.Add(TAsyncWorkItem.Create(lItemValue));
+
+    lProcessor.WaitFor;
+
+    Assert.IsTrue((lOldProcCount > 0) and (lNewProcCount > 0),
+      'Both proc delegates should execute while switching under load.');
+
+    for lItemValue := 1 to lSecondWaveEnd do
+      Assert.AreEqual<Integer>(1, lOldProcessed[lItemValue] + lNewProcessed[lItemValue],
+        Format('Item %d should be processed exactly once across proc transitions.', [lItemValue]));
+  finally
     lProcessor.Free;
   end;
 end;
