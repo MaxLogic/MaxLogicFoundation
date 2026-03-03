@@ -33,8 +33,14 @@ type
     AsyncLoopOpsPerSec: Int64;
     TaskParallelForOpsPerSec: Int64;
     AsyncCollectionProcessorOpsPerSec: Int64;
+    AsyncCollectionProcessorLockedRingOpsPerSec: Int64;
+    AsyncCollectionProcessorLockFreeOpsPerSec: Int64;
     AsyncCollectionProcessorBatchedOpsPerSec: Int64;
+    AsyncCollectionProcessorBatchedLockedRingOpsPerSec: Int64;
+    AsyncCollectionProcessorBatchedLockFreeOpsPerSec: Int64;
     AsyncCollectionProcessorMultiProducerOpsPerSec: Int64;
+    AsyncCollectionProcessorMultiProducerLockedRingOpsPerSec: Int64;
+    AsyncCollectionProcessorMultiProducerLockFreeOpsPerSec: Int64;
     TaskThreadedQueueProcessorOpsPerSec: Int64;
     AsyncTimerOpsPerSec: Int64;
     PortableTimerOpsPerSec: Int64;
@@ -48,8 +54,14 @@ type
     AsyncLoopResult: TBenchmarkResult;
     TaskParallelForResult: TBenchmarkResult;
     CollectionResult: TBenchmarkResult;
+    CollectionLockedRingResult: TBenchmarkResult;
+    CollectionLockFreeResult: TBenchmarkResult;
     CollectionBatchedResult: TBenchmarkResult;
+    CollectionBatchedLockedRingResult: TBenchmarkResult;
+    CollectionBatchedLockFreeResult: TBenchmarkResult;
     CollectionMultiProducerResult: TBenchmarkResult;
+    CollectionMultiProducerLockedRingResult: TBenchmarkResult;
+    CollectionMultiProducerLockFreeResult: TBenchmarkResult;
     TaskQueueProcessorResult: TBenchmarkResult;
     AsyncTimerResult: TBenchmarkResult;
     PortableTimerResult: TBenchmarkResult;
@@ -78,6 +90,7 @@ const
   cAsyncLoopIterations = 300000;
   cCollectionItems = 300000;
   cCollectionBatchSize = 128;
+  cCollectionQueueCapacity = 4096;
   cMultiProducerCount = 8;
   cMultiProducerItemsPerProducer = 40000;
   cTaskQueueBound = 4096;
@@ -165,8 +178,14 @@ procedure CollectMetrics(
   const aAsyncLoopResult: TBenchmarkResult;
   const aTaskParallelForResult: TBenchmarkResult;
   const aCollectionResult: TBenchmarkResult;
+  const aCollectionLockedRingResult: TBenchmarkResult;
+  const aCollectionLockFreeResult: TBenchmarkResult;
   const aCollectionBatchedResult: TBenchmarkResult;
+  const aCollectionBatchedLockedRingResult: TBenchmarkResult;
+  const aCollectionBatchedLockFreeResult: TBenchmarkResult;
   const aCollectionMultiProducerResult: TBenchmarkResult;
+  const aCollectionMultiProducerLockedRingResult: TBenchmarkResult;
+  const aCollectionMultiProducerLockFreeResult: TBenchmarkResult;
   const aTaskQueueProcessorResult: TBenchmarkResult;
   const aAsyncTimerResult: TBenchmarkResult;
   const aPortableTimerResult: TBenchmarkResult;
@@ -179,8 +198,14 @@ begin
   aMetrics.AsyncLoopOpsPerSec := ThroughputAsInt64(aAsyncLoopResult.UnitsProcessed, aAsyncLoopResult.DurationMs);
   aMetrics.TaskParallelForOpsPerSec := ThroughputAsInt64(aTaskParallelForResult.UnitsProcessed, aTaskParallelForResult.DurationMs);
   aMetrics.AsyncCollectionProcessorOpsPerSec := ThroughputAsInt64(aCollectionResult.UnitsProcessed, aCollectionResult.DurationMs);
+  aMetrics.AsyncCollectionProcessorLockedRingOpsPerSec := ThroughputAsInt64(aCollectionLockedRingResult.UnitsProcessed, aCollectionLockedRingResult.DurationMs);
+  aMetrics.AsyncCollectionProcessorLockFreeOpsPerSec := ThroughputAsInt64(aCollectionLockFreeResult.UnitsProcessed, aCollectionLockFreeResult.DurationMs);
   aMetrics.AsyncCollectionProcessorBatchedOpsPerSec := ThroughputAsInt64(aCollectionBatchedResult.UnitsProcessed, aCollectionBatchedResult.DurationMs);
+  aMetrics.AsyncCollectionProcessorBatchedLockedRingOpsPerSec := ThroughputAsInt64(aCollectionBatchedLockedRingResult.UnitsProcessed, aCollectionBatchedLockedRingResult.DurationMs);
+  aMetrics.AsyncCollectionProcessorBatchedLockFreeOpsPerSec := ThroughputAsInt64(aCollectionBatchedLockFreeResult.UnitsProcessed, aCollectionBatchedLockFreeResult.DurationMs);
   aMetrics.AsyncCollectionProcessorMultiProducerOpsPerSec := ThroughputAsInt64(aCollectionMultiProducerResult.UnitsProcessed, aCollectionMultiProducerResult.DurationMs);
+  aMetrics.AsyncCollectionProcessorMultiProducerLockedRingOpsPerSec := ThroughputAsInt64(aCollectionMultiProducerLockedRingResult.UnitsProcessed, aCollectionMultiProducerLockedRingResult.DurationMs);
+  aMetrics.AsyncCollectionProcessorMultiProducerLockFreeOpsPerSec := ThroughputAsInt64(aCollectionMultiProducerLockFreeResult.UnitsProcessed, aCollectionMultiProducerLockFreeResult.DurationMs);
   aMetrics.TaskThreadedQueueProcessorOpsPerSec := ThroughputAsInt64(aTaskQueueProcessorResult.UnitsProcessed, aTaskQueueProcessorResult.DurationMs);
   aMetrics.AsyncTimerOpsPerSec := ThroughputAsInt64(aAsyncTimerResult.UnitsProcessed, aAsyncTimerResult.DurationMs);
   aMetrics.PortableTimerOpsPerSec := ThroughputAsInt64(aPortableTimerResult.UnitsProcessed, aPortableTimerResult.DurationMs);
@@ -214,8 +239,14 @@ begin
     lJson.Add('    "async_loop_ops_per_sec": ' + IntToStr(aMetrics.AsyncLoopOpsPerSec) + ',');
     lJson.Add('    "ttask_parallel_for_ops_per_sec": ' + IntToStr(aMetrics.TaskParallelForOpsPerSec) + ',');
     lJson.Add('    "async_collection_processor_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorOpsPerSec) + ',');
+    lJson.Add('    "async_collection_processor_locked_ring_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorLockedRingOpsPerSec) + ',');
+    lJson.Add('    "async_collection_processor_lock_free_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorLockFreeOpsPerSec) + ',');
     lJson.Add('    "async_collection_processor_batched_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorBatchedOpsPerSec) + ',');
+    lJson.Add('    "async_collection_processor_batched_locked_ring_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorBatchedLockedRingOpsPerSec) + ',');
+    lJson.Add('    "async_collection_processor_batched_lock_free_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorBatchedLockFreeOpsPerSec) + ',');
     lJson.Add('    "async_collection_processor_multi_producer_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorMultiProducerOpsPerSec) + ',');
+    lJson.Add('    "async_collection_processor_multi_producer_locked_ring_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorMultiProducerLockedRingOpsPerSec) + ',');
+    lJson.Add('    "async_collection_processor_multi_producer_lock_free_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorMultiProducerLockFreeOpsPerSec) + ',');
     lJson.Add('    "ttask_threaded_queue_processor_ops_per_sec": ' + IntToStr(aMetrics.TaskThreadedQueueProcessorOpsPerSec) + ',');
     lJson.Add('    "async_timer_ops_per_sec": ' + IntToStr(aMetrics.AsyncTimerOpsPerSec) + ',');
     lJson.Add('    "portable_timer_ops_per_sec": ' + IntToStr(aMetrics.PortableTimerOpsPerSec));
@@ -236,8 +267,14 @@ procedure WriteResultsJson(
   const aAsyncLoopResult: TBenchmarkResult;
   const aTaskParallelForResult: TBenchmarkResult;
   const aCollectionResult: TBenchmarkResult;
+  const aCollectionLockedRingResult: TBenchmarkResult;
+  const aCollectionLockFreeResult: TBenchmarkResult;
   const aCollectionBatchedResult: TBenchmarkResult;
+  const aCollectionBatchedLockedRingResult: TBenchmarkResult;
+  const aCollectionBatchedLockFreeResult: TBenchmarkResult;
   const aCollectionMultiProducerResult: TBenchmarkResult;
+  const aCollectionMultiProducerLockedRingResult: TBenchmarkResult;
+  const aCollectionMultiProducerLockFreeResult: TBenchmarkResult;
   const aTaskQueueProcessorResult: TBenchmarkResult;
   const aAsyncTimerResult: TBenchmarkResult;
   const aPortableTimerResult: TBenchmarkResult;
@@ -264,8 +301,14 @@ begin
     lJson.Add('    "async_loop_ops_per_sec": ' + IntToStr(aMetrics.AsyncLoopOpsPerSec) + ',');
     lJson.Add('    "ttask_parallel_for_ops_per_sec": ' + IntToStr(aMetrics.TaskParallelForOpsPerSec) + ',');
     lJson.Add('    "async_collection_processor_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorOpsPerSec) + ',');
+    lJson.Add('    "async_collection_processor_locked_ring_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorLockedRingOpsPerSec) + ',');
+    lJson.Add('    "async_collection_processor_lock_free_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorLockFreeOpsPerSec) + ',');
     lJson.Add('    "async_collection_processor_batched_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorBatchedOpsPerSec) + ',');
+    lJson.Add('    "async_collection_processor_batched_locked_ring_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorBatchedLockedRingOpsPerSec) + ',');
+    lJson.Add('    "async_collection_processor_batched_lock_free_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorBatchedLockFreeOpsPerSec) + ',');
     lJson.Add('    "async_collection_processor_multi_producer_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorMultiProducerOpsPerSec) + ',');
+    lJson.Add('    "async_collection_processor_multi_producer_locked_ring_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorMultiProducerLockedRingOpsPerSec) + ',');
+    lJson.Add('    "async_collection_processor_multi_producer_lock_free_ops_per_sec": ' + IntToStr(aMetrics.AsyncCollectionProcessorMultiProducerLockFreeOpsPerSec) + ',');
     lJson.Add('    "ttask_threaded_queue_processor_ops_per_sec": ' + IntToStr(aMetrics.TaskThreadedQueueProcessorOpsPerSec) + ',');
     lJson.Add('    "async_timer_ops_per_sec": ' + IntToStr(aMetrics.AsyncTimerOpsPerSec) + ',');
     lJson.Add('    "portable_timer_ops_per_sec": ' + IntToStr(aMetrics.PortableTimerOpsPerSec));
@@ -286,9 +329,21 @@ begin
     lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
       [EscapeJsonString(aCollectionResult.Name), aCollectionResult.UnitsProcessed, FloatToInvariant(aCollectionResult.DurationMs), aMetrics.AsyncCollectionProcessorOpsPerSec]));
     lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
+      [EscapeJsonString(aCollectionLockedRingResult.Name), aCollectionLockedRingResult.UnitsProcessed, FloatToInvariant(aCollectionLockedRingResult.DurationMs), aMetrics.AsyncCollectionProcessorLockedRingOpsPerSec]));
+    lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
+      [EscapeJsonString(aCollectionLockFreeResult.Name), aCollectionLockFreeResult.UnitsProcessed, FloatToInvariant(aCollectionLockFreeResult.DurationMs), aMetrics.AsyncCollectionProcessorLockFreeOpsPerSec]));
+    lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
       [EscapeJsonString(aCollectionBatchedResult.Name), aCollectionBatchedResult.UnitsProcessed, FloatToInvariant(aCollectionBatchedResult.DurationMs), aMetrics.AsyncCollectionProcessorBatchedOpsPerSec]));
     lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
+      [EscapeJsonString(aCollectionBatchedLockedRingResult.Name), aCollectionBatchedLockedRingResult.UnitsProcessed, FloatToInvariant(aCollectionBatchedLockedRingResult.DurationMs), aMetrics.AsyncCollectionProcessorBatchedLockedRingOpsPerSec]));
+    lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
+      [EscapeJsonString(aCollectionBatchedLockFreeResult.Name), aCollectionBatchedLockFreeResult.UnitsProcessed, FloatToInvariant(aCollectionBatchedLockFreeResult.DurationMs), aMetrics.AsyncCollectionProcessorBatchedLockFreeOpsPerSec]));
+    lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
       [EscapeJsonString(aCollectionMultiProducerResult.Name), aCollectionMultiProducerResult.UnitsProcessed, FloatToInvariant(aCollectionMultiProducerResult.DurationMs), aMetrics.AsyncCollectionProcessorMultiProducerOpsPerSec]));
+    lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
+      [EscapeJsonString(aCollectionMultiProducerLockedRingResult.Name), aCollectionMultiProducerLockedRingResult.UnitsProcessed, FloatToInvariant(aCollectionMultiProducerLockedRingResult.DurationMs), aMetrics.AsyncCollectionProcessorMultiProducerLockedRingOpsPerSec]));
+    lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
+      [EscapeJsonString(aCollectionMultiProducerLockFreeResult.Name), aCollectionMultiProducerLockFreeResult.UnitsProcessed, FloatToInvariant(aCollectionMultiProducerLockFreeResult.DurationMs), aMetrics.AsyncCollectionProcessorMultiProducerLockFreeOpsPerSec]));
     lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
       [EscapeJsonString(aTaskQueueProcessorResult.Name), aTaskQueueProcessorResult.UnitsProcessed, FloatToInvariant(aTaskQueueProcessorResult.DurationMs), aMetrics.TaskThreadedQueueProcessorOpsPerSec]));
     lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
@@ -308,8 +363,9 @@ procedure AppendHistoryCsv(
   const aRunAtUtc: string;
   const aMetrics: TBenchmarkMetrics);
 const
-  cHeader = 'run_at_utc,simple_async_call_ops_per_sec,simple_async_call_no_name_ops_per_sec,simple_async_call_wake_reuse_ops_per_sec,ttask_simple_async_call_ops_per_sec,async_loop_ops_per_sec,ttask_parallel_for_ops_per_sec,async_collection_processor_ops_per_sec,async_collection_processor_batched_ops_per_sec,async_collection_processor_multi_producer_ops_per_sec,ttask_threaded_queue_processor_ops_per_sec,async_timer_ops_per_sec,portable_timer_ops_per_sec';
-  cPreviousHeader = 'run_at_utc,simple_async_call_ops_per_sec,ttask_simple_async_call_ops_per_sec,async_loop_ops_per_sec,ttask_parallel_for_ops_per_sec,async_collection_processor_ops_per_sec,async_collection_processor_batched_ops_per_sec,async_collection_processor_multi_producer_ops_per_sec,ttask_threaded_queue_processor_ops_per_sec,async_timer_ops_per_sec,portable_timer_ops_per_sec';
+  cHeader = 'run_at_utc,simple_async_call_ops_per_sec,simple_async_call_no_name_ops_per_sec,simple_async_call_wake_reuse_ops_per_sec,ttask_simple_async_call_ops_per_sec,async_loop_ops_per_sec,ttask_parallel_for_ops_per_sec,async_collection_processor_ops_per_sec,async_collection_processor_locked_ring_ops_per_sec,async_collection_processor_lock_free_ops_per_sec,async_collection_processor_batched_ops_per_sec,async_collection_processor_batched_locked_ring_ops_per_sec,async_collection_processor_batched_lock_free_ops_per_sec,async_collection_processor_multi_producer_ops_per_sec,async_collection_processor_multi_producer_locked_ring_ops_per_sec,async_collection_processor_multi_producer_lock_free_ops_per_sec,ttask_threaded_queue_processor_ops_per_sec,async_timer_ops_per_sec,portable_timer_ops_per_sec';
+  cPreviousHeader = 'run_at_utc,simple_async_call_ops_per_sec,simple_async_call_no_name_ops_per_sec,simple_async_call_wake_reuse_ops_per_sec,ttask_simple_async_call_ops_per_sec,async_loop_ops_per_sec,ttask_parallel_for_ops_per_sec,async_collection_processor_ops_per_sec,async_collection_processor_batched_ops_per_sec,async_collection_processor_multi_producer_ops_per_sec,ttask_threaded_queue_processor_ops_per_sec,async_timer_ops_per_sec,portable_timer_ops_per_sec';
+  cOlderHeader = 'run_at_utc,simple_async_call_ops_per_sec,ttask_simple_async_call_ops_per_sec,async_loop_ops_per_sec,ttask_parallel_for_ops_per_sec,async_collection_processor_ops_per_sec,async_collection_processor_batched_ops_per_sec,async_collection_processor_multi_producer_ops_per_sec,ttask_threaded_queue_processor_ops_per_sec,async_timer_ops_per_sec,portable_timer_ops_per_sec';
   cLegacyHeader = 'run_at_utc,simple_async_call_ops_per_sec,async_loop_ops_per_sec,async_collection_processor_ops_per_sec,async_collection_processor_batched_ops_per_sec,async_collection_processor_multi_producer_ops_per_sec,async_timer_ops_per_sec,portable_timer_ops_per_sec';
 var
   lLines: TStringList;
@@ -331,12 +387,31 @@ begin
         if Trim(lLines[i]) <> '' then
         begin
           lParts := lLines[i].Split([',']);
+          if Length(lParts) >= 13 then
+          begin
+            lLines[i] := Format('%s,%s,%s,%s,%s,%s,%s,%s,,,%s,,,%s,,,%s,%s,%s',
+              [lParts[0], lParts[1], lParts[2], lParts[3], lParts[4], lParts[5], lParts[6],
+               lParts[7], lParts[8], lParts[9], lParts[10], lParts[11], lParts[12]]);
+          end else
+            lLines[i] := lLines[i] + ',,,,,,';
+        end;
+      end;
+    end
+    else if Trim(lLines[0]) = cOlderHeader then
+    begin
+      lLines[0] := cHeader;
+      for i := 1 to lLines.Count - 1 do
+      begin
+        if Trim(lLines[i]) <> '' then
+        begin
+          lParts := lLines[i].Split([',']);
           if Length(lParts) >= 11 then
           begin
-            lLines[i] := Format('%s,%s,,,%s,%s,%s,%s,%s,%s,%s,%s,%s',
-              [lParts[0], lParts[1], lParts[2], lParts[3], lParts[4], lParts[5], lParts[6], lParts[7], lParts[8], lParts[9], lParts[10]]);
+            lLines[i] := Format('%s,%s,,,%s,%s,%s,%s,,,%s,,,%s,,,%s,%s,%s',
+              [lParts[0], lParts[1], lParts[2], lParts[3], lParts[4], lParts[5], lParts[6],
+               lParts[7], lParts[8], lParts[9], lParts[10]]);
           end else
-            lLines[i] := lLines[i] + ',,';
+            lLines[i] := lLines[i] + ',,,,,,,,';
         end;
       end;
     end
@@ -350,16 +425,16 @@ begin
           lParts := lLines[i].Split([',']);
           if Length(lParts) >= 8 then
           begin
-            lLines[i] := Format('%s,%s,,,,%s,,%s,%s,%s,,%s,%s',
+            lLines[i] := Format('%s,%s,,,,%s,,%s,,,%s,,,%s,,,,%s,%s',
               [lParts[0], lParts[1], lParts[2], lParts[3], lParts[4], lParts[5], lParts[6], lParts[7]]);
           end else
-            lLines[i] := lLines[i] + ',,,,,';
+            lLines[i] := lLines[i] + ',,,,,,,,,,,';
         end;
       end;
     end else if Trim(lLines[0]) <> cHeader then
       lLines.Insert(0, cHeader);
 
-    lLines.Add(Format('%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d',
+    lLines.Add(Format('%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d',
       [aRunAtUtc,
        aMetrics.SimpleAsyncCallOpsPerSec,
        aMetrics.SimpleAsyncCallNoNameOpsPerSec,
@@ -368,8 +443,14 @@ begin
        aMetrics.AsyncLoopOpsPerSec,
        aMetrics.TaskParallelForOpsPerSec,
        aMetrics.AsyncCollectionProcessorOpsPerSec,
+       aMetrics.AsyncCollectionProcessorLockedRingOpsPerSec,
+       aMetrics.AsyncCollectionProcessorLockFreeOpsPerSec,
        aMetrics.AsyncCollectionProcessorBatchedOpsPerSec,
+       aMetrics.AsyncCollectionProcessorBatchedLockedRingOpsPerSec,
+       aMetrics.AsyncCollectionProcessorBatchedLockFreeOpsPerSec,
        aMetrics.AsyncCollectionProcessorMultiProducerOpsPerSec,
+       aMetrics.AsyncCollectionProcessorMultiProducerLockedRingOpsPerSec,
+       aMetrics.AsyncCollectionProcessorMultiProducerLockFreeOpsPerSec,
        aMetrics.TaskThreadedQueueProcessorOpsPerSec,
        aMetrics.AsyncTimerOpsPerSec,
        aMetrics.PortableTimerOpsPerSec]));
@@ -410,8 +491,14 @@ begin
     aRun.AsyncLoopResult,
     aRun.TaskParallelForResult,
     aRun.CollectionResult,
+    aRun.CollectionLockedRingResult,
+    aRun.CollectionLockFreeResult,
     aRun.CollectionBatchedResult,
+    aRun.CollectionBatchedLockedRingResult,
+    aRun.CollectionBatchedLockFreeResult,
     aRun.CollectionMultiProducerResult,
+    aRun.CollectionMultiProducerLockedRingResult,
+    aRun.CollectionMultiProducerLockFreeResult,
     aRun.TaskQueueProcessorResult,
     aRun.AsyncTimerResult,
     aRun.PortableTimerResult,
@@ -536,8 +623,14 @@ function BenchmarkTTaskSimpleAsyncCall: TBenchmarkResult; forward;
 function BenchmarkAsyncLoop: TBenchmarkResult; forward;
 function BenchmarkTTaskParallelFor: TBenchmarkResult; forward;
 function BenchmarkAsyncCollectionProcessor: TBenchmarkResult; forward;
+function BenchmarkAsyncCollectionProcessorLockedRing: TBenchmarkResult; forward;
+function BenchmarkAsyncCollectionProcessorLockFree: TBenchmarkResult; forward;
 function BenchmarkAsyncCollectionProcessorBatched: TBenchmarkResult; forward;
+function BenchmarkAsyncCollectionProcessorBatchedLockedRing: TBenchmarkResult; forward;
+function BenchmarkAsyncCollectionProcessorBatchedLockFree: TBenchmarkResult; forward;
 function BenchmarkAsyncCollectionProcessorMultiProducer: TBenchmarkResult; forward;
+function BenchmarkAsyncCollectionProcessorMultiProducerLockedRing: TBenchmarkResult; forward;
+function BenchmarkAsyncCollectionProcessorMultiProducerLockFree: TBenchmarkResult; forward;
 function BenchmarkTTaskThreadedQueueProcessor: TBenchmarkResult; forward;
 function BenchmarkAsyncTimerCompatibility: TBenchmarkResult; forward;
 function BenchmarkPortableTimer: TBenchmarkResult; forward;
@@ -551,8 +644,14 @@ begin
   aRun.AsyncLoopResult := BenchmarkAsyncLoop;
   aRun.TaskParallelForResult := BenchmarkTTaskParallelFor;
   aRun.CollectionResult := BenchmarkAsyncCollectionProcessor;
+  aRun.CollectionLockedRingResult := BenchmarkAsyncCollectionProcessorLockedRing;
+  aRun.CollectionLockFreeResult := BenchmarkAsyncCollectionProcessorLockFree;
   aRun.CollectionBatchedResult := BenchmarkAsyncCollectionProcessorBatched;
+  aRun.CollectionBatchedLockedRingResult := BenchmarkAsyncCollectionProcessorBatchedLockedRing;
+  aRun.CollectionBatchedLockFreeResult := BenchmarkAsyncCollectionProcessorBatchedLockFree;
   aRun.CollectionMultiProducerResult := BenchmarkAsyncCollectionProcessorMultiProducer;
+  aRun.CollectionMultiProducerLockedRingResult := BenchmarkAsyncCollectionProcessorMultiProducerLockedRing;
+  aRun.CollectionMultiProducerLockFreeResult := BenchmarkAsyncCollectionProcessorMultiProducerLockFree;
   aRun.TaskQueueProcessorResult := BenchmarkTTaskThreadedQueueProcessor;
   aRun.AsyncTimerResult := BenchmarkAsyncTimerCompatibility;
   aRun.PortableTimerResult := BenchmarkPortableTimer;
@@ -565,8 +664,14 @@ begin
     aRun.AsyncLoopResult,
     aRun.TaskParallelForResult,
     aRun.CollectionResult,
+    aRun.CollectionLockedRingResult,
+    aRun.CollectionLockFreeResult,
     aRun.CollectionBatchedResult,
+    aRun.CollectionBatchedLockedRingResult,
+    aRun.CollectionBatchedLockFreeResult,
     aRun.CollectionMultiProducerResult,
+    aRun.CollectionMultiProducerLockedRingResult,
+    aRun.CollectionMultiProducerLockFreeResult,
     aRun.TaskQueueProcessorResult,
     aRun.AsyncTimerResult,
     aRun.PortableTimerResult,
@@ -584,8 +689,14 @@ var
   lAsyncLoopOps: TArray<Int64>;
   lTaskParallelOps: TArray<Int64>;
   lCollectionOps: TArray<Int64>;
+  lCollectionLockedRingOps: TArray<Int64>;
+  lCollectionLockFreeOps: TArray<Int64>;
   lCollectionBatchedOps: TArray<Int64>;
+  lCollectionBatchedLockedRingOps: TArray<Int64>;
+  lCollectionBatchedLockFreeOps: TArray<Int64>;
   lCollectionMultiProducerOps: TArray<Int64>;
+  lCollectionMultiProducerLockedRingOps: TArray<Int64>;
+  lCollectionMultiProducerLockFreeOps: TArray<Int64>;
   lTaskQueueOps: TArray<Int64>;
   lAsyncTimerOps: TArray<Int64>;
   lPortableTimerOps: TArray<Int64>;
@@ -596,8 +707,14 @@ var
   lAsyncLoopDurationMs: TArray<Double>;
   lTaskParallelDurationMs: TArray<Double>;
   lCollectionDurationMs: TArray<Double>;
+  lCollectionLockedRingDurationMs: TArray<Double>;
+  lCollectionLockFreeDurationMs: TArray<Double>;
   lCollectionBatchedDurationMs: TArray<Double>;
+  lCollectionBatchedLockedRingDurationMs: TArray<Double>;
+  lCollectionBatchedLockFreeDurationMs: TArray<Double>;
   lCollectionMultiProducerDurationMs: TArray<Double>;
+  lCollectionMultiProducerLockedRingDurationMs: TArray<Double>;
+  lCollectionMultiProducerLockFreeDurationMs: TArray<Double>;
   lTaskQueueDurationMs: TArray<Double>;
   lAsyncTimerDurationMs: TArray<Double>;
   lPortableTimerDurationMs: TArray<Double>;
@@ -615,8 +732,14 @@ begin
   SetLength(lAsyncLoopOps, lCount);
   SetLength(lTaskParallelOps, lCount);
   SetLength(lCollectionOps, lCount);
+  SetLength(lCollectionLockedRingOps, lCount);
+  SetLength(lCollectionLockFreeOps, lCount);
   SetLength(lCollectionBatchedOps, lCount);
+  SetLength(lCollectionBatchedLockedRingOps, lCount);
+  SetLength(lCollectionBatchedLockFreeOps, lCount);
   SetLength(lCollectionMultiProducerOps, lCount);
+  SetLength(lCollectionMultiProducerLockedRingOps, lCount);
+  SetLength(lCollectionMultiProducerLockFreeOps, lCount);
   SetLength(lTaskQueueOps, lCount);
   SetLength(lAsyncTimerOps, lCount);
   SetLength(lPortableTimerOps, lCount);
@@ -628,8 +751,14 @@ begin
   SetLength(lAsyncLoopDurationMs, lCount);
   SetLength(lTaskParallelDurationMs, lCount);
   SetLength(lCollectionDurationMs, lCount);
+  SetLength(lCollectionLockedRingDurationMs, lCount);
+  SetLength(lCollectionLockFreeDurationMs, lCount);
   SetLength(lCollectionBatchedDurationMs, lCount);
+  SetLength(lCollectionBatchedLockedRingDurationMs, lCount);
+  SetLength(lCollectionBatchedLockFreeDurationMs, lCount);
   SetLength(lCollectionMultiProducerDurationMs, lCount);
+  SetLength(lCollectionMultiProducerLockedRingDurationMs, lCount);
+  SetLength(lCollectionMultiProducerLockFreeDurationMs, lCount);
   SetLength(lTaskQueueDurationMs, lCount);
   SetLength(lAsyncTimerDurationMs, lCount);
   SetLength(lPortableTimerDurationMs, lCount);
@@ -643,8 +772,14 @@ begin
     lAsyncLoopOps[i] := aRuns[i].Metrics.AsyncLoopOpsPerSec;
     lTaskParallelOps[i] := aRuns[i].Metrics.TaskParallelForOpsPerSec;
     lCollectionOps[i] := aRuns[i].Metrics.AsyncCollectionProcessorOpsPerSec;
+    lCollectionLockedRingOps[i] := aRuns[i].Metrics.AsyncCollectionProcessorLockedRingOpsPerSec;
+    lCollectionLockFreeOps[i] := aRuns[i].Metrics.AsyncCollectionProcessorLockFreeOpsPerSec;
     lCollectionBatchedOps[i] := aRuns[i].Metrics.AsyncCollectionProcessorBatchedOpsPerSec;
+    lCollectionBatchedLockedRingOps[i] := aRuns[i].Metrics.AsyncCollectionProcessorBatchedLockedRingOpsPerSec;
+    lCollectionBatchedLockFreeOps[i] := aRuns[i].Metrics.AsyncCollectionProcessorBatchedLockFreeOpsPerSec;
     lCollectionMultiProducerOps[i] := aRuns[i].Metrics.AsyncCollectionProcessorMultiProducerOpsPerSec;
+    lCollectionMultiProducerLockedRingOps[i] := aRuns[i].Metrics.AsyncCollectionProcessorMultiProducerLockedRingOpsPerSec;
+    lCollectionMultiProducerLockFreeOps[i] := aRuns[i].Metrics.AsyncCollectionProcessorMultiProducerLockFreeOpsPerSec;
     lTaskQueueOps[i] := aRuns[i].Metrics.TaskThreadedQueueProcessorOpsPerSec;
     lAsyncTimerOps[i] := aRuns[i].Metrics.AsyncTimerOpsPerSec;
     lPortableTimerOps[i] := aRuns[i].Metrics.PortableTimerOpsPerSec;
@@ -656,8 +791,14 @@ begin
     lAsyncLoopDurationMs[i] := aRuns[i].AsyncLoopResult.DurationMs;
     lTaskParallelDurationMs[i] := aRuns[i].TaskParallelForResult.DurationMs;
     lCollectionDurationMs[i] := aRuns[i].CollectionResult.DurationMs;
+    lCollectionLockedRingDurationMs[i] := aRuns[i].CollectionLockedRingResult.DurationMs;
+    lCollectionLockFreeDurationMs[i] := aRuns[i].CollectionLockFreeResult.DurationMs;
     lCollectionBatchedDurationMs[i] := aRuns[i].CollectionBatchedResult.DurationMs;
+    lCollectionBatchedLockedRingDurationMs[i] := aRuns[i].CollectionBatchedLockedRingResult.DurationMs;
+    lCollectionBatchedLockFreeDurationMs[i] := aRuns[i].CollectionBatchedLockFreeResult.DurationMs;
     lCollectionMultiProducerDurationMs[i] := aRuns[i].CollectionMultiProducerResult.DurationMs;
+    lCollectionMultiProducerLockedRingDurationMs[i] := aRuns[i].CollectionMultiProducerLockedRingResult.DurationMs;
+    lCollectionMultiProducerLockFreeDurationMs[i] := aRuns[i].CollectionMultiProducerLockFreeResult.DurationMs;
     lTaskQueueDurationMs[i] := aRuns[i].TaskQueueProcessorResult.DurationMs;
     lAsyncTimerDurationMs[i] := aRuns[i].AsyncTimerResult.DurationMs;
     lPortableTimerDurationMs[i] := aRuns[i].PortableTimerResult.DurationMs;
@@ -670,8 +811,14 @@ begin
   Result.Metrics.AsyncLoopOpsPerSec := MedianInt64(lAsyncLoopOps);
   Result.Metrics.TaskParallelForOpsPerSec := MedianInt64(lTaskParallelOps);
   Result.Metrics.AsyncCollectionProcessorOpsPerSec := MedianInt64(lCollectionOps);
+  Result.Metrics.AsyncCollectionProcessorLockedRingOpsPerSec := MedianInt64(lCollectionLockedRingOps);
+  Result.Metrics.AsyncCollectionProcessorLockFreeOpsPerSec := MedianInt64(lCollectionLockFreeOps);
   Result.Metrics.AsyncCollectionProcessorBatchedOpsPerSec := MedianInt64(lCollectionBatchedOps);
+  Result.Metrics.AsyncCollectionProcessorBatchedLockedRingOpsPerSec := MedianInt64(lCollectionBatchedLockedRingOps);
+  Result.Metrics.AsyncCollectionProcessorBatchedLockFreeOpsPerSec := MedianInt64(lCollectionBatchedLockFreeOps);
   Result.Metrics.AsyncCollectionProcessorMultiProducerOpsPerSec := MedianInt64(lCollectionMultiProducerOps);
+  Result.Metrics.AsyncCollectionProcessorMultiProducerLockedRingOpsPerSec := MedianInt64(lCollectionMultiProducerLockedRingOps);
+  Result.Metrics.AsyncCollectionProcessorMultiProducerLockFreeOpsPerSec := MedianInt64(lCollectionMultiProducerLockFreeOps);
   Result.Metrics.TaskThreadedQueueProcessorOpsPerSec := MedianInt64(lTaskQueueOps);
   Result.Metrics.AsyncTimerOpsPerSec := MedianInt64(lAsyncTimerOps);
   Result.Metrics.PortableTimerOpsPerSec := MedianInt64(lPortableTimerOps);
@@ -683,8 +830,14 @@ begin
   Result.AsyncLoopResult.DurationMs := MedianDouble(lAsyncLoopDurationMs);
   Result.TaskParallelForResult.DurationMs := MedianDouble(lTaskParallelDurationMs);
   Result.CollectionResult.DurationMs := MedianDouble(lCollectionDurationMs);
+  Result.CollectionLockedRingResult.DurationMs := MedianDouble(lCollectionLockedRingDurationMs);
+  Result.CollectionLockFreeResult.DurationMs := MedianDouble(lCollectionLockFreeDurationMs);
   Result.CollectionBatchedResult.DurationMs := MedianDouble(lCollectionBatchedDurationMs);
+  Result.CollectionBatchedLockedRingResult.DurationMs := MedianDouble(lCollectionBatchedLockedRingDurationMs);
+  Result.CollectionBatchedLockFreeResult.DurationMs := MedianDouble(lCollectionBatchedLockFreeDurationMs);
   Result.CollectionMultiProducerResult.DurationMs := MedianDouble(lCollectionMultiProducerDurationMs);
+  Result.CollectionMultiProducerLockedRingResult.DurationMs := MedianDouble(lCollectionMultiProducerLockedRingDurationMs);
+  Result.CollectionMultiProducerLockFreeResult.DurationMs := MedianDouble(lCollectionMultiProducerLockFreeDurationMs);
   Result.TaskQueueProcessorResult.DurationMs := MedianDouble(lTaskQueueDurationMs);
   Result.AsyncTimerResult.DurationMs := MedianDouble(lAsyncTimerDurationMs);
   Result.PortableTimerResult.DurationMs := MedianDouble(lPortableTimerDurationMs);
@@ -839,7 +992,23 @@ begin
   Result.DurationMs := lStopwatch.Elapsed.TotalMilliseconds;
 end;
 
-function BenchmarkAsyncCollectionProcessor: TBenchmarkResult;
+procedure ConfigureCollectionProcessorQueueMode(
+  const aProcessor: TAsyncCollectionProcessor<TWorkItem>;
+  const aThreadCount: Integer;
+  const aQueueMode: TAsyncCollectionProcessorQueueMode);
+begin
+  aProcessor.SimultanousThreadCount := aThreadCount;
+  if aQueueMode <> acpqmLegacyLockedQueue then
+  begin
+    aProcessor.QueueMode := aQueueMode;
+    aProcessor.QueueCapacity := cCollectionQueueCapacity;
+    aProcessor.BackpressureMode := acpbmBlock;
+  end;
+end;
+
+function BenchmarkAsyncCollectionProcessorMode(
+  const aQueueMode: TAsyncCollectionProcessorQueueMode;
+  const aResultName: string): TBenchmarkResult;
 var
   i: Integer;
   lProcessor: TAsyncCollectionProcessor<TWorkItem>;
@@ -847,7 +1016,7 @@ var
   lStopwatch: TStopwatch;
   lThreadCount: Integer;
 begin
-  Result.Name := 'TAsyncCollectionProcessor';
+  Result.Name := aResultName;
   Result.UnitsProcessed := cCollectionItems;
 
   lThreadCount := Max(1, TThread.ProcessorCount);
@@ -855,7 +1024,7 @@ begin
 
   lProcessor := TAsyncCollectionProcessor<TWorkItem>.Create;
   try
-    lProcessor.SimultanousThreadCount := lThreadCount;
+    ConfigureCollectionProcessorQueueMode(lProcessor, lThreadCount, aQueueMode);
     lProcessor.Proc :=
       procedure(const aItem: TWorkItem)
       begin
@@ -877,12 +1046,14 @@ begin
   end;
 
   if lProcessedCount <> cCollectionItems then
-    raise Exception.CreateFmt('TAsyncCollectionProcessor processed %d/%d items.', [lProcessedCount, cCollectionItems]);
+    raise Exception.CreateFmt('%s processed %d/%d items.', [aResultName, lProcessedCount, cCollectionItems]);
 
   Result.DurationMs := lStopwatch.Elapsed.TotalMilliseconds;
 end;
 
-function BenchmarkAsyncCollectionProcessorBatched: TBenchmarkResult;
+function BenchmarkAsyncCollectionProcessorBatchedMode(
+  const aQueueMode: TAsyncCollectionProcessorQueueMode;
+  const aResultName: string): TBenchmarkResult;
 var
   lProcessor: TAsyncCollectionProcessor<TWorkItem>;
   lProcessedCount: Integer;
@@ -893,7 +1064,7 @@ var
   lBatch: TArray<TWorkItem>;
   i: Integer;
 begin
-  Result.Name := 'TAsyncCollectionProcessor.BatchedAddStorm';
+  Result.Name := aResultName;
   Result.UnitsProcessed := cCollectionItems;
 
   lThreadCount := Max(1, TThread.ProcessorCount);
@@ -902,7 +1073,7 @@ begin
 
   lProcessor := TAsyncCollectionProcessor<TWorkItem>.Create;
   try
-    lProcessor.SimultanousThreadCount := lThreadCount;
+    ConfigureCollectionProcessorQueueMode(lProcessor, lThreadCount, aQueueMode);
     lProcessor.Proc :=
       procedure(const aItem: TWorkItem)
       begin
@@ -932,12 +1103,14 @@ begin
   end;
 
   if lProcessedCount <> cCollectionItems then
-    raise Exception.CreateFmt('Batched processor processed %d/%d items.', [lProcessedCount, cCollectionItems]);
+    raise Exception.CreateFmt('%s processed %d/%d items.', [aResultName, lProcessedCount, cCollectionItems]);
 
   Result.DurationMs := lStopwatch.Elapsed.TotalMilliseconds;
 end;
 
-function BenchmarkAsyncCollectionProcessorMultiProducer: TBenchmarkResult;
+function BenchmarkAsyncCollectionProcessorMultiProducerMode(
+  const aQueueMode: TAsyncCollectionProcessorQueueMode;
+  const aResultName: string): TBenchmarkResult;
 var
   lProcessor: TAsyncCollectionProcessor<TWorkItem>;
   lProcessedCount: Integer;
@@ -952,7 +1125,7 @@ begin
   lProducerCount := Min(cMultiProducerCount, Max(2, TThread.ProcessorCount));
   lExpected := lProducerCount * cMultiProducerItemsPerProducer;
 
-  Result.Name := 'TAsyncCollectionProcessor.MultiProducerContention';
+  Result.Name := aResultName;
   Result.UnitsProcessed := lExpected;
 
   lThreadCount := Max(1, TThread.ProcessorCount);
@@ -960,7 +1133,7 @@ begin
 
   lProcessor := TAsyncCollectionProcessor<TWorkItem>.Create;
   try
-    lProcessor.SimultanousThreadCount := lThreadCount;
+    ConfigureCollectionProcessorQueueMode(lProcessor, lThreadCount, aQueueMode);
     lProcessor.Proc :=
       procedure(const aItem: TWorkItem)
       begin
@@ -994,9 +1167,54 @@ begin
   end;
 
   if lProcessedCount <> lExpected then
-    raise Exception.CreateFmt('Multi-producer processor processed %d/%d items.', [lProcessedCount, lExpected]);
+    raise Exception.CreateFmt('%s processed %d/%d items.', [aResultName, lProcessedCount, lExpected]);
 
   Result.DurationMs := lStopwatch.Elapsed.TotalMilliseconds;
+end;
+
+function BenchmarkAsyncCollectionProcessor: TBenchmarkResult;
+begin
+  Result := BenchmarkAsyncCollectionProcessorMode(acpqmLegacyLockedQueue, 'TAsyncCollectionProcessor');
+end;
+
+function BenchmarkAsyncCollectionProcessorLockedRing: TBenchmarkResult;
+begin
+  Result := BenchmarkAsyncCollectionProcessorMode(acpqmLockedRingQueue, 'TAsyncCollectionProcessor.LockedRingQueue');
+end;
+
+function BenchmarkAsyncCollectionProcessorLockFree: TBenchmarkResult;
+begin
+  Result := BenchmarkAsyncCollectionProcessorMode(acpqmLockFreeMpmcRingQueue, 'TAsyncCollectionProcessor.LockFreeQueue');
+end;
+
+function BenchmarkAsyncCollectionProcessorBatched: TBenchmarkResult;
+begin
+  Result := BenchmarkAsyncCollectionProcessorBatchedMode(acpqmLegacyLockedQueue, 'TAsyncCollectionProcessor.BatchedAddStorm');
+end;
+
+function BenchmarkAsyncCollectionProcessorBatchedLockedRing: TBenchmarkResult;
+begin
+  Result := BenchmarkAsyncCollectionProcessorBatchedMode(acpqmLockedRingQueue, 'TAsyncCollectionProcessor.BatchedAddStorm.LockedRingQueue');
+end;
+
+function BenchmarkAsyncCollectionProcessorBatchedLockFree: TBenchmarkResult;
+begin
+  Result := BenchmarkAsyncCollectionProcessorBatchedMode(acpqmLockFreeMpmcRingQueue, 'TAsyncCollectionProcessor.BatchedAddStorm.LockFreeQueue');
+end;
+
+function BenchmarkAsyncCollectionProcessorMultiProducer: TBenchmarkResult;
+begin
+  Result := BenchmarkAsyncCollectionProcessorMultiProducerMode(acpqmLegacyLockedQueue, 'TAsyncCollectionProcessor.MultiProducerContention');
+end;
+
+function BenchmarkAsyncCollectionProcessorMultiProducerLockedRing: TBenchmarkResult;
+begin
+  Result := BenchmarkAsyncCollectionProcessorMultiProducerMode(acpqmLockedRingQueue, 'TAsyncCollectionProcessor.MultiProducerContention.LockedRingQueue');
+end;
+
+function BenchmarkAsyncCollectionProcessorMultiProducerLockFree: TBenchmarkResult;
+begin
+  Result := BenchmarkAsyncCollectionProcessorMultiProducerMode(acpqmLockFreeMpmcRingQueue, 'TAsyncCollectionProcessor.MultiProducerContention.LockFreeQueue');
 end;
 
 function BenchmarkTTaskThreadedQueueProcessor: TBenchmarkResult;
@@ -1152,6 +1370,7 @@ begin
   Writeln(Format('AsyncLoop iterations: %d', [cAsyncLoopIterations]));
   Writeln(Format('Collection items: %d', [cCollectionItems]));
   Writeln(Format('Collection batch size: %d', [cCollectionBatchSize]));
+  Writeln(Format('Collection bounded queue capacity: %d', [cCollectionQueueCapacity]));
   Writeln(Format('Multi-producer adders: %d x %d items', [cMultiProducerCount, cMultiProducerItemsPerProducer]));
   Writeln(Format('Timer ticks: %d @ %d ms', [cTimerTicks, cTimerIntervalMs]));
   Writeln(StringOfChar('-', 92));
@@ -1168,8 +1387,14 @@ begin
   PrintResult(aRun.AsyncLoopResult, aRun.Metrics.AsyncLoopOpsPerSec);
   PrintResult(aRun.TaskParallelForResult, aRun.Metrics.TaskParallelForOpsPerSec);
   PrintResult(aRun.CollectionResult, aRun.Metrics.AsyncCollectionProcessorOpsPerSec);
+  PrintResult(aRun.CollectionLockedRingResult, aRun.Metrics.AsyncCollectionProcessorLockedRingOpsPerSec);
+  PrintResult(aRun.CollectionLockFreeResult, aRun.Metrics.AsyncCollectionProcessorLockFreeOpsPerSec);
   PrintResult(aRun.CollectionBatchedResult, aRun.Metrics.AsyncCollectionProcessorBatchedOpsPerSec);
+  PrintResult(aRun.CollectionBatchedLockedRingResult, aRun.Metrics.AsyncCollectionProcessorBatchedLockedRingOpsPerSec);
+  PrintResult(aRun.CollectionBatchedLockFreeResult, aRun.Metrics.AsyncCollectionProcessorBatchedLockFreeOpsPerSec);
   PrintResult(aRun.CollectionMultiProducerResult, aRun.Metrics.AsyncCollectionProcessorMultiProducerOpsPerSec);
+  PrintResult(aRun.CollectionMultiProducerLockedRingResult, aRun.Metrics.AsyncCollectionProcessorMultiProducerLockedRingOpsPerSec);
+  PrintResult(aRun.CollectionMultiProducerLockFreeResult, aRun.Metrics.AsyncCollectionProcessorMultiProducerLockFreeOpsPerSec);
   PrintResult(aRun.TaskQueueProcessorResult, aRun.Metrics.TaskThreadedQueueProcessorOpsPerSec);
   PrintResult(aRun.AsyncTimerResult, aRun.Metrics.AsyncTimerOpsPerSec);
   PrintResult(aRun.PortableTimerResult, aRun.Metrics.PortableTimerOpsPerSec);
