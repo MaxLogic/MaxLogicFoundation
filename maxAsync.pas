@@ -694,6 +694,9 @@ var
   gAsyncLoopThreadPoolMap: TDictionary<Integer, TThreadPool>;
   gAsyncLoopThreadPoolLock: TObject;
 
+threadvar
+  gSimpleAsyncThreadDataCache: iThreadData;
+
 function GetAsyncLoopThreadPool(const aThreadCount: Integer): TThreadPool;
 begin
   if aThreadCount <= 0 then
@@ -1017,7 +1020,21 @@ end;
 constructor TmaxAsync.Create;
 begin
   inherited Create;
-  fThreadData := TmaxAsyncGlobal.GetThreadData;
+  if gSimpleAsyncThreadDataCache <> nil then
+  begin
+    if gSimpleAsyncThreadDataCache.terminated then
+      gSimpleAsyncThreadDataCache := nil
+    else
+    begin
+      fThreadData := gSimpleAsyncThreadDataCache;
+      gSimpleAsyncThreadDataCache := nil;
+      fThreadData.SetDefaultValues;
+      fThreadData.PoolWakeMode := True;
+    end;
+  end;
+
+  if fThreadData = nil then
+    fThreadData := TmaxAsyncGlobal.GetThreadData;
 end;
 
 destructor TmaxAsync.Destroy;
@@ -1025,7 +1042,14 @@ begin
   if fThreadData <> nil then
   begin
     if (fThreadData.Finished) and (not fThreadData.terminated) then
-      TmaxAsyncGlobal.AddToWaiting(fThreadData, True)
+    begin
+      if InsideMainThread and (gSimpleAsyncThreadDataCache = nil) then
+      begin
+        fThreadData.PoolWakeMode := True;
+        gSimpleAsyncThreadDataCache := fThreadData;
+      end else
+        TmaxAsyncGlobal.AddToWaiting(fThreadData, True);
+    end
     else
     begin
       fThreadData.KeepAlive := False;
@@ -3144,6 +3168,13 @@ initialization
   System.NeverSleepOnMMThreadContention := True;
 
 finalization
+  if gSimpleAsyncThreadDataCache <> nil then
+  begin
+    gSimpleAsyncThreadDataCache.KeepAlive := False;
+    gSimpleAsyncThreadDataCache.WakeUpSignal.setSignaled;
+    gSimpleAsyncThreadDataCache.StartSignal.setSignaled;
+    gSimpleAsyncThreadDataCache := nil;
+  end;
   CleanupAsyncLoopThreadPools;
 
 end.
