@@ -2587,6 +2587,7 @@ end;
 procedure TAsyncCollectionProcessor<t>.WorkerMain(const aThreadId: Int64);
 const
   cBatchSize = 32;
+  cIdleSpinTries = 32;
 var
   lBatch: array[0..cBatchSize - 1] of t;
   lRequestedCount: Integer;
@@ -2595,13 +2596,30 @@ var
   lBatchIndex: Integer;
   lItem: t;
   lProc: TAsyncCollectionProcessorProc<t>;
+  lIdleSpinCount: Integer;
 begin
+  lIdleSpinCount := 0;
   while (fShuttingDown = 0) or (TInterlocked.Read(fPendingItems) <> 0) do
   begin
-    if fItemsAvailable.WaitFor(50) <> wrSignaled then
-      Continue;
+    if fItemsAvailable.WaitFor(0) = wrSignaled then
+    begin
+      lRequestedCount := 1;
+      lIdleSpinCount := 0;
+    end else
+    begin
+      if lIdleSpinCount < cIdleSpinTries then
+      begin
+        Inc(lIdleSpinCount);
+        TThread.Yield;
+        Continue;
+      end;
 
-    lRequestedCount := 1;
+      lIdleSpinCount := 0;
+      if fItemsAvailable.WaitFor(50) <> wrSignaled then
+        Continue;
+
+      lRequestedCount := 1;
+    end;
     while lRequestedCount < cBatchSize do
     begin
       if fItemsAvailable.WaitFor(0) <> wrSignaled then
