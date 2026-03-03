@@ -49,7 +49,9 @@ type
     [Test] procedure ProcessesItemsFromAllAddOverloads;
     [Test] procedure SupportsMultipleBatches;
     [Test] procedure UsesWorkerWhenThreadCountIsZero;
+    [Test] procedure IncreasingThreadCountAfterStartScalesConcurrency;
     [Test] procedure ProcessorCompletesWhenProcRaises;
+    [Test] procedure ProcChangeAppliesToSubsequentItems;
     [Test] procedure WaitForIncludesWorkQueuedFromOnFinished;
     [Test] procedure WaitForIncludesConcurrentAddTriggeredFromOnFinished;
     [Test] procedure OnFinishedCanCallWaitForOnSameProcessor;
@@ -551,6 +553,148 @@ begin
     Assert.AreEqual<Integer>(5, lProcessedCount);
   finally
     lDone.Free;
+    lProcessor.Free;
+  end;
+end;
+
+procedure TAsyncCollectionProcessorTests.IncreasingThreadCountAfterStartScalesConcurrency;
+const
+  cTimeoutMs = 12000;
+  cInitialItems = 48;
+  cAdditionalItems = 320;
+var
+  lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
+  lDone: TEvent;
+  lProcessedCount: Integer;
+  lActiveCount: Integer;
+  lMaxActiveCount: Integer;
+  lThreadCountAfterScale: Integer;
+  lExpectedCount: Integer;
+  lI: Integer;
+begin
+  lProcessor := TAsyncCollectionProcessor<TAsyncWorkItem>.Create;
+  lDone := TEvent.Create(nil, True, False, '');
+  try
+    lProcessedCount := 0;
+    lActiveCount := 0;
+    lMaxActiveCount := 0;
+    lExpectedCount := cInitialItems + cAdditionalItems;
+    lThreadCountAfterScale := Min(4, Max(2, TThread.ProcessorCount));
+
+    lProcessor.SimultanousThreadCount := 1;
+    lProcessor.Proc :=
+      procedure(const aItem: TAsyncWorkItem)
+      var
+        lCurrentActive: Integer;
+        lObservedMax: Integer;
+      begin
+        lCurrentActive := TInterlocked.Increment(lActiveCount);
+        repeat
+          lObservedMax := TInterlocked.CompareExchange(lMaxActiveCount, 0, 0);
+          if lCurrentActive <= lObservedMax then
+            Break;
+        until TInterlocked.CompareExchange(lMaxActiveCount, lCurrentActive, lObservedMax) = lObservedMax;
+        try
+          Sleep(2);
+          TInterlocked.Increment(lProcessedCount);
+        finally
+          TInterlocked.Decrement(lActiveCount);
+          aItem.Free;
+        end;
+      end;
+    lProcessor.OnFinished :=
+      procedure
+      begin
+        lDone.SetEvent;
+      end;
+
+    for lI := 1 to cInitialItems do
+      lProcessor.Add(TAsyncWorkItem.Create(lI));
+
+    Sleep(15);
+    lProcessor.SimultanousThreadCount := lThreadCountAfterScale;
+
+    for lI := 1 to cAdditionalItems do
+      lProcessor.Add(TAsyncWorkItem.Create(cInitialItems + lI));
+
+    Assert.AreEqual<TWaitResult>(wrSignaled, lDone.WaitFor(cTimeoutMs),
+      'Processor did not complete after scaling thread count.');
+    lProcessor.WaitFor;
+
+    Assert.AreEqual<Integer>(lExpectedCount, lProcessedCount,
+      'All queued items should be processed.');
+    Assert.IsTrue(lMaxActiveCount >= 2,
+      Format('Expected concurrency > 1 after increasing thread count, observed max=%d.', [lMaxActiveCount]));
+  finally
+    lDone.Free;
+    lProcessor.Free;
+  end;
+end;
+
+procedure TAsyncCollectionProcessorTests.ProcChangeAppliesToSubsequentItems;
+const
+  cTimeoutMs = 4000;
+var
+  lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
+  lFirstStarted: TEvent;
+  lReleaseFirst: TEvent;
+  lDone: TEvent;
+  lOldProcCount: Integer;
+  lNewProcCount: Integer;
+begin
+  lProcessor := TAsyncCollectionProcessor<TAsyncWorkItem>.Create;
+  lFirstStarted := TEvent.Create(nil, True, False, '');
+  lReleaseFirst := TEvent.Create(nil, True, False, '');
+  lDone := TEvent.Create(nil, True, False, '');
+  try
+    lProcessor.SimultanousThreadCount := 1;
+    lOldProcCount := 0;
+    lNewProcCount := 0;
+
+    lProcessor.Proc := procedure(const aItem: TAsyncWorkItem)
+      begin
+        try
+          TInterlocked.Increment(lOldProcCount);
+          if aItem.Value = 1 then
+          begin
+            lFirstStarted.SetEvent;
+            Assert.AreEqual<TWaitResult>(wrSignaled, lReleaseFirst.WaitFor(cTimeoutMs),
+              'First item was not released in time');
+          end;
+        finally
+          aItem.Free;
+        end;
+      end;
+
+    lProcessor.Add(TAsyncWorkItem.Create(1));
+    Assert.AreEqual<TWaitResult>(wrSignaled, lFirstStarted.WaitFor(cTimeoutMs),
+      'First item did not start in time');
+
+    lProcessor.Proc := procedure(const aItem: TAsyncWorkItem)
+      begin
+        try
+          TInterlocked.Increment(lNewProcCount);
+          lDone.SetEvent;
+        finally
+          aItem.Free;
+        end;
+      end;
+
+    lProcessor.Add(TAsyncWorkItem.Create(2));
+    lReleaseFirst.SetEvent;
+
+    Assert.AreEqual<TWaitResult>(wrSignaled, lDone.WaitFor(cTimeoutMs),
+      'New proc did not process subsequent item');
+    lProcessor.WaitFor;
+
+    Assert.AreEqual<Integer>(1, lOldProcCount,
+      'Old proc should process only the first item');
+    Assert.AreEqual<Integer>(1, lNewProcCount,
+      'New proc should process subsequent items');
+  finally
+    lDone.Free;
+    lReleaseFirst.Free;
+    lFirstStarted.Free;
     lProcessor.Free;
   end;
 end;
