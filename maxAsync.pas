@@ -432,7 +432,10 @@ type
       fLockFreeBuffer: TArray<TLockFreeSlot>;
       fLockFreeMask: Int64;
       fLockFreeEnqueuePos: Int64;
+      // keep hot producer/consumer counters on separate cache lines
+      fLockFreeEnqueuePosPad: array[0..63] of Byte;
       fLockFreeDequeuePos: Int64;
+      fLockFreeDequeuePosPad: array[0..63] of Byte;
       fQueueMode: TAsyncCollectionProcessorQueueMode;
       fBackpressureMode: TAsyncCollectionProcessorBackpressureMode;
       fQueueCapacity: Integer;
@@ -441,9 +444,11 @@ type
       fProc: TAsyncCollectionProcessorProc<t>;
       fProcVersion: Integer;
       fPendingItems: Int64;
+      fPendingItemsPad: array[0..63] of Byte;
       fCompletionInProgress: Integer;
       fCompletionNeedsReplay: Integer;
       fShuttingDown: Integer;
+      fCompletionStatePad: array[0..63] of Byte;
       fOnFinishedThreadId: TThreadID;
 
       fThreads: TList<TThreadHolder>;
