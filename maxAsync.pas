@@ -424,6 +424,7 @@ type
       fWorkSignal: iSignal;
       fSpaceSignal: iSignal;
       fItemsAvailable: TSemaphore;
+      fQueueSpace: TSemaphore;
       fItems: TQueue<t>;
       fRingItems: TArray<t>;
       fRingHead: Integer;
@@ -477,6 +478,9 @@ type
       function LockFreeTryDequeue(out aItem: t): Boolean;
       function BuildQueueCapacity(const aRequestedCapacity: Integer): Integer;
       procedure InitializeQueueStorage;
+      procedure RebuildQueueSpaceSemaphore;
+      function AcquireQueueSpace(const aBlockWhenFull: Boolean): Boolean;
+      procedure ReleaseQueueSpace(const aCount: Integer);
       procedure PublishAddedCount(const aAddedCount: Integer; const aReplayCompletion: Boolean);
       procedure SetIdleNonSignaled;
       procedure SetIdleSignaled;
@@ -2037,6 +2041,7 @@ begin
   fWorkSignal := tSignal.Create;
   fSpaceSignal := tSignal.Create;
   fItemsAvailable := TSemaphore.Create(nil, 0, MaxInt, '');
+  fQueueSpace := nil;
   fIdleSignal.setSignaled;
   fIdleSignalIsSignaled := True;
   fWorkSignal.setNonsignaled;
@@ -2058,6 +2063,14 @@ begin
   TInterlocked.Exchange(fShuttingDown, 1);
   fWorkSignal.setSignaled;
   fSpaceSignal.setSignaled;
+  if Assigned(fQueueSpace) then
+  begin
+    try
+      fQueueSpace.Release(Max(1, BuildQueueCapacity(fQueueCapacity)));
+    except
+      // best-effort wake for blocked producers during shutdown
+    end;
+  end;
   fCriticalSection.Enter;
   try
     lWakeCount := Max(1, fThreads.Count * 2);
@@ -2068,6 +2081,7 @@ begin
   WaitFor;
   WaitForWorkersToExit;
   ClearItems;
+  fQueueSpace.Free;
   fItemsAvailable.Free;
   fItems.Free;
   fThreads.Free;
@@ -2136,6 +2150,58 @@ begin
       end;
   end;
   fSpaceSignal.setSignaled;
+  RebuildQueueSpaceSemaphore;
+end;
+
+procedure TAsyncCollectionProcessor<t>.RebuildQueueSpaceSemaphore;
+var
+  lInitialCount: Integer;
+begin
+  case fQueueMode of
+    acpqmLegacyLockedQueue:
+      lInitialCount := 0;
+    acpqmLockedRingQueue:
+      lInitialCount := Length(fRingItems);
+    acpqmLockFreeMpmcRingQueue:
+      lInitialCount := Length(fLockFreeBuffer);
+  else
+    lInitialCount := 0;
+  end;
+
+  FreeAndNil(fQueueSpace);
+  fQueueSpace := TSemaphore.Create(nil, lInitialCount, MaxInt, '');
+end;
+
+function TAsyncCollectionProcessor<t>.AcquireQueueSpace(const aBlockWhenFull: Boolean): Boolean;
+begin
+  if fQueueMode = acpqmLegacyLockedQueue then
+    Exit(True);
+
+  if fShuttingDown <> 0 then
+    Exit(False);
+
+  if not Assigned(fQueueSpace) then
+    Exit(False);
+
+  if not aBlockWhenFull then
+    Exit(fQueueSpace.WaitFor(0) = wrSignaled);
+
+  repeat
+    if fShuttingDown <> 0 then
+      Exit(False);
+
+    if fQueueSpace.WaitFor(10) = wrSignaled then
+      Exit(True);
+  until False;
+end;
+
+procedure TAsyncCollectionProcessor<t>.ReleaseQueueSpace(const aCount: Integer);
+begin
+  if (aCount <= 0) or (fQueueMode = acpqmLegacyLockedQueue) then
+    Exit;
+
+  if Assigned(fQueueSpace) then
+    fQueueSpace.Release(aCount);
 end;
 
 procedure TAsyncCollectionProcessor<t>.WaitForWorkersToExit;
@@ -2384,16 +2450,21 @@ end;
 function TAsyncCollectionProcessor<t>.EnqueueItem(const aItem: t; const aBlockWhenFull: Boolean): Boolean;
 begin
   repeat
-    if TryEnqueueItem(aItem) then
+    if not AcquireQueueSpace(aBlockWhenFull) then
+      Exit(False);
+
+    if TryEnqueueItemRaw(aItem) then
     begin
       fItemsAvailable.Release;
       Exit(True);
     end;
-    if not aBlockWhenFull then
-      Exit(False);
+
+    ReleaseQueueSpace(1);
+
     if fShuttingDown <> 0 then
       Exit(False);
-    fSpaceSignal.WaitForSignaled(10);
+
+    TThread.Yield;
   until False;
 end;
 
@@ -2439,6 +2510,9 @@ begin
           fSpaceSignal.setSignaled;
       end;
   end;
+
+  if Result then
+    ReleaseQueueSpace(1);
 end;
 
 function TAsyncCollectionProcessor<t>.DequeueBatch(var aBatch: array of t; const aRequestedCount: Integer): Integer;
@@ -2498,6 +2572,9 @@ begin
           fSpaceSignal.setSignaled;
       end;
   end;
+
+  if Result > 0 then
+    ReleaseQueueSpace(Result);
 end;
 
 procedure TAsyncCollectionProcessor<t>.PublishAddedCount(const aAddedCount: Integer; const aReplayCompletion: Boolean);
@@ -2730,22 +2807,23 @@ begin
 
   for lItem in Items do
   begin
+    if not AcquireQueueSpace(lBlockWhenFull) then
+    begin
+      lFailed := True;
+      lFailedBecauseShutdown := fShuttingDown <> 0;
+      Break;
+    end;
+
     while not TryEnqueueItemRaw(lItem) do
     begin
       if fShuttingDown <> 0 then
       begin
+        ReleaseQueueSpace(1);
         lFailed := True;
         lFailedBecauseShutdown := True;
         Break;
       end;
-
-      if not lBlockWhenFull then
-      begin
-        lFailed := True;
-        Break;
-      end;
-
-      fSpaceSignal.WaitForSignaled(10);
+      TThread.Yield;
     end;
 
     if lFailed then
@@ -2801,7 +2879,14 @@ begin
     fCriticalSection.leave;
   end;
 
+  Result := AcquireQueueSpace(False);
+  if not Result then
+    Exit(False);
+
   Result := TryEnqueueItemRaw(Item);
+  if not Result then
+    ReleaseQueueSpace(1);
+
   if Result then
     PublishAddedCount(1, lReplayCompletion);
 end;
@@ -2854,8 +2939,14 @@ begin
 
   for lItem in Items do
   begin
-    if not TryEnqueueItemRaw(lItem) then
+    if not AcquireQueueSpace(False) then
       Break;
+
+    if not TryEnqueueItemRaw(lItem) then
+    begin
+      ReleaseQueueSpace(1);
+      Break;
+    end;
 
     Inc(lAddedCount);
   end;
@@ -2916,15 +3007,21 @@ begin
     fCriticalSection.leave;
   end;
 
-  while not TryEnqueueItemRaw(Item) do
+  if not AcquireQueueSpace(lBlockWhenFull) then
   begin
     if fShuttingDown <> 0 then
       raise Exception.Create('TAsyncCollectionProcessor is shutting down.');
+    raise Exception.Create('TAsyncCollectionProcessor queue is full.');
+  end;
 
-    if not lBlockWhenFull then
-      raise Exception.Create('TAsyncCollectionProcessor queue is full.');
-
-    fSpaceSignal.WaitForSignaled(10);
+  while not TryEnqueueItemRaw(Item) do
+  begin
+    if fShuttingDown <> 0 then
+    begin
+      ReleaseQueueSpace(1);
+      raise Exception.Create('TAsyncCollectionProcessor is shutting down.');
+    end;
+    TThread.Yield;
   end;
 
   PublishAddedCount(1, lReplayCompletion);
@@ -2967,7 +3064,10 @@ begin
     end;
 
     if lRemovedCount <> 0 then
+    begin
       TInterlocked.Add(fPendingItems, -lRemovedCount);
+      ReleaseQueueSpace(lRemovedCount);
+    end;
     if TInterlocked.Read(fPendingItems) <= 0 then
     begin
       TInterlocked.Exchange(fPendingItems, 0);
