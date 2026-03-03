@@ -55,6 +55,7 @@ type
     [Test] procedure ProcessorCompletesWhenProcRaises;
     [Test] procedure ProcChangeAppliesToSubsequentItems;
     [Test] procedure ProcChangeUnderLoadProcessesAllItemsExactlyOnce;
+    [Test] procedure ProcChangeAcrossManyWavesProcessesAllItemsExactlyOnce;
     [Test] procedure RepeatedSingleItemBurstsDoNotMissWakeups;
     [Test] procedure WaitForIncludesWorkQueuedFromOnFinished;
     [Test] procedure WaitForIncludesConcurrentAddTriggeredFromOnFinished;
@@ -845,6 +846,83 @@ begin
     for lItemValue := 1 to lSecondWaveEnd do
       Assert.AreEqual<Integer>(1, lOldProcessed[lItemValue] + lNewProcessed[lItemValue],
         Format('Item %d should be processed exactly once across proc transitions.', [lItemValue]));
+  finally
+    lProcessor.Free;
+  end;
+end;
+
+procedure TAsyncCollectionProcessorTests.ProcChangeAcrossManyWavesProcessesAllItemsExactlyOnce;
+const
+  cInitialItems = 200;
+  cSwitchWaves = 24;
+  cItemsPerWave = 20;
+var
+  lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
+  lProcACount: Integer;
+  lProcBCount: Integer;
+  lProcessedByA: TArray<Integer>;
+  lProcessedByB: TArray<Integer>;
+  lWave: Integer;
+  lItemValue: Integer;
+  lExpectedItems: Integer;
+begin
+  lProcessor := TAsyncCollectionProcessor<TAsyncWorkItem>.Create;
+  try
+    lProcessor.SimultanousThreadCount := Max(2, TThread.ProcessorCount);
+    lProcACount := 0;
+    lProcBCount := 0;
+    lExpectedItems := cInitialItems + (cSwitchWaves * cItemsPerWave);
+    SetLength(lProcessedByA, lExpectedItems + 1);
+    SetLength(lProcessedByB, lExpectedItems + 1);
+
+    lProcessor.Proc := procedure(const aItem: TAsyncWorkItem)
+      begin
+        try
+          TInterlocked.Increment(lProcACount);
+          TInterlocked.Increment(lProcessedByA[aItem.Value]);
+        finally
+          aItem.Free;
+        end;
+      end;
+
+    for lItemValue := 1 to cInitialItems do
+      lProcessor.Add(TAsyncWorkItem.Create(lItemValue));
+
+    for lWave := 1 to cSwitchWaves do
+    begin
+      if Odd(lWave) then
+        lProcessor.Proc := procedure(const aItem: TAsyncWorkItem)
+          begin
+            try
+              TInterlocked.Increment(lProcBCount);
+              TInterlocked.Increment(lProcessedByB[aItem.Value]);
+            finally
+              aItem.Free;
+            end;
+          end
+      else
+        lProcessor.Proc := procedure(const aItem: TAsyncWorkItem)
+          begin
+            try
+              TInterlocked.Increment(lProcACount);
+              TInterlocked.Increment(lProcessedByA[aItem.Value]);
+            finally
+              aItem.Free;
+            end;
+          end;
+
+      for lItemValue := 1 to cItemsPerWave do
+        lProcessor.Add(TAsyncWorkItem.Create(cInitialItems + ((lWave - 1) * cItemsPerWave) + lItemValue));
+    end;
+
+    lProcessor.WaitFor;
+
+    Assert.IsTrue((lProcACount > 0) and (lProcBCount > 0),
+      'Both proc delegates should process items across multiple proc changes.');
+
+    for lItemValue := 1 to lExpectedItems do
+      Assert.AreEqual<Integer>(1, lProcessedByA[lItemValue] + lProcessedByB[lItemValue],
+        Format('Item %d should be processed exactly once across repeated proc changes.', [lItemValue]));
   finally
     lProcessor.Free;
   end;

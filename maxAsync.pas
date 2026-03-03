@@ -439,6 +439,7 @@ type
       FSimultanousThreadCount: integer;
       FOnFinished: TThreadProcedure;
       fProc: TAsyncCollectionProcessorProc<t>;
+      fProcVersion: Integer;
       fPendingItems: Int64;
       fCompletionInProgress: Integer;
       fCompletionNeedsReplay: Integer;
@@ -2037,6 +2038,7 @@ begin
   fSpaceSignal.setSignaled;
 
   fPendingItems := 0;
+  fProcVersion := 0;
   fCompletionInProgress := 0;
   fCompletionNeedsReplay := 0;
   fShuttingDown := 0;
@@ -2596,8 +2598,12 @@ var
   lBatchIndex: Integer;
   lItem: t;
   lProc: TAsyncCollectionProcessorProc<t>;
+  lProcVersion: Integer;
+  lCurrentProcVersion: Integer;
   lIdleSpinCount: Integer;
 begin
+  lProc := nil;
+  lProcVersion := -1;
   lIdleSpinCount := 0;
   while (fShuttingDown = 0) or (TInterlocked.Read(fPendingItems) <> 0) do
   begin
@@ -2635,11 +2641,16 @@ begin
     if lBatchCount = 0 then
       Continue;
 
-    fCriticalSection.Enter;
-    try
-      lProc := fProc;
-    finally
-      fCriticalSection.leave;
+    lCurrentProcVersion := TInterlocked.CompareExchange(fProcVersion, 0, 0);
+    if lCurrentProcVersion <> lProcVersion then
+    begin
+      fCriticalSection.Enter;
+      try
+        lProc := fProc;
+        lProcVersion := fProcVersion;
+      finally
+        fCriticalSection.leave;
+      end;
     end;
 
     if not Assigned(lProc) then
@@ -2982,6 +2993,7 @@ begin
   fCriticalSection.Enter;
   try
     fProc := Value;
+    TInterlocked.Increment(fProcVersion);
   finally
     fCriticalSection.leave;
   end;
