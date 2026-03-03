@@ -52,6 +52,7 @@ type
     [Test] procedure IncreasingThreadCountAfterStartScalesConcurrency;
     [Test] procedure ProcessorCompletesWhenProcRaises;
     [Test] procedure ProcChangeAppliesToSubsequentItems;
+    [Test] procedure RepeatedSingleItemBurstsDoNotMissWakeups;
     [Test] procedure WaitForIncludesWorkQueuedFromOnFinished;
     [Test] procedure WaitForIncludesConcurrentAddTriggeredFromOnFinished;
     [Test] procedure OnFinishedCanCallWaitForOnSameProcessor;
@@ -699,6 +700,49 @@ begin
   end;
 end;
 
+procedure TAsyncCollectionProcessorTests.RepeatedSingleItemBurstsDoNotMissWakeups;
+const
+  cBursts = 800;
+  cItemTimeoutMs = 3000;
+var
+  lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
+  lItemDone: TEvent;
+  lProcessedCount: Integer;
+  lI: Integer;
+begin
+  lProcessor := TAsyncCollectionProcessor<TAsyncWorkItem>.Create;
+  lItemDone := TEvent.Create(nil, True, False, '');
+  try
+    lProcessedCount := 0;
+    lProcessor.SimultanousThreadCount := Max(2, TThread.ProcessorCount);
+    lProcessor.Proc :=
+      procedure(const aItem: TAsyncWorkItem)
+      begin
+        try
+          TInterlocked.Increment(lProcessedCount);
+          lItemDone.SetEvent;
+        finally
+          aItem.Free;
+        end;
+      end;
+
+    for lI := 1 to cBursts do
+    begin
+      lItemDone.ResetEvent;
+      lProcessor.Add(TAsyncWorkItem.Create(lI));
+      Assert.AreEqual<TWaitResult>(wrSignaled, lItemDone.WaitFor(cItemTimeoutMs),
+        Format('Missed worker wakeup for burst %d/%d.', [lI, cBursts]));
+    end;
+
+    lProcessor.WaitFor;
+    Assert.AreEqual<Integer>(cBursts, lProcessedCount,
+      'Each single-item burst should be processed exactly once.');
+  finally
+    lItemDone.Free;
+    lProcessor.Free;
+  end;
+end;
+
 procedure TAsyncCollectionProcessorTests.WaitForIncludesWorkQueuedFromOnFinished;
 var
   lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
@@ -888,6 +932,8 @@ const
 var
   lProcessor: TAsyncCollectionProcessor<TAsyncWorkItem>;
   lDone: TEvent;
+  lWaitDone: TEvent;
+  lWaitAsync: iAsync;
   lProcessedCount: Integer;
   lAddErrors: Integer;
   lProducers: TArray<iAsync>;
@@ -897,6 +943,7 @@ var
 begin
   lProcessor := TAsyncCollectionProcessor<TAsyncWorkItem>.Create;
   lDone := TEvent.Create(nil, True, False, '');
+  lWaitDone := TEvent.Create(nil, True, False, '');
   try
     lProcessedCount := 0;
     lAddErrors := 0;
@@ -944,11 +991,24 @@ begin
 
     Assert.AreEqual<TWaitResult>(wrSignaled, lDone.WaitFor(cTimeoutMs),
       'Processor did not report completion for concurrent producers');
-    lProcessor.WaitFor;
+
+    lWaitAsync := SimpleAsyncCall(
+      procedure
+      begin
+        lProcessor.WaitFor;
+        lWaitDone.SetEvent;
+      end,
+      'ConcurrentProducersProcessAllItems.WaitFor');
+
+    Assert.AreEqual<TWaitResult>(wrSignaled, lWaitDone.WaitFor(cTimeoutMs),
+      Format('Processor WaitFor stalled (processed=%d expected=%d addErrors=%d).',
+      [lProcessedCount, lExpectedCount, lAddErrors]));
+    lWaitAsync.WaitFor;
 
     Assert.AreEqual<Integer>(0, lAddErrors);
     Assert.AreEqual<Integer>(lExpectedCount, lProcessedCount);
   finally
+    lWaitDone.Free;
     lDone.Free;
     lProcessor.Free;
   end;
