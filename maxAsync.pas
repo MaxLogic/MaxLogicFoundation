@@ -478,6 +478,7 @@ type
       procedure HandleProcessorExceptionObject(const aException: Exception);
       procedure HandleProcessorException(const aExceptionClassName, aExceptionMessage: string);
       function CreateThreadHolder: TThreadHolder;
+      function GetEffectiveThreadCount: Integer;
       function IsOnFinishedThread: Boolean;
     public
       constructor Create;
@@ -2118,14 +2119,29 @@ begin
     end, classname + 'Worker.' + IntToStr(lId));
 end;
 
-procedure TAsyncCollectionProcessor<t>.EnsureWorkersStarted;
+function TAsyncCollectionProcessor<t>.GetEffectiveThreadCount: Integer;
 begin
+  Result := FSimultanousThreadCount;
+  // Legacy queue is lock-based; capping workers avoids lock thrash under high thread counts.
+  if fQueueMode = acpqmLegacyLockedQueue then
+    Result := Min(Result, 2);
+
+  if Result < 1 then
+    Result := 1;
+end;
+
+procedure TAsyncCollectionProcessor<t>.EnsureWorkersStarted;
+var
+  lEffectiveThreadCount: Integer;
+begin
+  lEffectiveThreadCount := GetEffectiveThreadCount;
+
   fCriticalSection.Enter;
   try
     if fShuttingDown <> 0 then
       Exit;
 
-    while fThreads.Count < FSimultanousThreadCount do
+    while fThreads.Count < lEffectiveThreadCount do
       fThreads.Add(CreateThreadHolder);
   finally
     fCriticalSection.leave;
