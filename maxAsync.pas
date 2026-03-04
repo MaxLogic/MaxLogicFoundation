@@ -807,7 +807,8 @@ var
 begin
   Async := TmaxAsync.Create;
   {$IFDEF MsWindows}
-  Async.Priority := aThreadPriority;
+  if aThreadPriority <> tpNormal then
+    Async.Priority := aThreadPriority;
   {$ENDIF}
   Result := Async;
   if not assigned(SyncedAfterDone) then
@@ -1113,10 +1114,8 @@ end;
 
 procedure TmaxAsync.WaitFor;
 begin
-  // if not fThreadData.Finished then
-  // if fThreadData.Thread <> nil then
-  fThreadData.ReadySignal.waitforSignaled;
-  // fThreadData.Thread.WaitFor;
+  if not fThreadData.Finished then
+    fThreadData.ReadySignal.waitforSignaled;
 end;
 
 { TTHreadData }
@@ -1291,7 +1290,7 @@ begin
   FWakeSignal.setNonsignaled;
 
   {$IFDEF MsWindows}
-  if assigned(fThread) then
+  if assigned(fThread) and (self.fThread.Priority <> TThreadPriority.tpNormal) then
     self.fThread.Priority := TThreadPriority.tpNormal;
   {$ENDIF}
 end;
