@@ -78,3 +78,10 @@ dunitx-results.xml
 pas-api-map.md
 /TASKS.md
 /spec.md
+.roundtable/
+tmp*.json
+temp*.json
+tmp*.md
+.tmp*
+/tests/dunitx-vcl-results.xml
+/tests/.wsl-bat-launcher.gfazqF.cmd
