@@ -4,14 +4,14 @@ interface
 
 Uses
   {$IFDEF MSWINDOWS}
-  winApi.Windows, vcl.Forms, winApi.Messages, System.UITypes, vcl.dialogs,
+  Winapi.Windows, Vcl.Forms, Winapi.Messages, System.UITypes, Vcl.Dialogs,
   {$ENDIF}
-  {$IFDEF LINUX}
-  posix.sysTypes,
-  posix.pthread,
+  {$IFDEF FPC}
+  Classes, SysUtils, SyncObjs,
+  {$ELSE}
+  System.Classes, System.SysUtils, System.SyncObjs,
   {$ENDIF}
-  system.Classes, system.SysUtils, system.SyncObjs,
-  generics.defaults, generics.Collections;
+  Generics.Defaults, Generics.Collections;
 
 Type
 
@@ -63,8 +63,10 @@ Procedure MsgWaitForSingleObject(Handle: THandle; TimeOut: Cardinal = infinite);
 
 implementation
 
+{$IFNDEF FPC}
 uses
   System.Diagnostics;
+{$ENDIF}
 
 Function InsideMainThread: boolean;
 Begin
