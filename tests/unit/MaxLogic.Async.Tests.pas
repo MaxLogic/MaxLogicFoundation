@@ -36,6 +36,7 @@ type
     [Test] procedure WakeUpWaitForBlocksUntilBodyCompletes;
     [Test] procedure InsideMainThreadReflectsThreadContext;
     [Test] procedure GetThreadNameReturnsCurrentTaskName;
+    [Test] procedure WakeUpUpdatesThreadNameForLookup;
   end;
 
   [TestFixture]
@@ -43,6 +44,7 @@ type
   public
     [Test] procedure ExecuteAndWaitForCompletesRange;
     [Test] procedure RunAndWaitUsesDefaultThreadCountForNegativeValue;
+    [Test] procedure RunAndWaitWithProcessorCountCompletesRange;
     [Test] procedure RunSignalsOnDoneWhenBodyRaises;
     [Test] procedure CancelIsIdempotentForLargeMax;
   end;
@@ -449,6 +451,34 @@ begin
   Assert.AreEqual(lTaskName, lResolvedName);
 end;
 
+procedure TSimpleAsyncCallTests.WakeUpUpdatesThreadNameForLookup;
+var
+  lAsync: iAsync;
+  lThreadId: TThreadID;
+  lResolvedName: string;
+begin
+  lThreadId := 0;
+  lAsync := SimpleAsyncCall(
+    procedure
+    begin
+      lThreadId := TThread.CurrentThread.ThreadId;
+    end,
+    'WakeUpUpdatesThreadNameForLookup.First');
+  lAsync.WaitFor;
+  Assert.AreEqual('WakeUpUpdatesThreadNameForLookup.First', TmaxAsyncGlobal.GetThreadName(lThreadId));
+
+  lAsync.WakeUp(
+    procedure
+    begin
+      lThreadId := TThread.CurrentThread.ThreadId;
+    end,
+    'WakeUpUpdatesThreadNameForLookup.Second');
+  lAsync.WaitFor;
+
+  lResolvedName := TmaxAsyncGlobal.GetThreadName(lThreadId);
+  Assert.AreEqual('WakeUpUpdatesThreadNameForLookup.Second', lResolvedName);
+end;
+
 procedure TAsyncLoopCoverageTests.ExecuteAndWaitForCompletesRange;
 var
   lLoop: TAsyncLoop;
@@ -492,6 +522,27 @@ begin
     on lException: Exception do
       Assert.Fail('Negative ThreadCount should not raise: ' + lException.ClassName + ' - ' + lException.Message);
   end;
+
+  Assert.AreEqual<Integer>(lMax + 1, lCalls);
+end;
+
+procedure TAsyncLoopCoverageTests.RunAndWaitWithProcessorCountCompletesRange;
+var
+  lCalls: Integer;
+  lMax: Integer;
+  lThreadCount: Integer;
+begin
+  lCalls := 0;
+  lMax := 500;
+  lThreadCount := Max(1, TThread.ProcessorCount);
+
+  TAsyncLoop.RunAndWait(0, lMax,
+    procedure(aCurIndex: integer; var aCancel: boolean)
+    begin
+      TInterlocked.Increment(lCalls);
+      aCancel := False;
+    end,
+    lThreadCount);
 
   Assert.AreEqual<Integer>(lMax + 1, lCalls);
 end;
