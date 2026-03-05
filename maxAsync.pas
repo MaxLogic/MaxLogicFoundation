@@ -1113,9 +1113,17 @@ begin
 end;
 
 procedure TmaxAsync.WaitFor;
+const
+  cWaitPollTimeoutMs = 2;
 begin
-  if not fThreadData.Finished then
-    fThreadData.ReadySignal.waitforSignaled;
+  if fThreadData.Finished then
+    Exit;
+
+  if fThreadData.ReadySignal.WaitForSignaled(cWaitPollTimeoutMs) = wrSignaled then
+    Exit;
+
+  while not fThreadData.Finished do
+    fThreadData.ReadySignal.WaitForSignaled(cWaitPollTimeoutMs);
 end;
 
 { TTHreadData }
@@ -3147,9 +3155,11 @@ end;
 {$IFDEF MsWindows}
 
 procedure TmaxAsync.msgwaitfor;
+const
+  cMsgWaitPollTimeoutMs = 10;
 begin
   while not fThreadData.Finished do
-    fThreadData.ReadySignal.MsgWaitForSignaled;
+    fThreadData.ReadySignal.MsgWaitForSignaled(cMsgWaitPollTimeoutMs);
 end;
 {$ENDIF}
 

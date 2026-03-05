@@ -117,7 +117,8 @@ type
 
 const
   cSimpleAsyncCalls = 25000;
-  cAsyncLoopIterations = 300000;
+  cAsyncLoopIterations = 2000000;
+  cAsyncLoopWarmupIterations = 200000;
   cCollectionItems = 300000;
   cCollectionBatchSize = 128;
   cCollectionQueueCapacity = 4096;
@@ -1358,12 +1359,24 @@ var
   lIterationsDone: Integer;
   lStopwatch: TStopwatch;
   lThreadCount: Integer;
+  lWarmupIterations: Integer;
 begin
   Result.Name := 'TAsyncLoop.RunAndWait';
   Result.UnitsProcessed := cAsyncLoopIterations;
 
   lIterationsDone := 0;
   lThreadCount := Max(1, TThread.ProcessorCount);
+  lWarmupIterations := Min(cAsyncLoopWarmupIterations, cAsyncLoopIterations);
+
+  if lWarmupIterations > 0 then
+  begin
+    TAsyncLoop.RunAndWait(0, lWarmupIterations - 1,
+      procedure(aCurIndex: integer; var aCancel: boolean)
+      begin
+        aCancel := False;
+      end,
+      lThreadCount);
+  end;
 
   lStopwatch := TStopwatch.StartNew;
   TAsyncLoop.RunAndWait(0, cAsyncLoopIterations - 1,
@@ -1385,10 +1398,20 @@ function BenchmarkTTaskParallelFor: TBenchmarkResult;
 var
   lIterationsDone: Integer;
   lStopwatch: TStopwatch;
+  lWarmupIterations: Integer;
 begin
   Result.Name := 'TParallel.For';
   Result.UnitsProcessed := cAsyncLoopIterations;
   lIterationsDone := 0;
+  lWarmupIterations := Min(cAsyncLoopWarmupIterations, cAsyncLoopIterations);
+
+  if lWarmupIterations > 0 then
+  begin
+    TParallel.&For(0, lWarmupIterations - 1,
+      procedure(aIndex: Integer)
+      begin
+      end);
+  end;
 
   lStopwatch := TStopwatch.StartNew;
   TParallel.&For(0, cAsyncLoopIterations - 1,
@@ -1839,6 +1862,12 @@ begin
   PrintSeriesStats('simple_async_call_ops/s', aVarianceSummary.SimpleAsyncCall);
   PrintSeriesStats('async_loop_ops/s', aVarianceSummary.AsyncLoop);
   PrintSeriesStats('async_collection_ops/s', aVarianceSummary.AsyncCollectionProcessor);
+  if aVarianceSummary.SimpleAsyncCall.RelativeStdDevPct > 5.0 then
+    Writeln('  WARNING: simple_async_call variance exceeds 5%, treat small deltas as noise.');
+  if aVarianceSummary.AsyncLoop.RelativeStdDevPct > 8.0 then
+    Writeln('  WARNING: async_loop variance exceeds 8%, stabilize environment before comparing close results.');
+  if aVarianceSummary.AsyncCollectionProcessor.RelativeStdDevPct > 8.0 then
+    Writeln('  WARNING: async_collection variance exceeds 8%, treat small deltas as noise.');
 end;
 
 var

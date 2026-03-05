@@ -1,27 +1,27 @@
 ﻿{
   "benchmark": "MaxLogic.Async.Benchmark",
-  "run_at_utc": "2026-03-05T13:34:10Z",
+  "run_at_utc": "2026-03-05T17:06:41Z",
   "date": "2026-03-05",
   "aggregation": "median_of_runs",
   "measured_runs": 5,
   "warmup_runs": 1,
   "metrics": {
-    "simple_async_call_ops_per_sec": 76972,
-    "simple_async_call_no_name_ops_per_sec": 77142,
-    "simple_async_call_wake_reuse_ops_per_sec": 86124,
-    "ttask_simple_async_call_ops_per_sec": 353477,
-    "async_loop_ops_per_sec": 64387354,
-    "ttask_parallel_for_ops_per_sec": 72205642,
-    "async_collection_processor_ops_per_sec": 1587530,
-    "async_collection_processor_locked_ring_ops_per_sec": 592282,
-    "async_collection_processor_lock_free_ops_per_sec": 730955,
-    "async_collection_processor_batched_ops_per_sec": 3604682,
-    "async_collection_processor_batched_locked_ring_ops_per_sec": 1381353,
-    "async_collection_processor_batched_lock_free_ops_per_sec": 1548044,
-    "async_collection_processor_multi_producer_ops_per_sec": 2939931,
-    "async_collection_processor_multi_producer_locked_ring_ops_per_sec": 2189037,
-    "async_collection_processor_multi_producer_lock_free_ops_per_sec": 2767984,
-    "ttask_threaded_queue_processor_ops_per_sec": 276811,
+    "simple_async_call_ops_per_sec": 76016,
+    "simple_async_call_no_name_ops_per_sec": 76783,
+    "simple_async_call_wake_reuse_ops_per_sec": 85474,
+    "ttask_simple_async_call_ops_per_sec": 374690,
+    "async_loop_ops_per_sec": 68810338,
+    "ttask_parallel_for_ops_per_sec": 73012686,
+    "async_collection_processor_ops_per_sec": 1612426,
+    "async_collection_processor_locked_ring_ops_per_sec": 587887,
+    "async_collection_processor_lock_free_ops_per_sec": 740784,
+    "async_collection_processor_batched_ops_per_sec": 3588976,
+    "async_collection_processor_batched_locked_ring_ops_per_sec": 1382304,
+    "async_collection_processor_batched_lock_free_ops_per_sec": 1545848,
+    "async_collection_processor_multi_producer_ops_per_sec": 2973522,
+    "async_collection_processor_multi_producer_locked_ring_ops_per_sec": 2330924,
+    "async_collection_processor_multi_producer_lock_free_ops_per_sec": 2632181,
+    "ttask_threaded_queue_processor_ops_per_sec": 277943,
     "async_timer_ops_per_sec": 64,
     "portable_timer_ops_per_sec": 64
   },
@@ -32,8 +32,8 @@
     "affinity_mask": "$FF"
   },
   "variance": {
-    "simple_async_call": {"min": 75842, "max": 78154, "mean": 76996.800, "stddev": 736.279, "rsd_pct": 0.956},
-    "async_loop": {"min": 35596056, "max": 67613252, "mean": 54465242.600, "stddev": 14639256.734, "rsd_pct": 26.878},
-    "async_collection_processor": {"min": 1440378, "max": 1718670, "mean": 1583227.400, "stddev": 88645.057, "rsd_pct": 5.599}
+    "simple_async_call": {"min": 74243, "max": 78318, "mean": 76466.400, "stddev": 1521.745, "rsd_pct": 1.990},
+    "async_loop": {"min": 37701846, "max": 76669184, "mean": 60765776.000, "stddev": 16098574.345, "rsd_pct": 26.493},
+    "async_collection_processor": {"min": 1585475, "max": 1708409, "mean": 1624096.400, "stddev": 43777.620, "rsd_pct": 2.696}
   }
 }

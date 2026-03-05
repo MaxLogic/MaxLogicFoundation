@@ -33,3 +33,5 @@ All notable changes to MaxLogicFoundation are documented here.
 - `maxAsync.TAsyncCollectionProcessor<T>` now publishes enqueue batches with one pending-counter update and one semaphore release, reducing atomic and signal overhead in `Add/AddRange/TryAddRange`.
 - `maxAsync.TAsyncCollectionProcessor<T>.Add(const Item)` and `.TryAdd(const Item)` now use direct single-item enqueue paths instead of allocating one-element temporary arrays.
 - Async benchmark artifacts now include pure RTL baselines (`TTask.Run`, `TParallel.For`, `TTask + TThreadedQueue`) and persist those metrics in JSON/CSV outputs.
+- `maxAsync.TmaxAsync.WaitFor`/`msgwaitfor` now tolerate missed ready-signal transitions by polling completion state with short timeouts, preventing rare wait stalls when `Finished` flips without a corresponding signal.
+- Async benchmark loop scenarios now run with larger iteration counts plus explicit pre-warm passes, and the console output warns when variance is too high for reliable perf comparisons.

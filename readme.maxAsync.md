@@ -50,8 +50,10 @@ Benchmark runner options for stabilization:
 - `--process-priority=<normal|above-normal|high|realtime>`: override process priority.
 - `--main-thread-priority=<idle|lowest|lower|normal|higher|highest|time-critical>`: override benchmark main thread priority.
 - `--affinity=<hex-mask|decimal-mask>`: override process affinity mask (for example `--affinity=0xFF`).
+- `TAsyncLoop` and `TParallel.For` benchmark paths now pre-warm before timing and use a longer loop workload (`2,000,000` iterations) to reduce short-run jitter.
 
 Artifacts now include a `stabilization` section (applied controls) and a `variance` section for key metrics (`simple_async_call`, `async_loop`, `async_collection_processor`).
+The benchmark output also emits warnings when RSD is above reliability thresholds (`simple_async_call > 5%`, `async_loop > 8%`, `async_collection > 8%`).
 
 - Baseline reference: commit `19b8a04` (before latest architecture/perf optimizations)
 - Current reference: three fresh benchmark invocations on `2026-03-03`, each median-of-5; values below use median across those three invocations.

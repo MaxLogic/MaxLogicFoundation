@@ -34,6 +34,7 @@ type
     [Test] procedure WakeUpCanReplaceProcedure;
     [Test] procedure WakeUpWhileRunningCollapsesToLatestProcedure;
     [Test] procedure WakeUpWaitForBlocksUntilBodyCompletes;
+    [Test] procedure WaitForReturnsWhenFinishedFlipsWithoutReadySignal;
     [Test] procedure InsideMainThreadReflectsThreadContext;
     [Test] procedure GetThreadNameReturnsCurrentTaskName;
     [Test] procedure WakeUpUpdatesThreadNameForLookup;
@@ -96,6 +97,31 @@ type
   end;
 
 implementation
+
+type
+  TAsyncWaiterThread = class(TThread)
+  private
+    fAsync: iAsync;
+    fDone: TEvent;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create(const aAsync: iAsync; const aDone: TEvent);
+  end;
+
+constructor TAsyncWaiterThread.Create(const aAsync: iAsync; const aDone: TEvent);
+begin
+  inherited Create(True);
+  FreeOnTerminate := False;
+  fAsync := aAsync;
+  fDone := aDone;
+end;
+
+procedure TAsyncWaiterThread.Execute;
+begin
+  fAsync.WaitFor;
+  fDone.SetEvent;
+end;
 
 constructor TAsyncWorkItem.Create(const aValue: Integer);
 begin
@@ -408,6 +434,61 @@ begin
     lWaitReturned.Free;
     lRelease.Free;
     lStarted.Free;
+  end;
+end;
+
+procedure TSimpleAsyncCallTests.WaitForReturnsWhenFinishedFlipsWithoutReadySignal;
+const
+  cTimeoutMs = 500;
+var
+  lAsync: iAsync;
+  lWaitThread: TAsyncWaiterThread;
+  lWaitDone: TEvent;
+  lAsyncIntern: iAsyncIntern;
+  lThreadData: iThreadData;
+  lWaitResult: TWaitResult;
+begin
+  lWaitThread := nil;
+  lAsync := SimpleAsyncCall(
+    procedure
+    begin
+    end,
+    'WaitForReturnsWhenFinishedFlipsWithoutReadySignal.Baseline');
+  lAsync.WaitFor;
+
+  Assert.IsTrue(Supports(lAsync, iAsyncIntern, lAsyncIntern),
+    'Expected maxAsync iAsync implementation.');
+  lThreadData := lAsyncIntern.GetThreadData;
+  Assert.IsNotNull(lThreadData, 'Thread data should be available.');
+
+  lThreadData.ReadySignal.setNonsignaled;
+  lThreadData.Finished := False;
+
+  lWaitDone := TEvent.Create(nil, True, False, '');
+  try
+    lWaitThread := TAsyncWaiterThread.Create(lAsync, lWaitDone);
+    lWaitThread.Start;
+
+    Sleep(20);
+    lThreadData.Finished := True;
+
+    lWaitResult := lWaitDone.WaitFor(cTimeoutMs);
+    if lWaitResult <> wrSignaled then
+      lThreadData.ReadySignal.setSignaled;
+
+    lWaitThread.WaitFor;
+    lWaitThread.Free;
+    lWaitThread := nil;
+    Assert.AreEqual<TWaitResult>(wrSignaled, lWaitResult,
+      'WaitFor should not depend on ReadySignal when Finished is already True.');
+  finally
+    if lWaitThread <> nil then
+    begin
+      lThreadData.ReadySignal.setSignaled;
+      lWaitThread.WaitFor;
+      lWaitThread.Free;
+    end;
+    lWaitDone.Free;
   end;
 end;
 
