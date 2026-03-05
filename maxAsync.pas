@@ -1283,7 +1283,6 @@ begin
   fKeepAlive := True;
   fFinished := False;
   fWaiting := False;
-  fProc := nil;
 
   fReadySignal.setNonsignaled;
 
