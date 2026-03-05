@@ -15,6 +15,7 @@ uses
   System.SyncObjs,
   System.SysUtils,
   System.Threading,
+  {$IFDEF MSWINDOWS}Winapi.Windows,{$ENDIF}
   maxAsync in '..\maxAsync.pas',
   MaxLogic.PortableTimer in '..\MaxLogic.PortableTimer.pas';
 
@@ -66,6 +67,35 @@ type
     AsyncTimerResult: TBenchmarkResult;
     PortableTimerResult: TBenchmarkResult;
     Metrics: TBenchmarkMetrics;
+  end;
+
+  TBenchmarkSeriesStats = record
+    MinOpsPerSec: Int64;
+    MaxOpsPerSec: Int64;
+    MeanOpsPerSec: Double;
+    MedianOpsPerSec: Int64;
+    StdDevOpsPerSec: Double;
+    RelativeStdDevPct: Double;
+  end;
+
+  TBenchmarkVarianceSummary = record
+    SimpleAsyncCall: TBenchmarkSeriesStats;
+    AsyncLoop: TBenchmarkSeriesStats;
+    AsyncCollectionProcessor: TBenchmarkSeriesStats;
+  end;
+
+  TBenchmarkExecutionConfig = record
+    WarmupRuns: Integer;
+    MeasuredRuns: Integer;
+    StableMode: Boolean;
+    HasProcessPriority: Boolean;
+    ProcessPriorityClass: Cardinal;
+    ProcessPriorityLabel: string;
+    HasMainThreadPriority: Boolean;
+    MainThreadPriority: TThreadPriority;
+    MainThreadPriorityLabel: string;
+    HasAffinityMask: Boolean;
+    AffinityMask: UInt64;
   end;
 
   TWorkItem = class
@@ -170,6 +200,263 @@ begin
   Result := TPath.GetFullPath(TPath.Combine(ExtractFilePath(ParamStr(0)), '..'));
 end;
 
+function BoolToJson(const aValue: Boolean): string;
+begin
+  if aValue then
+    Exit('true');
+  Result := 'false';
+end;
+
+function FormatHexUInt64(const aValue: UInt64): string;
+begin
+  Result := '$' + IntToHex(aValue, 1);
+end;
+
+function TryReadStringOption(const aOptionName: string; out aOptionValue: string): Boolean;
+var
+  i: Integer;
+  lArgument: string;
+  lPrefix: string;
+begin
+  Result := False;
+  aOptionValue := '';
+  lPrefix := '--' + aOptionName + '=';
+
+  for i := 1 to ParamCount do
+  begin
+    lArgument := ParamStr(i);
+    if StartsText(lPrefix, lArgument) then
+    begin
+      aOptionValue := Trim(Copy(lArgument, Length(lPrefix) + 1, MaxInt));
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+function HasSwitch(const aSwitchName: string): Boolean;
+var
+  i: Integer;
+  lArgument: string;
+begin
+  Result := False;
+  for i := 1 to ParamCount do
+  begin
+    lArgument := Trim(ParamStr(i));
+    if SameText(lArgument, '--' + aSwitchName) then
+      Exit(True);
+  end;
+end;
+
+function TryParseUInt64Option(const aValueText: string; out aValue: UInt64): Boolean;
+var
+  lValueText: string;
+begin
+  lValueText := Trim(aValueText);
+  if lValueText = '' then
+    Exit(False);
+
+  if StartsText('0x', lValueText) then
+    lValueText := '$' + Copy(lValueText, 3, MaxInt)
+  else if StartsText('&H', lValueText) then
+    lValueText := '$' + Copy(lValueText, 3, MaxInt);
+
+  Result := TryStrToUInt64(lValueText, aValue);
+end;
+
+function BuildDefaultStableAffinityMask: UInt64;
+var
+  lProcessorCount: Integer;
+  lPinnedThreadCount: Integer;
+  i: Integer;
+begin
+  lProcessorCount := Max(1, TThread.ProcessorCount);
+  lPinnedThreadCount := Min(8, lProcessorCount);
+  Result := 0;
+  for i := 0 to lPinnedThreadCount - 1 do
+    Result := Result or (UInt64(1) shl i);
+end;
+
+function ThreadPriorityToLabel(const aPriority: TThreadPriority): string;
+begin
+  case aPriority of
+    tpIdle:
+      Result := 'idle';
+    tpLowest:
+      Result := 'lowest';
+    tpLower:
+      Result := 'lower';
+    tpNormal:
+      Result := 'normal';
+    tpHigher:
+      Result := 'higher';
+    tpHighest:
+      Result := 'highest';
+    tpTimeCritical:
+      Result := 'time-critical';
+  else
+    Result := 'normal';
+  end;
+end;
+
+procedure InitializeExecutionConfig(out aConfig: TBenchmarkExecutionConfig);
+begin
+  aConfig.WarmupRuns := cDefaultWarmupRuns;
+  aConfig.MeasuredRuns := cDefaultMeasuredRuns;
+  aConfig.StableMode := False;
+  aConfig.HasProcessPriority := False;
+  aConfig.ProcessPriorityClass := 0;
+  aConfig.ProcessPriorityLabel := 'default';
+  aConfig.HasMainThreadPriority := False;
+  aConfig.MainThreadPriority := tpNormal;
+  aConfig.MainThreadPriorityLabel := ThreadPriorityToLabel(tpNormal);
+  aConfig.HasAffinityMask := False;
+  aConfig.AffinityMask := 0;
+end;
+
+procedure ParseProcessPriority(const aValueText: string; out aPriorityClass: Cardinal; out aLabel: string);
+var
+  lValueText: string;
+begin
+  lValueText := AnsiLowerCase(Trim(aValueText));
+  if (lValueText = 'normal') then
+  begin
+    aPriorityClass := {$IFDEF MSWINDOWS}NORMAL_PRIORITY_CLASS{$ELSE}0{$ENDIF};
+    aLabel := 'normal';
+  end else if (lValueText = 'above-normal') or (lValueText = 'abovenormal') then
+  begin
+    aPriorityClass := {$IFDEF MSWINDOWS}ABOVE_NORMAL_PRIORITY_CLASS{$ELSE}0{$ENDIF};
+    aLabel := 'above-normal';
+  end else if (lValueText = 'high') then
+  begin
+    aPriorityClass := {$IFDEF MSWINDOWS}HIGH_PRIORITY_CLASS{$ELSE}0{$ENDIF};
+    aLabel := 'high';
+  end else if (lValueText = 'realtime') or (lValueText = 'real-time') then
+  begin
+    aPriorityClass := {$IFDEF MSWINDOWS}REALTIME_PRIORITY_CLASS{$ELSE}0{$ENDIF};
+    aLabel := 'realtime';
+  end else
+    raise Exception.CreateFmt('Invalid --process-priority value: %s', [aValueText]);
+end;
+
+procedure ParseThreadPriority(const aValueText: string; out aPriority: TThreadPriority; out aLabel: string);
+var
+  lValueText: string;
+begin
+  lValueText := AnsiLowerCase(Trim(aValueText));
+  if (lValueText = 'idle') then
+    aPriority := tpIdle
+  else if (lValueText = 'lowest') then
+    aPriority := tpLowest
+  else if (lValueText = 'lower') then
+    aPriority := tpLower
+  else if (lValueText = 'normal') then
+    aPriority := tpNormal
+  else if (lValueText = 'higher') then
+    aPriority := tpHigher
+  else if (lValueText = 'highest') then
+    aPriority := tpHighest
+  else if (lValueText = 'time-critical') or (lValueText = 'timecritical') then
+    aPriority := tpTimeCritical
+  else
+    raise Exception.CreateFmt('Invalid --main-thread-priority value: %s', [aValueText]);
+
+  aLabel := ThreadPriorityToLabel(aPriority);
+end;
+
+procedure ApplyExecutionConfig(const aConfig: TBenchmarkExecutionConfig);
+{$IFDEF MSWINDOWS}
+var
+  lProcessHandle: THandle;
+  lAffinityMask: NativeUInt;
+{$ENDIF}
+begin
+  TThread.CurrentThread.Priority := aConfig.MainThreadPriority;
+  {$IFDEF MSWINDOWS}
+  lProcessHandle := GetCurrentProcess;
+  if aConfig.HasProcessPriority then
+  begin
+    if not SetPriorityClass(lProcessHandle, aConfig.ProcessPriorityClass) then
+      RaiseLastOSError;
+  end;
+
+  if aConfig.HasAffinityMask then
+  begin
+    lAffinityMask := NativeUInt(aConfig.AffinityMask);
+    if lAffinityMask = 0 then
+      raise Exception.Create('Configured process affinity mask resolves to zero.');
+    if not SetProcessAffinityMask(lProcessHandle, lAffinityMask) then
+      RaiseLastOSError;
+  end;
+  {$ENDIF}
+end;
+
+function MedianInt64(const aValues: TArray<Int64>): Int64; forward;
+
+function BuildSeriesStats(const aValues: TArray<Int64>): TBenchmarkSeriesStats;
+var
+  i: Integer;
+  lCount: Integer;
+  lValue: Int64;
+  lSum: Extended;
+  lVarianceSum: Extended;
+  lDelta: Extended;
+begin
+  if Length(aValues) = 0 then
+    raise Exception.Create('Cannot build series stats for empty value set.');
+
+  Result.MinOpsPerSec := aValues[0];
+  Result.MaxOpsPerSec := aValues[0];
+  Result.MedianOpsPerSec := MedianInt64(aValues);
+  lCount := Length(aValues);
+  lSum := 0;
+  for i := 0 to lCount - 1 do
+  begin
+    lValue := aValues[i];
+    if lValue < Result.MinOpsPerSec then
+      Result.MinOpsPerSec := lValue;
+    if lValue > Result.MaxOpsPerSec then
+      Result.MaxOpsPerSec := lValue;
+    lSum := lSum + lValue;
+  end;
+
+  Result.MeanOpsPerSec := lSum / lCount;
+  lVarianceSum := 0;
+  for i := 0 to lCount - 1 do
+  begin
+    lDelta := aValues[i] - Result.MeanOpsPerSec;
+    lVarianceSum := lVarianceSum + (lDelta * lDelta);
+  end;
+  Result.StdDevOpsPerSec := Sqrt(lVarianceSum / lCount);
+  if Result.MeanOpsPerSec > 0 then
+    Result.RelativeStdDevPct := (Result.StdDevOpsPerSec / Result.MeanOpsPerSec) * 100
+  else
+    Result.RelativeStdDevPct := 0;
+end;
+
+function BuildVarianceSummary(const aRuns: TArray<TBenchmarkRun>): TBenchmarkVarianceSummary;
+var
+  i: Integer;
+  lSimpleAsyncOps: TArray<Int64>;
+  lAsyncLoopOps: TArray<Int64>;
+  lAsyncCollectionOps: TArray<Int64>;
+begin
+  SetLength(lSimpleAsyncOps, Length(aRuns));
+  SetLength(lAsyncLoopOps, Length(aRuns));
+  SetLength(lAsyncCollectionOps, Length(aRuns));
+
+  for i := 0 to High(aRuns) do
+  begin
+    lSimpleAsyncOps[i] := aRuns[i].Metrics.SimpleAsyncCallOpsPerSec;
+    lAsyncLoopOps[i] := aRuns[i].Metrics.AsyncLoopOpsPerSec;
+    lAsyncCollectionOps[i] := aRuns[i].Metrics.AsyncCollectionProcessorOpsPerSec;
+  end;
+
+  Result.SimpleAsyncCall := BuildSeriesStats(lSimpleAsyncOps);
+  Result.AsyncLoop := BuildSeriesStats(lAsyncLoopOps);
+  Result.AsyncCollectionProcessor := BuildSeriesStats(lAsyncCollectionOps);
+end;
+
 procedure CollectMetrics(
   const aSimpleAsyncResult: TBenchmarkResult;
   const aSimpleAsyncNoNameResult: TBenchmarkResult;
@@ -218,7 +505,9 @@ procedure WriteLatestJson(
   const aAggregation: string;
   const aMeasuredRuns: Integer;
   const aWarmupRuns: Integer;
-  const aMetrics: TBenchmarkMetrics);
+  const aMetrics: TBenchmarkMetrics;
+  const aVarianceSummary: TBenchmarkVarianceSummary;
+  const aExecutionConfig: TBenchmarkExecutionConfig);
 var
   lJson: TStringList;
 begin
@@ -250,6 +539,35 @@ begin
     lJson.Add('    "ttask_threaded_queue_processor_ops_per_sec": ' + IntToStr(aMetrics.TaskThreadedQueueProcessorOpsPerSec) + ',');
     lJson.Add('    "async_timer_ops_per_sec": ' + IntToStr(aMetrics.AsyncTimerOpsPerSec) + ',');
     lJson.Add('    "portable_timer_ops_per_sec": ' + IntToStr(aMetrics.PortableTimerOpsPerSec));
+    lJson.Add('  },');
+    lJson.Add('  "stabilization": {');
+    lJson.Add('    "stable_mode": ' + BoolToJson(aExecutionConfig.StableMode) + ',');
+    lJson.Add('    "process_priority": "' + EscapeJsonString(aExecutionConfig.ProcessPriorityLabel) + '",');
+    lJson.Add('    "main_thread_priority": "' + EscapeJsonString(aExecutionConfig.MainThreadPriorityLabel) + '",');
+    if aExecutionConfig.HasAffinityMask then
+      lJson.Add('    "affinity_mask": "' + EscapeJsonString(FormatHexUInt64(aExecutionConfig.AffinityMask)) + '"')
+    else
+      lJson.Add('    "affinity_mask": null');
+    lJson.Add('  },');
+    lJson.Add('  "variance": {');
+    lJson.Add(Format('    "simple_async_call": {"min": %d, "max": %d, "mean": %s, "stddev": %s, "rsd_pct": %s},',
+      [aVarianceSummary.SimpleAsyncCall.MinOpsPerSec,
+       aVarianceSummary.SimpleAsyncCall.MaxOpsPerSec,
+       FloatToInvariant(aVarianceSummary.SimpleAsyncCall.MeanOpsPerSec),
+       FloatToInvariant(aVarianceSummary.SimpleAsyncCall.StdDevOpsPerSec),
+       FloatToInvariant(aVarianceSummary.SimpleAsyncCall.RelativeStdDevPct)]));
+    lJson.Add(Format('    "async_loop": {"min": %d, "max": %d, "mean": %s, "stddev": %s, "rsd_pct": %s},',
+      [aVarianceSummary.AsyncLoop.MinOpsPerSec,
+       aVarianceSummary.AsyncLoop.MaxOpsPerSec,
+       FloatToInvariant(aVarianceSummary.AsyncLoop.MeanOpsPerSec),
+       FloatToInvariant(aVarianceSummary.AsyncLoop.StdDevOpsPerSec),
+       FloatToInvariant(aVarianceSummary.AsyncLoop.RelativeStdDevPct)]));
+    lJson.Add(Format('    "async_collection_processor": {"min": %d, "max": %d, "mean": %s, "stddev": %s, "rsd_pct": %s}',
+      [aVarianceSummary.AsyncCollectionProcessor.MinOpsPerSec,
+       aVarianceSummary.AsyncCollectionProcessor.MaxOpsPerSec,
+       FloatToInvariant(aVarianceSummary.AsyncCollectionProcessor.MeanOpsPerSec),
+       FloatToInvariant(aVarianceSummary.AsyncCollectionProcessor.StdDevOpsPerSec),
+       FloatToInvariant(aVarianceSummary.AsyncCollectionProcessor.RelativeStdDevPct)]));
     lJson.Add('  }');
     lJson.Add('}');
     lJson.SaveToFile(aFilePath, TEncoding.UTF8);
@@ -281,7 +599,9 @@ procedure WriteResultsJson(
   const aAggregation: string;
   const aMeasuredRuns: Integer;
   const aWarmupRuns: Integer;
-  const aMetrics: TBenchmarkMetrics);
+  const aMetrics: TBenchmarkMetrics;
+  const aVarianceSummary: TBenchmarkVarianceSummary;
+  const aExecutionConfig: TBenchmarkExecutionConfig);
 var
   lJson: TStringList;
 begin
@@ -312,6 +632,35 @@ begin
     lJson.Add('    "ttask_threaded_queue_processor_ops_per_sec": ' + IntToStr(aMetrics.TaskThreadedQueueProcessorOpsPerSec) + ',');
     lJson.Add('    "async_timer_ops_per_sec": ' + IntToStr(aMetrics.AsyncTimerOpsPerSec) + ',');
     lJson.Add('    "portable_timer_ops_per_sec": ' + IntToStr(aMetrics.PortableTimerOpsPerSec));
+    lJson.Add('  },');
+    lJson.Add('  "stabilization": {');
+    lJson.Add('    "stable_mode": ' + BoolToJson(aExecutionConfig.StableMode) + ',');
+    lJson.Add('    "process_priority": "' + EscapeJsonString(aExecutionConfig.ProcessPriorityLabel) + '",');
+    lJson.Add('    "main_thread_priority": "' + EscapeJsonString(aExecutionConfig.MainThreadPriorityLabel) + '",');
+    if aExecutionConfig.HasAffinityMask then
+      lJson.Add('    "affinity_mask": "' + EscapeJsonString(FormatHexUInt64(aExecutionConfig.AffinityMask)) + '"')
+    else
+      lJson.Add('    "affinity_mask": null');
+    lJson.Add('  },');
+    lJson.Add('  "variance": {');
+    lJson.Add(Format('    "simple_async_call": {"min": %d, "max": %d, "mean": %s, "stddev": %s, "rsd_pct": %s},',
+      [aVarianceSummary.SimpleAsyncCall.MinOpsPerSec,
+       aVarianceSummary.SimpleAsyncCall.MaxOpsPerSec,
+       FloatToInvariant(aVarianceSummary.SimpleAsyncCall.MeanOpsPerSec),
+       FloatToInvariant(aVarianceSummary.SimpleAsyncCall.StdDevOpsPerSec),
+       FloatToInvariant(aVarianceSummary.SimpleAsyncCall.RelativeStdDevPct)]));
+    lJson.Add(Format('    "async_loop": {"min": %d, "max": %d, "mean": %s, "stddev": %s, "rsd_pct": %s},',
+      [aVarianceSummary.AsyncLoop.MinOpsPerSec,
+       aVarianceSummary.AsyncLoop.MaxOpsPerSec,
+       FloatToInvariant(aVarianceSummary.AsyncLoop.MeanOpsPerSec),
+       FloatToInvariant(aVarianceSummary.AsyncLoop.StdDevOpsPerSec),
+       FloatToInvariant(aVarianceSummary.AsyncLoop.RelativeStdDevPct)]));
+    lJson.Add(Format('    "async_collection_processor": {"min": %d, "max": %d, "mean": %s, "stddev": %s, "rsd_pct": %s}',
+      [aVarianceSummary.AsyncCollectionProcessor.MinOpsPerSec,
+       aVarianceSummary.AsyncCollectionProcessor.MaxOpsPerSec,
+       FloatToInvariant(aVarianceSummary.AsyncCollectionProcessor.MeanOpsPerSec),
+       FloatToInvariant(aVarianceSummary.AsyncCollectionProcessor.StdDevOpsPerSec),
+       FloatToInvariant(aVarianceSummary.AsyncCollectionProcessor.RelativeStdDevPct)]));
     lJson.Add('  },');
     lJson.Add('  "results": [');
     lJson.Add(Format('    {"name":"%s","units_processed":%d,"duration_ms":%s,"ops_per_sec":%d},',
@@ -465,7 +814,9 @@ procedure SaveBenchmarkArtifacts(
   const aRun: TBenchmarkRun;
   const aAggregation: string;
   const aMeasuredRuns: Integer;
-  const aWarmupRuns: Integer);
+  const aWarmupRuns: Integer;
+  const aVarianceSummary: TBenchmarkVarianceSummary;
+  const aExecutionConfig: TBenchmarkExecutionConfig);
 var
   lBenchmarkDir: string;
   lLatestJsonPath: string;
@@ -481,7 +832,16 @@ begin
   lRunAtUtc := FormatUtcIso8601Now;
   lDateOnly := FormatDateOnlyUtcNow;
 
-  WriteLatestJson(lLatestJsonPath, lRunAtUtc, lDateOnly, aAggregation, aMeasuredRuns, aWarmupRuns, aRun.Metrics);
+  WriteLatestJson(
+    lLatestJsonPath,
+    lRunAtUtc,
+    lDateOnly,
+    aAggregation,
+    aMeasuredRuns,
+    aWarmupRuns,
+    aRun.Metrics,
+    aVarianceSummary,
+    aExecutionConfig);
   WriteResultsJson(
     lResultsJsonPath,
     aRun.SimpleAsyncResult,
@@ -505,7 +865,9 @@ begin
     aAggregation,
     aMeasuredRuns,
     aWarmupRuns,
-    aRun.Metrics);
+    aRun.Metrics,
+    aVarianceSummary,
+    aExecutionConfig);
   AppendHistoryCsv(lHistoryCsvPath, lRunAtUtc, aRun.Metrics);
 end;
 
@@ -540,23 +902,27 @@ begin
   end;
 end;
 
-procedure ParseBenchmarkConfig(out aWarmupRuns: Integer; out aMeasuredRuns: Integer);
+procedure ParseBenchmarkConfig(out aConfig: TBenchmarkExecutionConfig);
 var
   i: Integer;
   lArgument: string;
   lOptionValue: Integer;
+  lOptionText: string;
 begin
-  aWarmupRuns := cDefaultWarmupRuns;
-  aMeasuredRuns := cDefaultMeasuredRuns;
+  InitializeExecutionConfig(aConfig);
 
   for i := 1 to ParamCount do
   begin
     lArgument := ParamStr(i);
     if SameText(lArgument, '--help') then
     begin
-      Writeln('Usage: MaxLogic.Async.Benchmark.exe [--warmup=<n>] [--repeats=<n>]');
+      Writeln('Usage: MaxLogic.Async.Benchmark.exe [--warmup=<n>] [--repeats=<n>] [--stable]');
+      Writeln('                                   [--process-priority=<normal|above-normal|high|realtime>]');
+      Writeln('                                   [--main-thread-priority=<idle|lowest|lower|normal|higher|highest|time-critical>]');
+      Writeln('                                   [--affinity=<hex-mask|decimal-mask>]');
       Writeln('  --warmup=<n>   Number of warmup runs (default 1, minimum 0).');
       Writeln('  --repeats=<n>  Number of measured runs (default 5, minimum 1).');
+      Writeln('  --stable       Use stable benchmark profile: high process priority, highest main thread, affinity pinning.');
       Halt(0);
     end;
   end;
@@ -565,14 +931,60 @@ begin
   begin
     if lOptionValue < 0 then
       raise Exception.Create('--warmup must be >= 0.');
-    aWarmupRuns := lOptionValue;
+    aConfig.WarmupRuns := lOptionValue;
   end;
 
   if TryReadIntegerOption('repeats', lOptionValue) then
   begin
     if lOptionValue <= 0 then
       raise Exception.Create('--repeats must be >= 1.');
-    aMeasuredRuns := lOptionValue;
+    aConfig.MeasuredRuns := lOptionValue;
+  end;
+
+  aConfig.StableMode := HasSwitch('stable');
+
+  if TryReadStringOption('process-priority', lOptionText) then
+  begin
+    ParseProcessPriority(lOptionText, aConfig.ProcessPriorityClass, aConfig.ProcessPriorityLabel);
+    aConfig.HasProcessPriority := True;
+  end;
+
+  if TryReadStringOption('main-thread-priority', lOptionText) then
+  begin
+    ParseThreadPriority(lOptionText, aConfig.MainThreadPriority, aConfig.MainThreadPriorityLabel);
+    aConfig.HasMainThreadPriority := True;
+  end;
+
+  if TryReadStringOption('affinity', lOptionText) then
+  begin
+    if not TryParseUInt64Option(lOptionText, aConfig.AffinityMask) then
+      raise Exception.CreateFmt('Invalid --affinity value: %s', [lOptionText]);
+    if aConfig.AffinityMask = 0 then
+      raise Exception.Create('--affinity must not resolve to zero.');
+    aConfig.HasAffinityMask := True;
+  end;
+
+  if aConfig.StableMode then
+  begin
+    if not aConfig.HasProcessPriority then
+    begin
+      aConfig.HasProcessPriority := True;
+      aConfig.ProcessPriorityClass := {$IFDEF MSWINDOWS}HIGH_PRIORITY_CLASS{$ELSE}0{$ENDIF};
+      aConfig.ProcessPriorityLabel := 'high';
+    end;
+
+    if not aConfig.HasMainThreadPriority then
+    begin
+      aConfig.HasMainThreadPriority := True;
+      aConfig.MainThreadPriority := tpHighest;
+      aConfig.MainThreadPriorityLabel := ThreadPriorityToLabel(tpHighest);
+    end;
+
+    if not aConfig.HasAffinityMask then
+    begin
+      aConfig.HasAffinityMask := True;
+      aConfig.AffinityMask := BuildDefaultStableAffinityMask;
+    end;
   end;
 end;
 
@@ -1360,12 +1772,21 @@ begin
   Result.DurationMs := lStopwatch.Elapsed.TotalMilliseconds;
 end;
 
-procedure PrintHeader(const aWarmupRuns: Integer; const aMeasuredRuns: Integer);
+procedure PrintHeader(const aConfig: TBenchmarkExecutionConfig);
 begin
   Writeln('maxAsync baseline benchmark');
   Writeln(Format('CPU threads: %d', [TThread.ProcessorCount]));
-  Writeln(Format('Warmup runs: %d', [aWarmupRuns]));
-  Writeln(Format('Measured runs: %d (median aggregation)', [aMeasuredRuns]));
+  Writeln(Format('Warmup runs: %d', [aConfig.WarmupRuns]));
+  Writeln(Format('Measured runs: %d (median aggregation)', [aConfig.MeasuredRuns]));
+  Writeln(Format('Stable mode: %s', [BoolToStr(aConfig.StableMode, True)]));
+  Writeln(Format('Process priority: %s', [aConfig.ProcessPriorityLabel]));
+  Writeln(Format('Main thread priority: %s', [aConfig.MainThreadPriorityLabel]));
+  if aConfig.HasAffinityMask then
+    Writeln(Format('Process affinity mask: %s', [FormatHexUInt64(aConfig.AffinityMask)]))
+  else
+  begin
+    Writeln('Process affinity mask: default');
+  end;
   Writeln(Format('SimpleAsyncCall calls: %d', [cSimpleAsyncCalls]));
   Writeln(Format('AsyncLoop iterations: %d', [cAsyncLoopIterations]));
   Writeln(Format('Collection items: %d', [cCollectionItems]));
@@ -1400,44 +1821,70 @@ begin
   PrintResult(aRun.PortableTimerResult, aRun.Metrics.PortableTimerOpsPerSec);
 end;
 
+procedure PrintSeriesStats(const aLabel: string; const aStats: TBenchmarkSeriesStats);
+begin
+  Writeln(Format('  %-27s median=%10d  min=%10d  max=%10d  mean=%10.1f  stddev=%10.1f  rsd=%6.2f%%',
+    [aLabel,
+     aStats.MedianOpsPerSec,
+     aStats.MinOpsPerSec,
+     aStats.MaxOpsPerSec,
+     aStats.MeanOpsPerSec,
+     aStats.StdDevOpsPerSec,
+     aStats.RelativeStdDevPct]));
+end;
+
+procedure PrintVarianceSummary(const aVarianceSummary: TBenchmarkVarianceSummary);
+begin
+  Writeln('Variance summary (measured runs):');
+  PrintSeriesStats('simple_async_call_ops/s', aVarianceSummary.SimpleAsyncCall);
+  PrintSeriesStats('async_loop_ops/s', aVarianceSummary.AsyncLoop);
+  PrintSeriesStats('async_collection_ops/s', aVarianceSummary.AsyncCollectionProcessor);
+end;
+
 var
-  lWarmupRuns: Integer;
-  lMeasuredRuns: Integer;
+  lConfig: TBenchmarkExecutionConfig;
   lWarmupRunIndex: Integer;
   lMeasuredRunIndex: Integer;
   lMeasuredRunResults: TArray<TBenchmarkRun>;
   lRun: TBenchmarkRun;
   lAggregatedRun: TBenchmarkRun;
+  lVarianceSummary: TBenchmarkVarianceSummary;
 begin
   try
-    ParseBenchmarkConfig(lWarmupRuns, lMeasuredRuns);
-    PrintHeader(lWarmupRuns, lMeasuredRuns);
+    ParseBenchmarkConfig(lConfig);
+    ApplyExecutionConfig(lConfig);
+    PrintHeader(lConfig);
 
-    for lWarmupRunIndex := 1 to lWarmupRuns do
+    for lWarmupRunIndex := 1 to lConfig.WarmupRuns do
     begin
-      Writeln(Format('Warmup run %d/%d ...', [lWarmupRunIndex, lWarmupRuns]));
+      Writeln(Format('Warmup run %d/%d ...', [lWarmupRunIndex, lConfig.WarmupRuns]));
       RunBenchmarks(lRun);
     end;
 
-    SetLength(lMeasuredRunResults, lMeasuredRuns);
-    for lMeasuredRunIndex := 1 to lMeasuredRuns do
+    SetLength(lMeasuredRunResults, lConfig.MeasuredRuns);
+    for lMeasuredRunIndex := 1 to lConfig.MeasuredRuns do
     begin
-      Writeln(Format('Measured run %d/%d ...', [lMeasuredRunIndex, lMeasuredRuns]));
+      Writeln(Format('Measured run %d/%d ...', [lMeasuredRunIndex, lConfig.MeasuredRuns]));
       RunBenchmarks(lMeasuredRunResults[Pred(lMeasuredRunIndex)]);
     end;
 
     lAggregatedRun := BuildAggregatedRun(lMeasuredRunResults);
+    lVarianceSummary := BuildVarianceSummary(lMeasuredRunResults);
     Writeln(StringOfChar('-', 92));
     Writeln('Aggregated results (median):');
     PrintAggregatedResults(lAggregatedRun);
+    Writeln(StringOfChar('-', 92));
+    PrintVarianceSummary(lVarianceSummary);
 
     Writeln(StringOfChar('-', 92));
 
     SaveBenchmarkArtifacts(
       lAggregatedRun,
       'median_of_runs',
-      lMeasuredRuns,
-      lWarmupRuns);
+      lConfig.MeasuredRuns,
+      lConfig.WarmupRuns,
+      lVarianceSummary,
+      lConfig);
   except
     on lException: Exception do
     begin

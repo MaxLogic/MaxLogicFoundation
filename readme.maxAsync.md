@@ -41,8 +41,17 @@ Command:
 ```bash
 cd tests
 ./build-delphi.sh ../benchmarks/MaxLogic.Async.Benchmark.dproj
-../benchmarks/Win32/MaxLogic.Async.Benchmark.exe --warmup=1 --repeats=5
+../benchmarks/Win32/MaxLogic.Async.Benchmark.exe --stable --warmup=1 --repeats=5
 ```
+
+Benchmark runner options for stabilization:
+
+- `--stable`: applies high process priority, highest main-thread priority, and a pinned affinity mask (default first 8 logical CPUs).
+- `--process-priority=<normal|above-normal|high|realtime>`: override process priority.
+- `--main-thread-priority=<idle|lowest|lower|normal|higher|highest|time-critical>`: override benchmark main thread priority.
+- `--affinity=<hex-mask|decimal-mask>`: override process affinity mask (for example `--affinity=0xFF`).
+
+Artifacts now include a `stabilization` section (applied controls) and a `variance` section for key metrics (`simple_async_call`, `async_loop`, `async_collection_processor`).
 
 - Baseline reference: commit `19b8a04` (before latest architecture/perf optimizations)
 - Current reference: three fresh benchmark invocations on `2026-03-03`, each median-of-5; values below use median across those three invocations.
