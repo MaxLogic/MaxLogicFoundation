@@ -1285,9 +1285,7 @@ begin
   fWaiting := False;
   fProc := nil;
 
-  fStartSignal.setNonsignaled;
   fReadySignal.setNonsignaled;
-  FWakeSignal.setNonsignaled;
 
   {$IFDEF MsWindows}
   if assigned(fThread) and (self.fThread.Priority <> TThreadPriority.tpNormal) then

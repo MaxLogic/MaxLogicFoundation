@@ -32,6 +32,8 @@ type
     [Test] procedure SimpleAsyncCallAppliesCustomPriority;
     [Test] procedure WakeUpRunsProcedureAgain;
     [Test] procedure WakeUpCanReplaceProcedure;
+    [Test] procedure WakeUpWhileRunningCollapsesToLatestProcedure;
+    [Test] procedure WakeUpWaitForBlocksUntilBodyCompletes;
     [Test] procedure InsideMainThreadReflectsThreadContext;
     [Test] procedure GetThreadNameReturnsCurrentTaskName;
   end;
@@ -274,6 +276,137 @@ begin
   lAsync.WaitFor;
 
   Assert.AreEqual<Integer>(2, lValue);
+end;
+
+procedure TSimpleAsyncCallTests.WakeUpWhileRunningCollapsesToLatestProcedure;
+const
+  cTimeoutMs = 5000;
+var
+  lAsync: iAsync;
+  lFirstStarted: TEvent;
+  lReleaseFirst: TEvent;
+  lSecondDone: TEvent;
+  lRunCount: Integer;
+  lSecondValue: Integer;
+begin
+  lFirstStarted := TEvent.Create(nil, True, False, '');
+  lReleaseFirst := TEvent.Create(nil, True, False, '');
+  lSecondDone := TEvent.Create(nil, True, False, '');
+  try
+    lRunCount := 0;
+    lSecondValue := 0;
+
+    lAsync := SimpleAsyncCall(
+      procedure
+      begin
+        TInterlocked.Increment(lRunCount);
+        lFirstStarted.SetEvent;
+        if lReleaseFirst.WaitFor(cTimeoutMs) <> wrSignaled then
+          raise Exception.Create('Timed out while waiting to release first run.');
+      end,
+      'WakeUpWhileRunningCollapsesToLatestProcedure.First');
+
+    Assert.AreEqual<TWaitResult>(wrSignaled, lFirstStarted.WaitFor(cTimeoutMs),
+      'First run should start before we queue wake-up calls.');
+
+    lAsync.WakeUp(
+      procedure
+      begin
+        TInterlocked.Increment(lRunCount);
+        lSecondValue := 1;
+        lSecondDone.SetEvent;
+      end,
+      'WakeUpWhileRunningCollapsesToLatestProcedure.SecondA');
+
+    lAsync.WakeUp(
+      procedure
+      begin
+        TInterlocked.Increment(lRunCount);
+        lSecondValue := 2;
+        lSecondDone.SetEvent;
+      end,
+      'WakeUpWhileRunningCollapsesToLatestProcedure.SecondB');
+
+    lReleaseFirst.SetEvent;
+    Assert.AreEqual<TWaitResult>(wrSignaled, lSecondDone.WaitFor(cTimeoutMs),
+      'Wake-up run should complete after first run is released.');
+
+    lAsync.WaitFor;
+    Assert.AreEqual<Integer>(2, lRunCount,
+      'Expected exactly first run plus one collapsed wake-up run.');
+    Assert.AreEqual<Integer>(2, lSecondValue,
+      'Latest wake-up procedure should win while worker is still running.');
+  finally
+    lSecondDone.Free;
+    lReleaseFirst.Free;
+    lFirstStarted.Free;
+  end;
+end;
+
+procedure TSimpleAsyncCallTests.WakeUpWaitForBlocksUntilBodyCompletes;
+const
+  cTimeoutMs = 5000;
+  cShortWaitMs = 100;
+var
+  lAsync: iAsync;
+  lWaitThread: TThread;
+  lStarted: TEvent;
+  lRelease: TEvent;
+  lWaitReturned: TEvent;
+begin
+  lWaitThread := nil;
+  lStarted := TEvent.Create(nil, True, False, '');
+  lRelease := TEvent.Create(nil, True, False, '');
+  lWaitReturned := TEvent.Create(nil, True, False, '');
+  try
+    lAsync := SimpleAsyncCall(
+      procedure
+      begin
+      end,
+      'WakeUpWaitForBlocksUntilBodyCompletes.Baseline');
+    lAsync.WaitFor;
+
+    lAsync.WakeUp(
+      procedure
+      begin
+        lStarted.SetEvent;
+        if lRelease.WaitFor(cTimeoutMs) <> wrSignaled then
+          raise Exception.Create('Timed out waiting for wake-up release signal.');
+      end,
+      'WakeUpWaitForBlocksUntilBodyCompletes.Blocking');
+
+    Assert.AreEqual<TWaitResult>(wrSignaled, lStarted.WaitFor(cTimeoutMs),
+      'Blocking wake-up run should start quickly.');
+
+    lWaitThread := TThread.CreateAnonymousThread(
+      procedure
+      begin
+        lAsync.WaitFor;
+        lWaitReturned.SetEvent;
+      end);
+    lWaitThread.FreeOnTerminate := False;
+    lWaitThread.Start;
+
+    Assert.AreEqual<TWaitResult>(wrTimeout, lWaitReturned.WaitFor(cShortWaitMs),
+      'WaitFor returned before the blocking wake-up run finished.');
+
+    lRelease.SetEvent;
+    Assert.AreEqual<TWaitResult>(wrSignaled, lWaitReturned.WaitFor(cTimeoutMs),
+      'WaitFor should return once the blocking wake-up run completes.');
+    lWaitThread.WaitFor;
+    lWaitThread.Free;
+    lWaitThread := nil;
+    lAsync := nil;
+  finally
+    if lWaitThread <> nil then
+    begin
+      lWaitThread.WaitFor;
+      lWaitThread.Free;
+    end;
+    lWaitReturned.Free;
+    lRelease.Free;
+    lStarted.Free;
+  end;
 end;
 
 procedure TSimpleAsyncCallTests.InsideMainThreadReflectsThreadContext;
