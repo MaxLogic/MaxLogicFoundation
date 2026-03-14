@@ -185,6 +185,7 @@
         <DCCReference Include="..\MaxLogic.Cache.pas"/>
         <DCCReference Include="..\MaxLogic.Cache.RepositoryBase.pas"/>
         <DCCReference Include="unit\MaxLogic.Cache.Tests.pas"/>
+        <DCCReference Include="unit\MaxLogic.GitHubReleaseChecker.Tests.pas"/>
         <DCCReference Include="unit\MaxLogic.Hash.Tests.pas"/>
         <DCCReference Include="unit\MaxLogic.Process.Tests.pas"/>
         <BuildConfiguration Include="Base">

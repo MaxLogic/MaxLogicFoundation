@@ -31,6 +31,7 @@ uses
   MaxLogic.Cache in '..\MaxLogic.Cache.pas',
   MaxLogic.Cache.RepositoryBase in '..\MaxLogic.Cache.RepositoryBase.pas',
   MaxLogic.Cache.Tests in 'unit\MaxLogic.Cache.Tests.pas',
+  MaxLogic.GitHubReleaseChecker.Tests in 'unit\MaxLogic.GitHubReleaseChecker.Tests.pas',
   MaxLogic.Hash.Tests in 'unit\MaxLogic.Hash.Tests.pas',
   MaxLogic.Process.Tests in 'unit\MaxLogic.Process.Tests.pas';
 
