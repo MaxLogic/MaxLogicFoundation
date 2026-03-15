@@ -2208,12 +2208,12 @@ begin
   lTrimmed := Trim(aLine);
   if lTrimmed = '' then
     Exit(False);
-  if lTrimmed[1] in ['#', ';'] then
+  if CharInSet(lTrimmed[1], ['#', ';']) then
     Exit(False);
 
   lLen := Length(aLine);
   I := 1;
-  while (I <= lLen) and (aLine[I] in [' ', #9]) do
+  while (I <= lLen) and CharInSet(aLine[I], [' ', #9]) do
     Inc(I);
   if (I > lLen) or not IsNameStartChar(aLine[I]) then
   begin
@@ -2225,7 +2225,7 @@ begin
   while (I <= lLen) and IsNameChar(aLine[I]) do
     Inc(I);
   lKeyEnd := I - 1;
-  while (I <= lLen) and (aLine[I] in [' ', #9]) do
+  while (I <= lLen) and CharInSet(aLine[I], [' ', #9]) do
     Inc(I);
   if I > lLen then
   begin
@@ -2239,13 +2239,13 @@ begin
   end
   else
   begin
-    if not (lDelim in ['=', ':']) then
+    if not CharInSet(lDelim, ['=', ':']) then
     begin
       AddError(aFilePath, aLineNumber, 1, TDotEnvErrorKind.DekParse, 'Expected = or :', True);
       Exit(False);
     end;
     Inc(I);
-    while (I <= lLen) and (aLine[I] in [' ', #9]) do
+    while (I <= lLen) and CharInSet(aLine[I], [' ', #9]) do
       Inc(I);
     lRemainder := Copy(aLine, I, MaxInt);
   end;
