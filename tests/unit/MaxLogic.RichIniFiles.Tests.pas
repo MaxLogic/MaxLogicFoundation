@@ -12,6 +12,9 @@ type
     [Test] procedure DefaultOptions_HaveExpectedDefaults;
     [Test] procedure Create_EnsuresCommentPrefixesAndDelimiter;
     [Test] procedure LoadFromFile_ParsesBasicDocument;
+    [Test] procedure LoadFromText_PreservesUtf8SourceEncodingForSave;
+    [Test] procedure LoadFromText_PreservesAnsiSourceEncodingForSave;
+    [Test] procedure LoadFromText_ReplacesExistingDocumentAcrossRepeatedCalls;
     [Test] procedure ReadString_LastWinsAcrossDuplicates;
     [Test] procedure ReadSection_CollapsesKeysWithOrderByLastOccurrence;
     [Test] procedure ReadSectionValues_ProvidesCollapsedPairs;
@@ -147,6 +150,102 @@ begin
   finally
     lFile.Free;
     TFile.Delete(lTempFile);
+  end;
+end;
+
+procedure TRichIniFilesTests.LoadFromText_PreservesUtf8SourceEncodingForSave;
+var
+  lOptions: TRichIniOptions;
+  lFile: TRichIniFile;
+  lTempFile: string;
+  lBytes: TBytes;
+begin
+  lOptions := DefaultRichIniOptions;
+  lOptions.SaveEncoding := eoAutoDetect;
+  lOptions.BomPolicy := bpAsSource;
+  lFile := TRichIniFile.Create('', lOptions);
+  lTempFile := TPath.Combine(TPath.GetTempPath, TPath.GetRandomFileName + '.ini');
+  try
+    lFile.LoadFromText('[Main]' + sLineBreak + 'Key=Ä', TEncoding.UTF8, True);
+    Assert.AreEqual('Ä', lFile.ReadString('Main', 'Key', 'fallback'));
+
+    lFile.SaveToFile(lTempFile);
+    lBytes := TFile.ReadAllBytes(lTempFile);
+    Assert.IsTrue((Length(lBytes) >= 3) and (lBytes[0] = $EF) and (lBytes[1] = $BB) and (lBytes[2] = $BF));
+    Assert.AreEqual('[Main]' + sLineBreak + 'Key=Ä', TFile.ReadAllText(lTempFile, TEncoding.UTF8));
+  finally
+    lFile.Free;
+    if TFile.Exists(lTempFile) then
+      TFile.Delete(lTempFile);
+  end;
+end;
+
+procedure TRichIniFilesTests.LoadFromText_PreservesAnsiSourceEncodingForSave;
+var
+  lOptions: TRichIniOptions;
+  lFile: TRichIniFile;
+  lTempFile: string;
+  lBytes: TBytes;
+begin
+  lOptions := DefaultRichIniOptions;
+  lOptions.SaveEncoding := eoAutoDetect;
+  lOptions.BomPolicy := bpAsSource;
+  lFile := TRichIniFile.Create('', lOptions);
+  lTempFile := TPath.Combine(TPath.GetTempPath, TPath.GetRandomFileName + '.ini');
+  try
+    lFile.LoadFromText('[Main]' + sLineBreak + 'Key=Ä', TEncoding.ANSI, False);
+    Assert.AreEqual('Ä', lFile.ReadString('Main', 'Key', 'fallback'));
+
+    lFile.SaveToFile(lTempFile);
+    lBytes := TFile.ReadAllBytes(lTempFile);
+    Assert.IsTrue((Length(lBytes) > 0) and not ((Length(lBytes) >= 3) and (lBytes[0] = $EF) and (lBytes[1] = $BB) and (lBytes[2] = $BF)));
+    Assert.AreEqual('[Main]' + sLineBreak + 'Key=Ä', TFile.ReadAllText(lTempFile, TEncoding.ANSI));
+  finally
+    lFile.Free;
+    if TFile.Exists(lTempFile) then
+      TFile.Delete(lTempFile);
+  end;
+end;
+
+procedure TRichIniFilesTests.LoadFromText_ReplacesExistingDocumentAcrossRepeatedCalls;
+var
+  lOptions: TRichIniOptions;
+  lFile: TRichIniFile;
+  lSections: TStringList;
+begin
+  lOptions := DefaultRichIniOptions;
+  lFile := TRichIniFile.Create('', lOptions);
+  lSections := TStringList.Create;
+  try
+    lFile.LoadFromText('[First]' + sLineBreak + '; comment' + sLineBreak + 'Alpha=1', TEncoding.UTF8, True);
+    Assert.AreEqual('1', lFile.ReadString('First', 'Alpha', 'fallback'));
+    Assert.AreEqual('comment', lFile.ReadComment('First', 'Alpha'));
+
+    lFile.LoadFromText('[Second]' + sLineBreak + 'Beta=2', TEncoding.ANSI, False);
+    Assert.AreEqual('fallback', lFile.ReadString('First', 'Alpha', 'fallback'));
+    Assert.AreEqual('', lFile.ReadComment('Second', 'Beta'));
+    Assert.AreEqual('2', lFile.ReadString('Second', 'Beta', 'fallback'));
+    Assert.AreEqual(2, lFile.LineCount);
+    Assert.AreEqual(2, lFile.SectionBlockCount);
+
+    lSections.Clear;
+    lFile.ReadSections(lSections);
+    Assert.AreEqual(1, lSections.Count);
+    Assert.AreEqual('Second', lSections[0]);
+
+    lFile.LoadFromText('Root=3', TEncoding.UTF8, False);
+    Assert.AreEqual('fallback', lFile.ReadString('Second', 'Beta', 'fallback'));
+    Assert.AreEqual('3', lFile.ReadString('', 'Root', 'fallback'));
+    Assert.AreEqual(1, lFile.LineCount);
+    Assert.AreEqual(1, lFile.SectionBlockCount);
+    Assert.IsFalse(lFile.Dirty);
+
+    lSections.Clear;
+    lFile.ReadSections(lSections);
+    Assert.AreEqual(0, lSections.Count);
+  finally
+    lSections.Free;
+    lFile.Free;
   end;
 end;
 

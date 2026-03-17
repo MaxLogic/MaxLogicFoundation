@@ -220,6 +220,7 @@ type
     constructor CreateFromStrings(const aLines: TArray<string>; const aOptions: TRichIniOptions);
     destructor Destroy; override;
 
+    procedure LoadFromText(const aText: string; const aSourceEncoding: TEncoding = nil; aHasBom: Boolean = False);
     procedure LoadFromFile(const aFileName: string);
     procedure SaveToFile(const aFileName: string = '');
 
@@ -1233,16 +1234,27 @@ var
   lHasBom: Boolean;
 begin
   fFileName := aFileName;
-  ClearDocument;
   if (aFileName = '') or not TFile.Exists(aFileName) then
+  begin
+    ClearDocument;
     Exit;
+  end;
 
   lBuffer := TFile.ReadAllBytes(aFileName);
   lText := ResolveLoadEncoding(lBuffer, lEncoding, lHasBom);
-  fDetectedNewline := DetectNewline(lText);
-  ParseText(lText);
-  fSourceEncoding := lEncoding;
-  fSourceBom := lHasBom;
+  LoadFromText(lText, lEncoding, lHasBom);
+end;
+
+procedure TRichIniFile.LoadFromText(const aText: string; const aSourceEncoding: TEncoding; aHasBom: Boolean);
+begin
+  ClearDocument;
+  fDetectedNewline := DetectNewline(aText);
+  ParseText(aText);
+  if aSourceEncoding <> nil then
+    fSourceEncoding := aSourceEncoding
+  else
+    fSourceEncoding := TEncoding.UTF8;
+  fSourceBom := aHasBom;
   fHasSource := True;
   fDirty := False;
 end;

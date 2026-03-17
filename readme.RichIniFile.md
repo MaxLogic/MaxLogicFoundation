@@ -47,6 +47,12 @@ Use `CreateFromStrings` when you already have the text in memory and want to avo
 Ini := TRichIniFile.CreateFromStrings(SourceLines, Options);
 ```
 
+Use `LoadFromText` when we already decoded the file content ourselves and still want `TRichIniFile` to preserve the source newline/BOM/encoding semantics for later `SaveToFile` calls:
+
+```pascal
+Ini.LoadFromText(SourceText, TEncoding.UTF8, True);
+```
+
 ## Reading & writing
 
 ```pascal

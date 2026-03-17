@@ -8,6 +8,7 @@ All notable changes to MaxLogicFoundation are documented here.
 
 - `MaxLogic.Cache`: multi-namespace, single-flight cache with TTL/idle expiration, tag invalidation, lazy dependency validation, sweeper eviction, metrics, and fail-fast shutdown.
 - `readme.cache.md`: usage and behavior notes for `MaxLogic.Cache`.
+- `TRichIniFile.LoadFromText`: load already-decoded INI content while preserving source encoding/BOM metadata for later saves.
 
 ### Fixed
 
