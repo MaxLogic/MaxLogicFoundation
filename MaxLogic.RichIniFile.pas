@@ -6,6 +6,7 @@ uses
   System.Classes,
   System.Generics.Collections,
   System.Generics.Defaults,
+  System.IniFiles,
   System.SysUtils;
 
 type
@@ -56,6 +57,9 @@ type
     CommentPrefixes: TArray<string>;
     CommentOwnership: TCommentOwnership;
     KeyValueDelimiter: Char;
+    BooleanTrueValues: TArray<string>;
+    BooleanTrueValue: string;
+    BooleanFalseValue: string;
   end;
 
 function DefaultRichIniOptions: TRichIniOptions;
@@ -156,7 +160,7 @@ type
   end;
 
 	type
-	  TRichIniFile = class
+	  TRichIniFile = class(TCustomIniFile)
 	  private type
 	      TRichIniParseState = record
 	        CurrentBlock: TRichIniSectionBlock;
@@ -204,6 +208,7 @@ type
     procedure RemoveOwnedComments(aLine: TRichIniLine);
     procedure DeleteKeyLineInstance(aLine: TRichIniKeyLine);
     function DefaultCommentPrefix: string;
+    function IsTrueBooleanValue(const aValue: string): Boolean;
     function SplitToLines(const aText: string): TArray<string>;
     function CollectCommentText(const aLine: TRichIniLine): string;
     function EncodeMultilineValue(const aValue: string): string;
@@ -216,27 +221,28 @@ type
     function GetLineCount: Integer;
     function GetSectionBlockCount: Integer;
   public
-    constructor Create(const aFileName: string; const aOptions: TRichIniOptions);
-    constructor CreateFromStrings(const aLines: TArray<string>; const aOptions: TRichIniOptions);
+    constructor Create(const aFileName: string; const aOptions: TRichIniOptions); reintroduce; overload;
+    constructor CreateFromStrings(const aLines: TArray<string>; const aOptions: TRichIniOptions); overload;
     destructor Destroy; override;
 
     procedure LoadFromText(const aText: string; const aSourceEncoding: TEncoding = nil; aHasBom: Boolean = False);
     procedure LoadFromFile(const aFileName: string);
     procedure SaveToFile(const aFileName: string = '');
+    procedure UpdateFile; override;
 
-    function ReadString(const aSection, aKey, aDefault: string): string;
-    procedure WriteString(const aSection, aKey, aValue: string); overload;
+    function ReadString(const aSection, aKey, aDefault: string): string; override;
+    procedure WriteString(const aSection, aKey, aValue: string); overload; override;
     procedure WriteString(const aSection, aKey, aValue: string; aKeyIndex: Integer); overload;
-    function ReadInteger(const aSection, aKey: string; aDefault: Integer): Integer;
-    procedure WriteInteger(const aSection, aKey: string; aValue: Integer);
-    function ReadBool(const aSection, aKey: string; aDefault: Boolean): Boolean;
-    procedure WriteBool(const aSection, aKey: string; aValue: Boolean);
-    procedure DeleteKey(const aSection, aKey: string); overload;
+    function ReadInteger(const aSection, aKey: string; aDefault: Integer): Integer; override;
+    procedure WriteInteger(const aSection, aKey: string; aValue: Integer); override;
+    function ReadBool(const aSection, aKey: string; aDefault: Boolean): Boolean; override;
+    procedure WriteBool(const aSection, aKey: string; aValue: Boolean); override;
+    procedure DeleteKey(const aSection, aKey: string); overload; override;
     procedure DeleteKey(const aSection, aKey: string; aKeyIndex: Integer); overload;
-    procedure EraseSection(const aSection: string);
-    procedure ReadSection(const aSection: string; aStrings: TStrings);
-    procedure ReadSections(aStrings: TStrings);
-    procedure ReadSectionValues(const aSection: string; aStrings: TStrings);
+    procedure EraseSection(const aSection: string); override;
+    procedure ReadSection(const aSection: string; aStrings: TStrings); override;
+    procedure ReadSections(aStrings: TStrings); override;
+    procedure ReadSectionValues(const aSection: string; aStrings: TStrings); override;
 
     function AppendKey(const aSection, aKey, aValue: string): Integer;
     function LastKeyIndex(const aSection, aKey: string): Integer;
@@ -269,6 +275,9 @@ uses
 
 const
   cDefaultCommentPrefixes: array[0..2] of string = (';', '#', '//');
+  cDefaultBooleanTrueValues: array[0..5] of string = ('1', 'y', 'yes', 'on', 'enabled', 'true');
+  cDefaultBooleanTrueValue = '1';
+  cDefaultBooleanFalseValue = '0';
 
 function DefaultRichIniOptions: TRichIniOptions;
 var
@@ -286,6 +295,11 @@ begin
   SetLength(Result.CommentPrefixes, Length(cDefaultCommentPrefixes));
   for lIndex := Low(cDefaultCommentPrefixes) to High(cDefaultCommentPrefixes) do
     Result.CommentPrefixes[lIndex] := cDefaultCommentPrefixes[lIndex];
+  SetLength(Result.BooleanTrueValues, Length(cDefaultBooleanTrueValues));
+  for lIndex := Low(cDefaultBooleanTrueValues) to High(cDefaultBooleanTrueValues) do
+    Result.BooleanTrueValues[lIndex] := cDefaultBooleanTrueValues[lIndex];
+  Result.BooleanTrueValue := cDefaultBooleanTrueValue;
+  Result.BooleanFalseValue := cDefaultBooleanFalseValue;
 end;
 
 { TRichIniLine }
@@ -439,7 +453,7 @@ end;
 
 constructor TRichIniFile.Create(const aFileName: string; const aOptions: TRichIniOptions);
 begin
-  inherited Create;
+  inherited Create(aFileName);
   fFileName := aFileName;
   fOptions := aOptions;
   EnsureOptionsDefaults;
@@ -452,7 +466,7 @@ end;
 
 constructor TRichIniFile.CreateFromStrings(const aLines: TArray<string>; const aOptions: TRichIniOptions);
 begin
-  inherited Create;
+  inherited Create('');
   fFileName := '';
   fOptions := aOptions;
   EnsureOptionsDefaults;
@@ -746,6 +760,16 @@ begin
   end;
   if fOptions.KeyValueDelimiter = #0 then
     fOptions.KeyValueDelimiter := '=';
+  if Length(fOptions.BooleanTrueValues) = 0 then
+  begin
+    SetLength(fOptions.BooleanTrueValues, Length(cDefaultBooleanTrueValues));
+    for lIndex := Low(cDefaultBooleanTrueValues) to High(cDefaultBooleanTrueValues) do
+      fOptions.BooleanTrueValues[lIndex] := cDefaultBooleanTrueValues[lIndex];
+  end;
+  if fOptions.BooleanTrueValue = '' then
+    fOptions.BooleanTrueValue := cDefaultBooleanTrueValue;
+  if fOptions.BooleanFalseValue = '' then
+    fOptions.BooleanFalseValue := cDefaultBooleanFalseValue;
 end;
 
 function TRichIniFile.SectionToken(const aSection: string): string;
@@ -1035,6 +1059,18 @@ begin
     Result := fOptions.CommentPrefixes[0]
   else
     Result := ';';
+end;
+
+function TRichIniFile.IsTrueBooleanValue(const aValue: string): Boolean;
+var
+  lValue: string;
+  lTrueValue: string;
+begin
+  lValue := Trim(aValue);
+  for lTrueValue in fOptions.BooleanTrueValues do
+    if SameText(lValue, lTrueValue) then
+      Exit(True);
+  Result := False;
 end;
 
 function TRichIniFile.SplitToLines(const aText: string): TArray<string>;
@@ -1882,8 +1918,13 @@ begin
 end;
 
 function TRichIniFile.ReadBool(const aSection, aKey: string; aDefault: Boolean): Boolean;
+var
+  lLine: TRichIniKeyLine;
 begin
-  Result := StrToBoolDef(ReadString(aSection, aKey, BoolToStr(aDefault, True)), aDefault);
+  lLine := FindLastKeyLine(aSection, aKey);
+  if lLine = nil then
+    Exit(aDefault);
+  Result := IsTrueBooleanValue(lLine.Value);
 end;
 
 function TRichIniFile.ReadComment(const aSection, aKey: string): string;
@@ -2083,7 +2124,15 @@ end;
 
 procedure TRichIniFile.WriteBool(const aSection, aKey: string; aValue: Boolean);
 begin
-  WriteString(aSection, aKey, BoolToStr(aValue, True));
+  if aValue then
+    WriteString(aSection, aKey, fOptions.BooleanTrueValue)
+  else
+    WriteString(aSection, aKey, fOptions.BooleanFalseValue);
+end;
+
+procedure TRichIniFile.UpdateFile;
+begin
+  SaveToFile;
 end;
 
 procedure TRichIniFile.WriteComment(const aSection, aKey, aComment: string);

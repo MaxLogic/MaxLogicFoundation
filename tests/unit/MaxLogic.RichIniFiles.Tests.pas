@@ -29,7 +29,11 @@ type
     [Test] procedure DeleteKey_RemovesAllOccurrencesAndOwnedComments;
     [Test] procedure DeleteKeyIndexed_RemovesOnlyRequestedOccurrence;
     [Test] procedure EraseSection_RemovesAllOccurrences;
+    [Test] procedure ReadBool_UsesIniCompatibleDefaultTrueValues;
+    [Test] procedure ReadBool_UsesConfiguredTrueValues;
     [Test] procedure WriteIntegerAndBool_RoundTrip;
+    [Test] procedure WriteBool_UsesConfiguredOutputTokens;
+    [Test] procedure TCustomIniFileCompatibility_UpdateFileUsesRichIniBehavior;
     [Test] procedure ReadComment_ReturnsOwnedComments;
     [Test] procedure WriteComment_ReplacesExistingOwnedBlock;
     [Test] procedure PurgeComments_RemovesAllLines;
@@ -58,10 +62,11 @@ type
 implementation
 
 uses
-  System.IOUtils,
-  System.SysUtils,
   System.Classes,
   System.Generics.Collections,
+  System.IOUtils,
+  System.IniFiles,
+  System.SysUtils,
   MaxLogic.RichIniFile;
 
 function LoadIniFromText(const aContent: string; const aOptions: TRichIniOptions): TRichIniFile;
@@ -95,12 +100,18 @@ var
 begin
   lOptions := DefaultRichIniOptions;
   SetLength(lOptions.CommentPrefixes, 0);
+  SetLength(lOptions.BooleanTrueValues, 0);
   lOptions.KeyValueDelimiter := #0;
+  lOptions.BooleanTrueValue := '';
+  lOptions.BooleanFalseValue := '';
   lFile := TRichIniFile.Create('', lOptions);
   try
     Assert.AreEqual(3, Length(lFile.Options.CommentPrefixes));
     Assert.AreEqual(';', lFile.Options.CommentPrefixes[0]);
     Assert.AreEqual('=', lFile.Options.KeyValueDelimiter);
+    Assert.AreEqual(6, Length(lFile.Options.BooleanTrueValues));
+    Assert.AreEqual('1', lFile.Options.BooleanTrueValue);
+    Assert.AreEqual('0', lFile.Options.BooleanFalseValue);
   finally
     lFile.Free;
   end;
@@ -124,6 +135,15 @@ begin
   Assert.AreEqual('#', lOptions.CommentPrefixes[1]);
   Assert.AreEqual('//', lOptions.CommentPrefixes[2]);
   Assert.AreEqual('=', lOptions.KeyValueDelimiter);
+  Assert.AreEqual(6, Length(lOptions.BooleanTrueValues));
+  Assert.AreEqual('1', lOptions.BooleanTrueValues[0]);
+  Assert.AreEqual('y', lOptions.BooleanTrueValues[1]);
+  Assert.AreEqual('yes', lOptions.BooleanTrueValues[2]);
+  Assert.AreEqual('on', lOptions.BooleanTrueValues[3]);
+  Assert.AreEqual('enabled', lOptions.BooleanTrueValues[4]);
+  Assert.AreEqual('true', lOptions.BooleanTrueValues[5]);
+  Assert.AreEqual('1', lOptions.BooleanTrueValue);
+  Assert.AreEqual('0', lOptions.BooleanFalseValue);
 end;
 
 procedure TRichIniFilesTests.LoadFromFile_ParsesBasicDocument;
@@ -648,10 +668,101 @@ begin
     lIni.WriteInteger('Main', 'Number', 123);
     lIni.WriteBool('Main', 'Enabled', True);
     Assert.AreEqual(123, lIni.ReadInteger('Main', 'Number', 0));
+    Assert.AreEqual('1', lIni.ReadString('Main', 'Enabled', ''));
     Assert.IsTrue(lIni.ReadBool('Main', 'Enabled', False));
     Assert.AreEqual(2, lIni.KeyCount('Main', 'Number') + lIni.KeyCount('Main', 'Enabled'));
   finally
     lIni.Free;
+  end;
+end;
+
+procedure TRichIniFilesTests.ReadBool_UsesIniCompatibleDefaultTrueValues;
+const
+  cContent =
+    '[Main]' + sLineBreak +
+    'One=1' + sLineBreak +
+    'Yes=YES' + sLineBreak +
+    'Enabled=enabled' + sLineBreak +
+    'Unknown=maybe';
+var
+  lOptions: TRichIniOptions;
+  lIni: TRichIniFile;
+begin
+  lOptions := DefaultRichIniOptions;
+  lIni := LoadIniFromText(cContent, lOptions);
+  try
+    Assert.IsTrue(lIni.ReadBool('Main', 'One', False));
+    Assert.IsTrue(lIni.ReadBool('Main', 'Yes', False));
+    Assert.IsTrue(lIni.ReadBool('Main', 'Enabled', False));
+    Assert.IsFalse(lIni.ReadBool('Main', 'Unknown', True));
+    Assert.IsTrue(lIni.ReadBool('Main', 'Missing', True));
+  finally
+    lIni.Free;
+  end;
+end;
+
+procedure TRichIniFilesTests.ReadBool_UsesConfiguredTrueValues;
+const
+  cContent =
+    '[Main]' + sLineBreak +
+    'German=JA' + sLineBreak +
+    'DefaultOne=1';
+var
+  lOptions: TRichIniOptions;
+  lIni: TRichIniFile;
+begin
+  lOptions := DefaultRichIniOptions;
+  lOptions.BooleanTrueValues := TArray<string>.Create('ja', 'oui');
+  lIni := LoadIniFromText(cContent, lOptions);
+  try
+    Assert.IsTrue(lIni.ReadBool('Main', 'German', False));
+    Assert.IsFalse(lIni.ReadBool('Main', 'DefaultOne', True));
+  finally
+    lIni.Free;
+  end;
+end;
+
+procedure TRichIniFilesTests.WriteBool_UsesConfiguredOutputTokens;
+var
+  lOptions: TRichIniOptions;
+  lIni: TRichIniFile;
+begin
+  lOptions := DefaultRichIniOptions;
+  lOptions.BooleanTrueValue := 'yes';
+  lOptions.BooleanFalseValue := 'no';
+  lIni := TRichIniFile.Create('', lOptions);
+  try
+    lIni.WriteBool('Main', 'Enabled', True);
+    lIni.WriteBool('Main', 'Disabled', False);
+    Assert.AreEqual('yes', lIni.ReadString('Main', 'Enabled', ''));
+    Assert.AreEqual('no', lIni.ReadString('Main', 'Disabled', ''));
+    Assert.IsTrue(lIni.ReadBool('Main', 'Enabled', False));
+    Assert.IsFalse(lIni.ReadBool('Main', 'Disabled', True));
+  finally
+    lIni.Free;
+  end;
+end;
+
+procedure TRichIniFilesTests.TCustomIniFileCompatibility_UpdateFileUsesRichIniBehavior;
+var
+  lOptions: TRichIniOptions;
+  lIni: TCustomIniFile;
+  lTempFile: string;
+  lText: string;
+begin
+  lOptions := DefaultRichIniOptions;
+  lTempFile := TPath.Combine(TPath.GetTempPath, TPath.GetRandomFileName + '.ini');
+  lIni := TRichIniFile.Create(lTempFile, lOptions);
+  try
+    lIni.WriteBool('Main', 'Enabled', True);
+    lIni.UpdateFile;
+    lText := TFile.ReadAllText(lTempFile, TEncoding.UTF8);
+    Assert.IsTrue(Pos('Enabled=1', lText) > 0, lText);
+    Assert.IsTrue(lIni.ReadBool('Main', 'Enabled', False));
+  finally
+    lIni.Free;
+    if TFile.Exists(lTempFile) then
+      TFile.Delete(lTempFile);
   end;
 end;
 

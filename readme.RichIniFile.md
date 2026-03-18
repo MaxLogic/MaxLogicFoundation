@@ -1,12 +1,13 @@
 # TRichIniFile – Rich INI reader/writer
 
-`TRichIniFile` is a Delphi 12+ drop-in friendly INI engine that keeps the source file intact while exposing a familiar `TIniFile`/`TMemIniFile` surface. It is designed for tooling and configuration scenarios that need comment preservation, duplicate keys, controlled encodings, and atomic saves without sacrificing performance.
+`TRichIniFile` is a Delphi 12+ drop-in friendly INI engine that keeps the source file intact while exposing a familiar `TIniFile`/`TMemIniFile` surface. It now descends from `System.IniFiles.TCustomIniFile`, so APIs that expect a `TCustomIniFile` instance can use it directly. It is designed for tooling and configuration scenarios that need comment preservation, duplicate keys, controlled encodings, and atomic saves without sacrificing performance.
 
 ## Highlights
 - Preserves the original text layout: comments, blank lines, duplicate sections/keys, and key ordering are kept byte-for-byte unless you mutate them.
 - Comment ownership modes (`coAttachToNext`, `coAttachToPrev`, `coNone`) let you control where runs of comments travel during edits.
 - Duplicate-aware API: append keys, enumerate all duplicate values, ask for the last occurrence index, and consolidate sections when you need a single view.
 - Encoding and newline control: auto-detect BOM/encoding on load, force UTF-8/ANSI/custom encodings on save, and override newline style per spec.
+- `TCustomIniFile` compatibility: `UpdateFile`, `ReadBool`, `WriteBool`, and the standard INI read/write surface work through the RichIni engine.
 - Atomic `SaveToFile`: writes to a sibling temp file and renames into place, mirroring the detected BOM and newline semantics unless overridden.
 - Compatibility surface mirrors `TMemIniFile` (`ReadString`, `WriteString`, `ReadSection*`, `EraseSection`, etc.), so existing consumers can migrate with minimal changes.
 
@@ -40,6 +41,8 @@ Key option knobs (see `MaxLogic.RichIniFile.pas` for full detail):
 | `CommentPrefixes` | Customize which prefixes (`;`, `#`, `//` by default) are treated as full-line comments. |
 | `CommentOwnership` | Route comment runs to their next/previous owner or keep them orphaned. |
 | `KeyValueDelimiter` | Accept alternate delimiters such as `:` or space. |
+| `BooleanTrueValues` | Case-insensitive tokens treated as `True` when reading booleans (`1`, `y`, `yes`, `on`, `enabled`, `true` by default). |
+| `BooleanTrueValue` / `BooleanFalseValue` | Tokens written by `WriteBool` (`1` / `0` by default). |
 
 Use `CreateFromStrings` when you already have the text in memory and want to avoid filesystem IO:
 
@@ -51,6 +54,22 @@ Use `LoadFromText` when we already decoded the file content ourselves and still 
 
 ```pascal
 Ini.LoadFromText(SourceText, TEncoding.UTF8, True);
+```
+
+Use `TRichIniFile` anywhere a `TCustomIniFile` is expected:
+
+```pascal
+var
+  IniBase: TCustomIniFile;
+begin
+  IniBase := TRichIniFile.Create('settings.ini', Options);
+  try
+    IniBase.WriteBool('Main', 'Enabled', True); // writes "1" by default
+    IniBase.UpdateFile;
+  finally
+    IniBase.Free;
+  end;
+end;
 ```
 
 ## Reading & writing

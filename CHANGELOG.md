@@ -9,8 +9,11 @@ All notable changes to MaxLogicFoundation are documented here.
 - `MaxLogic.Cache`: multi-namespace, single-flight cache with TTL/idle expiration, tag invalidation, lazy dependency validation, sweeper eviction, metrics, and fail-fast shutdown.
 - `readme.cache.md`: usage and behavior notes for `MaxLogic.Cache`.
 - `TRichIniFile.LoadFromText`: load already-decoded INI content while preserving source encoding/BOM metadata for later saves.
+- `TRichIniFile` now descends from `TCustomIniFile`, so existing INI-oriented APIs can consume it directly.
 
 ### Fixed
+
+- `TRichIniFile.ReadBool`/`WriteBool` now use regular INI-compatible defaults (`1`/`0`) with configurable true-token parsing and configurable output tokens.
 
 - Cache invalidation and eviction now mark entries obsolete before bucket removal to avoid tag pollution under concurrent loads.
 - `TMaxCache.ScopedTag` now rejects tags containing `|` unless they are `global:`.
