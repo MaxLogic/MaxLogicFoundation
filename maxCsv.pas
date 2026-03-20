@@ -134,11 +134,13 @@ type
     fStream: TStream;
     fOwnsStream: boolean;
     fBuffer: TMemoryStream;
+    fEncodeBuffer: TBytes;
     fEncoding: TEncoding;
     FLineBreak: rawByteString;
     FCloseRowWithDelimiter: boolean;
     fControlChars: array[char] of boolean;
 
+    procedure WriteEncodedString(const aValue: string);
     procedure WriteCell(const Value: string); overload;
     procedure WriteCell(const Value: rawByteString); overload;
     procedure SetLineBreak(const Value: rawByteString);
@@ -299,12 +301,30 @@ begin
   inherited;
 end;
 
+procedure TCsvWriter.WriteEncodedString(const aValue: string);
+var
+  lByteCount: integer;
+begin
+  if aValue = '' then
+    Exit;
+
+  lByteCount := fEncoding.GetByteCount(aValue);
+  if lByteCount <= 0 then
+    Exit;
+
+  if Length(fEncodeBuffer) < lByteCount then
+    SetLength(fEncodeBuffer, lByteCount);
+
+  lByteCount := fEncoding.GetBytes(aValue, Low(string), Length(aValue), fEncodeBuffer, 0);
+  if lByteCount > 0 then
+    fBuffer.WriteBuffer(fEncodeBuffer[0], lByteCount)
+end;
+
 procedure TCsvWriter.WriteCell(const Value: string);
 var
   s: string;
   X: integer;
   RequireQuote: boolean;
-  bytes: TBytes;
 begin
   s := Value;
   RequireQuote := False;
@@ -326,9 +346,7 @@ begin
       lQuoteChar;
   end;
 
-  bytes := fEncoding.getbytes(s);
-  if length(bytes) <> 0 then
-    fBuffer.WriteBuffer(bytes[0], length(bytes))
+  WriteEncodedString(s);
 end;
 
 procedure TCsvWriter.WriteRow(const Row: TRow);
