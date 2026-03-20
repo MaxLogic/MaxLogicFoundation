@@ -275,13 +275,30 @@ uses
 {$IFDEF MSWINDOWS}
   Winapi.Windows,
 {$ELSE}
-  Posix.Stdlib, Posix.Stdio, Posix.SysStat, Posix.Unistd, Posix.Errno, Posix.SysWait,
+  Posix.Base, Posix.Stdlib, Posix.SysStat, Posix.Unistd, Posix.Errno,
 {$ENDIF}
   System.StrUtils, System.Character, System.IOUtils, System.Math,
   maxlogic.ioUtils;
 
 const
   LAYER_FILES: array[0..2] of string = ('.env', '.env.local', '.env.secret');
+
+{$IFNDEF MSWINDOWS}
+type
+  TPipeHandle = Pointer;
+  {$IFDEF LINUX}
+  TDotEnvStat = _stat;
+  {$ELSE}
+  TDotEnvStat = stat;
+  {$ENDIF}
+
+function DotEnvFgets(aBuffer: Pointer; aSize: Int32; aStream: TPipeHandle): Pointer; cdecl;
+  external libc name _PU + 'fgets';
+function DotEnvPopen(const aCommand: MarshaledAString; const aType: MarshaledAString): TPipeHandle; cdecl;
+  external libc name _PU + 'popen';
+function DotEnvPclose(aHandle: TPipeHandle): Int32; cdecl;
+  external libc name _PU + 'pclose';
+{$ENDIF}
 
 function StripTrailingWhitespaceWithEscape(var aText: string): Boolean;
 var
@@ -1677,13 +1694,12 @@ var
   lGuid: TGUID;
 {$ELSE}
 var
-  lPipe: PIOFile;
+  lPipe: TPipeHandle;
   lBuffer: array[0..1023] of AnsiChar;
   lLinePtr: PAnsiChar;
   lStatus: Integer;
-  {$IF DECLARED(WIFEXITED)}
   lExitCode: Integer;
-  {$IFEND}
+  lSignal: Integer;
   lAccum: AnsiString;
 {$ENDIF}
 begin
@@ -1829,7 +1845,7 @@ begin
   end;
 {$ELSE}
   lAccum := '';
-  lPipe := popen(PAnsiChar(AnsiString(aCmd)), PAnsiChar(AnsiString('r')));
+  lPipe := DotEnvPopen(PAnsiChar(AnsiString(aCmd)), PAnsiChar(AnsiString('r')));
   if lPipe = nil then
   begin
     aErrMsg := 'Failed to execute command';
@@ -1838,29 +1854,32 @@ begin
   try
     while True do
     begin
-      lLinePtr := fgets(@lBuffer[0], SizeOf(lBuffer), lPipe);
+      lLinePtr := DotEnvFgets(@lBuffer[0], SizeOf(lBuffer), lPipe);
       if lLinePtr = nil then
         Break;
       lAccum := lAccum + AnsiString(lLinePtr);
     end;
   finally
-    lStatus := pclose(lPipe);
+    lStatus := DotEnvPclose(lPipe);
   end;
   aOutput := string(lAccum);
-  // Interpret exit status: prefer sys/wait helpers when available; otherwise fall back to raw Status.
-  {$IF DECLARED(WIFEXITED)}
-  if WIFEXITED(lStatus) then
-    lExitCode := WEXITSTATUS(lStatus)
+  // pclose returns a waitpid-style status on POSIX.
+  if (lStatus and $7F) = 0 then
+  begin
+    lExitCode := (lStatus shr 8) and $FF;
+    Result := (lExitCode = 0);
+    if not Result then
+      aErrMsg := Format('Command exited with code %d', [lExitCode]);
+  end
   else
-    lExitCode := 1;
-  Result := (lExitCode = 0);
-  if not Result then
-    aErrMsg := Format('Command exited with code %d', [lExitCode]);
-  {$ELSE}
-  Result := (lStatus = 0);
-  if not Result then
-    aErrMsg := Format('Command exited with code %d', [lStatus]);
-  {$IFEND}
+  begin
+    lSignal := lStatus and $7F;
+    Result := False;
+    if (lStatus and $80) <> 0 then
+      aErrMsg := Format('Command terminated by signal %d (core dumped)', [lSignal])
+    else
+      aErrMsg := Format('Command terminated by signal %d', [lSignal]);
+  end;
 {$ENDIF}
 end;
 
@@ -2362,6 +2381,7 @@ var
   lSeen: TDictionary<string, Byte>;
   lBasePath: string;
   lCurrent: string;
+  lNormalizedCurrent: string;
   lParentPath: string;
   lDepth: Integer;
   lHomeDir: string;
@@ -2427,7 +2447,10 @@ begin
       lCurrent := lBasePath;
       for lDepth := 1 to FParentDepth do
       begin
-        lParentPath := TPath.GetDirectoryName(unSlash(lCurrent));
+        lNormalizedCurrent := unSlash(lCurrent);
+        if lNormalizedCurrent = '' then
+          Break;
+        lParentPath := TPath.GetDirectoryName(lNormalizedCurrent);
         if (lParentPath = '') or MaxLogic.ioUtils.SamePath(lParentPath, lCurrent) then
           Break;
         AddRoot(TSearchRootKind.srParents, lParentPath);
@@ -2592,7 +2615,7 @@ begin
 end;
 {$ELSE}
 var
-  lStatBuf: stat;
+  lStatBuf: TDotEnvStat;
   lFileNameOnly: string;
 begin
   Result := True;

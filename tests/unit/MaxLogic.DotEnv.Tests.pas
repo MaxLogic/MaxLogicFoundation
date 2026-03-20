@@ -114,6 +114,7 @@ type
 
     // Command substitution edge cases
     [Test] procedure CommandSubstitution_NestedParentheses;
+    [Test] procedure CommandSubstitution_POSIX_SignaledProcess_IsError;
     [Test] procedure CommandSubstitution_Disabled_LiteralInMiddle;
     [Test] procedure CommandSubstitution_Windows_UTF8BOM_Batch;
 
@@ -1952,7 +1953,7 @@ begin
       Assert.AreEqual('1', CollectValue(DotEnv, K1));
       Dict := DotEnv.AsDictionary;
       try
-        Assert.AreEqual(2, Dict.Count, 'Case-sensitive map should contain both casings');
+        Assert.AreEqual<Integer>(2, Dict.Count, 'Case-sensitive map should contain both casings');
       finally
         Dict.Free;
       end;
@@ -1967,7 +1968,7 @@ begin
       DotEnv.LoadFiles([EnvFile], [TDotEnvOption.CaseSensitiveKeys]);
       Dict := DotEnv.AsDictionary;
       try
-        Assert.AreEqual(2, Dict.Count, 'CaseSensitiveKeys: both casings must be distinct');
+        Assert.AreEqual<Integer>(2, Dict.Count, 'CaseSensitiveKeys: both casings must be distinct');
         Assert.AreEqual('1', CollectValue(DotEnv, K1));
         Assert.AreEqual('2', CollectValue(DotEnv, K2));
       finally
@@ -2404,7 +2405,7 @@ begin
       Assert.IsTrue(HasCycle, 'Three-file cycle detection expected');
       Dict := DotEnv.AsDictionary;
       try
-        Assert.AreEqual(0, Dict.Count, 'No values should be stored for a pure include cycle');
+        Assert.AreEqual<Integer>(0, Dict.Count, 'No values should be stored for a pure include cycle');
       finally
         Dict.Free;
       end;
@@ -2723,7 +2724,7 @@ begin
       D := DotEnv.AsDictionary;
       try
         Keys := D.Keys.ToArray;
-        Assert.AreEqual(1, Length(Keys));
+        Assert.AreEqual<Integer>(1, Length(Keys));
         Assert.AreEqual('KeyName', Keys[0], 'AsDictionary must preserve original casing');
       finally
         D.Free;
@@ -2744,7 +2745,11 @@ begin
   TempDir := MakeTempDir('cmd-nested');
   try
     EnvFile := BuildPath(TempDir, ['.env']);
+    {$IFDEF MSWINDOWS}
     WriteText(EnvFile, 'OUT=$(echo a (b) c)'#10);
+    {$ELSE}
+    WriteText(EnvFile, 'OUT=$(printf ''a (b) c'')'#10);
+    {$ENDIF}
     DotEnv := TDotEnv.Create;
     try
       DotEnv.LoadFiles([EnvFile], [TDotEnvOption.AllowCommandSubst]);
@@ -2756,6 +2761,46 @@ begin
     RemoveDirRecursive(TempDir);
   end;
 end;
+
+procedure TMaxLogicDotEnvTests.CommandSubstitution_POSIX_SignaledProcess_IsError;
+{$IFNDEF MSWINDOWS}
+var
+  TempDir, EnvFile: string;
+  DotEnv: TDotEnv;
+  Errors: TArray<TDotEnvError>;
+  HasSignalErr: Boolean;
+  Err: TDotEnvError;
+begin
+  TempDir := MakeTempDir('cmd-signal');
+  try
+    EnvFile := BuildPath(TempDir, ['.env']);
+    WriteText(EnvFile, 'OUT=$(kill -TERM $$)'#10);
+    DotEnv := TDotEnv.Create;
+    try
+      DotEnv.LoadFiles([EnvFile], [TDotEnvOption.AllowCommandSubst]);
+      Assert.AreEqual('', CollectValue(DotEnv, 'OUT'),
+        'Signaled command should yield empty value.' + sLineBreak + DumpDiag(DotEnv));
+      Errors := DotEnv.GetErrors;
+      HasSignalErr := False;
+      for Err in Errors do
+        if (Err.Kind = TDotEnvErrorKind.DekCommand) and ContainsText(Err.Message, 'signal 15') then
+        begin
+          HasSignalErr := True;
+          Break;
+        end;
+      Assert.IsTrue(HasSignalErr, 'DekCommand error with signal details expected.' + sLineBreak + DumpDiag(DotEnv));
+    finally
+      DotEnv.Free;
+    end;
+  finally
+    RemoveDirRecursive(TempDir);
+  end;
+end;
+{$ELSE}
+begin
+  Assert.Pass('POSIX-only test');
+end;
+{$ENDIF}
 
 procedure TMaxLogicDotEnvTests.CommandSubstitution_Disabled_LiteralInMiddle;
 var
