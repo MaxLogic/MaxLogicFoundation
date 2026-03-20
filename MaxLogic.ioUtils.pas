@@ -361,24 +361,48 @@ end;
 
 function GetCurrentDLLName: string;
 var
-  s: string;
-  i: integer;
+  lPath: string;
+  lLength: Integer;
 begin
-  SetLength(s, max_path);
-  i := GetModuleFileName(HInstance, @s[1], max_path);
-  if i > 0 then
+  {$IFDEF MSWINDOWS}
+  SetLength(lPath, max_path);
+  lLength := GetModuleFileName(HInstance, @lPath[1], max_path);
+  if lLength > 0 then
   begin
-    SetLength(s, i);
-    Result := s;
+    SetLength(lPath, lLength);
+    Result := lPath;
   end
   else
     Result := '';
+  {$ELSE}
+  lPath := ParamStr(0);
+  if lPath = '' then
+    Exit('');
+  try
+    Result := TPath.GetFullPath(lPath);
+  except
+    Result := lPath;
+  end;
+  {$ENDIF}
 end;
 
 function GetInstallDir: string;
 begin
   Result := GetCurrentDLLName;
-  Result := ExtractFilePath(Result);
+  if Result <> '' then
+    Result := ExtractFilePath(Result);
+  if Result = '' then
+  begin
+    Result := ParamStr(0);
+    if Result <> '' then
+    begin
+      try
+        Result := TPath.GetFullPath(Result);
+      except
+      end;
+      Result := ExtractFilePath(Result);
+    end;
+  end;
 end;
 
 {$IFDEF MSWINDOWS}
