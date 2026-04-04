@@ -25,6 +25,8 @@ type
 
   [TestFixture]
   TSimpleAsyncCallTests = class
+  private
+    procedure ResetMaxAsyncTestState;
   public
     [Test] procedure SimpleAsyncCallRunsProcedure;
     [Test] procedure SequentialSimpleAsyncCallReleasesAndReacquiresWorker;
@@ -38,6 +40,9 @@ type
     [Test] procedure InsideMainThreadReflectsThreadContext;
     [Test] procedure GetThreadNameReturnsCurrentTaskName;
     [Test] procedure WakeUpUpdatesThreadNameForLookup;
+    [Test] procedure AsyncDestroyOnBackgroundThreadSurvivesShutdownCleanupRace;
+    [Test] procedure WorkerReturnToWaitingSurvivesShutdownCleanupRace;
+    [Test] procedure ResetStateReleasesCachedWorkerAndClearsThreadLookup;
   end;
 
   [TestFixture]
@@ -109,6 +114,16 @@ type
     constructor Create(const aAsync: iAsync; const aDone: TEvent);
   end;
 
+  TAsyncReleaserThread = class(TThread)
+  private
+    fAsync: iAsync;
+    fDone: TEvent;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create(const aAsync: iAsync; const aDone: TEvent);
+  end;
+
 constructor TAsyncWaiterThread.Create(const aAsync: iAsync; const aDone: TEvent);
 begin
   inherited Create(True);
@@ -120,6 +135,20 @@ end;
 procedure TAsyncWaiterThread.Execute;
 begin
   fAsync.WaitFor;
+  fDone.SetEvent;
+end;
+
+constructor TAsyncReleaserThread.Create(const aAsync: iAsync; const aDone: TEvent);
+begin
+  inherited Create(True);
+  FreeOnTerminate := False;
+  fAsync := aAsync;
+  fDone := aDone;
+end;
+
+procedure TAsyncReleaserThread.Execute;
+begin
+  fAsync := nil;
   fDone.SetEvent;
 end;
 
@@ -150,6 +179,13 @@ begin
   lAsync.WaitFor;
   Assert.AreEqual<Integer>(1, lCalls);
   Assert.IsTrue(lAsync.Finished);
+end;
+
+procedure TSimpleAsyncCallTests.ResetMaxAsyncTestState;
+begin
+  TmaxAsyncGlobal.TestOnlyResetWaitingThreadDataState;
+  TmaxAsyncGlobal.TestOnlySetAfterAddToWaitingHook(nil);
+  TmaxAsyncGlobal.TestOnlySetBeforePushWaitingThreadDataHook(nil);
 end;
 
 procedure TSimpleAsyncCallTests.SequentialSimpleAsyncCallReleasesAndReacquiresWorker;
@@ -558,6 +594,193 @@ begin
 
   lResolvedName := TmaxAsyncGlobal.GetThreadName(lThreadId);
   Assert.AreEqual('WakeUpUpdatesThreadNameForLookup.Second', lResolvedName);
+end;
+
+procedure TSimpleAsyncCallTests.AsyncDestroyOnBackgroundThreadSurvivesShutdownCleanupRace;
+const
+  cTimeoutMs = 5000;
+var
+  lAsync: iAsync;
+  lCompleted: TEvent;
+  lDestroyDone: TEvent;
+  lReachedWindow: TEvent;
+  lReleaseWindow: TEvent;
+  lDestroyThread: TThread;
+  lProbeAsync: iAsync;
+  lProbeCalls: Integer;
+begin
+  lDestroyThread := nil;
+  ResetMaxAsyncTestState;
+
+  lCompleted := TEvent.Create(nil, True, False, '');
+  lDestroyDone := TEvent.Create(nil, True, False, '');
+  lReachedWindow := TEvent.Create(nil, True, False, '');
+  lReleaseWindow := TEvent.Create(nil, True, False, '');
+  try
+    TmaxAsyncGlobal.TestOnlySetBeforePushWaitingThreadDataHook(
+      procedure
+      begin
+        lReachedWindow.SetEvent;
+        Assert.AreEqual<TWaitResult>(wrSignaled, lReleaseWindow.WaitFor(cTimeoutMs),
+          'Timed out while waiting to resume AddToWaiting.');
+      end);
+    TmaxAsyncGlobal.TestOnlySetAfterAddToWaitingHook(
+      procedure
+      begin
+        lCompleted.SetEvent;
+      end);
+
+    lAsync := SimpleAsyncCall(
+      procedure
+      begin
+      end,
+      'AsyncDestroyOnBackgroundThreadSurvivesShutdownCleanupRace');
+    lAsync.WaitFor;
+
+    lDestroyThread := TAsyncReleaserThread.Create(lAsync, lDestroyDone);
+    lAsync := nil;
+    lDestroyThread.Start;
+
+    Assert.AreEqual<TWaitResult>(wrSignaled, lReachedWindow.WaitFor(cTimeoutMs),
+      'AddToWaiting should reach the controlled race window.');
+    TmaxAsyncGlobal.TestOnlyCleanupWaitingThreadDataState;
+    lReleaseWindow.SetEvent;
+
+    Assert.AreEqual<TWaitResult>(wrSignaled, lCompleted.WaitFor(cTimeoutMs),
+      'AddToWaiting should complete after shutdown cleanup.');
+    Assert.AreEqual<TWaitResult>(wrSignaled, lDestroyDone.WaitFor(cTimeoutMs),
+      'Background destroy thread should finish cleanly.');
+
+    ResetMaxAsyncTestState;
+    lProbeCalls := 0;
+    lProbeAsync := SimpleAsyncCall(
+      procedure
+      begin
+        TInterlocked.Increment(lProbeCalls);
+      end,
+      'AsyncDestroyOnBackgroundThreadSurvivesShutdownCleanupRace.Probe');
+    lProbeAsync.WaitFor;
+    Assert.AreEqual<Integer>(1, lProbeCalls,
+      'maxAsync should still accept new work after the shutdown-race cleanup path.');
+    lProbeAsync := nil;
+  finally
+    if lDestroyThread <> nil then
+    begin
+      lDestroyThread.WaitFor;
+      lDestroyThread.Free;
+    end;
+    ResetMaxAsyncTestState;
+    lReleaseWindow.Free;
+    lReachedWindow.Free;
+    lDestroyDone.Free;
+    lCompleted.Free;
+  end;
+end;
+
+procedure TSimpleAsyncCallTests.WorkerReturnToWaitingSurvivesShutdownCleanupRace;
+const
+  cTimeoutMs = 5000;
+var
+  lAsync: iAsync;
+  lCompleted: TEvent;
+  lProbeAsync: iAsync;
+  lProbeCalls: Integer;
+  lProcRelease: TEvent;
+  lProcStarted: TEvent;
+  lReachedWindow: TEvent;
+  lReleaseWindow: TEvent;
+begin
+  ResetMaxAsyncTestState;
+
+  lCompleted := TEvent.Create(nil, True, False, '');
+  lProcRelease := TEvent.Create(nil, True, False, '');
+  lProcStarted := TEvent.Create(nil, True, False, '');
+  lReachedWindow := TEvent.Create(nil, True, False, '');
+  lReleaseWindow := TEvent.Create(nil, True, False, '');
+  try
+    TmaxAsyncGlobal.TestOnlySetBeforePushWaitingThreadDataHook(
+      procedure
+      begin
+        lReachedWindow.SetEvent;
+        Assert.AreEqual<TWaitResult>(wrSignaled, lReleaseWindow.WaitFor(cTimeoutMs),
+          'Timed out while waiting to resume AddToWaiting.');
+      end);
+    TmaxAsyncGlobal.TestOnlySetAfterAddToWaitingHook(
+      procedure
+      begin
+        lCompleted.SetEvent;
+      end);
+
+    lAsync := SimpleAsyncCall(
+      procedure
+      begin
+        lProcStarted.SetEvent;
+        Assert.AreEqual<TWaitResult>(wrSignaled, lProcRelease.WaitFor(cTimeoutMs),
+          'Timed out while waiting to release the worker procedure.');
+      end,
+      'WorkerReturnToWaitingSurvivesShutdownCleanupRace');
+
+    Assert.AreEqual<TWaitResult>(wrSignaled, lProcStarted.WaitFor(cTimeoutMs),
+      'Worker procedure should start before we release the async handle.');
+    lAsync := nil;
+    lProcRelease.SetEvent;
+
+    Assert.AreEqual<TWaitResult>(wrSignaled, lReachedWindow.WaitFor(cTimeoutMs),
+      'Worker thread should reach the controlled race window.');
+    TmaxAsyncGlobal.TestOnlyCleanupWaitingThreadDataState;
+    lReleaseWindow.SetEvent;
+
+    Assert.AreEqual<TWaitResult>(wrSignaled, lCompleted.WaitFor(cTimeoutMs),
+      'Worker return-to-waiting should complete after shutdown cleanup.');
+
+    ResetMaxAsyncTestState;
+    lProbeCalls := 0;
+    lProbeAsync := SimpleAsyncCall(
+      procedure
+      begin
+        TInterlocked.Increment(lProbeCalls);
+      end,
+      'WorkerReturnToWaitingSurvivesShutdownCleanupRace.Probe');
+    lProbeAsync.WaitFor;
+    Assert.AreEqual<Integer>(1, lProbeCalls,
+      'maxAsync should still accept new work after the worker shutdown-race cleanup path.');
+    lProbeAsync := nil;
+  finally
+    ResetMaxAsyncTestState;
+    lReleaseWindow.Free;
+    lReachedWindow.Free;
+    lProcStarted.Free;
+    lProcRelease.Free;
+    lCompleted.Free;
+  end;
+end;
+
+procedure TSimpleAsyncCallTests.ResetStateReleasesCachedWorkerAndClearsThreadLookup;
+var
+  lAsync: iAsync;
+  lResolvedName: string;
+  lThreadId: TThreadID;
+begin
+  ResetMaxAsyncTestState;
+
+  lThreadId := 0;
+  lAsync := SimpleAsyncCall(
+    procedure
+    begin
+      lThreadId := TThread.CurrentThread.ThreadId;
+    end,
+    'ResetStateReleasesCachedWorkerAndClearsThreadLookup');
+  lAsync.WaitFor;
+
+  Assert.AreEqual('ResetStateReleasesCachedWorkerAndClearsThreadLookup',
+    TmaxAsyncGlobal.GetThreadName(lThreadId));
+
+  lAsync := nil;
+  ResetMaxAsyncTestState;
+
+  lResolvedName := TmaxAsyncGlobal.GetThreadName(lThreadId);
+  Assert.AreEqual('', lResolvedName,
+    'Reset should release cached workers and clear the thread lookup entry.');
 end;
 
 procedure TAsyncLoopCoverageTests.ExecuteAndWaitForCompletesRange;
