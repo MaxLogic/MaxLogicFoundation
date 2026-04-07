@@ -85,3 +85,52 @@ tmp*.md
 .tmp*
 /tests/dunitx-vcl-results.xml
 /tests/.wsl-bat-launcher.gfazqF.cmd
+
+## Delphi / IDE files
+
+*.user
+*.dsv
+*.save
+*.cbk
+
+## Build / output folders
+Release/
+Debug/
+DCU/
+Linux64/
+OSX32/
+OSX64/
+Win32/
+Win64/
+Android/
+TMSWeb/
+_Release-Binaries
+
+
+## VCS / dependency / tooling
+.hg/
+.svn/
+modules/
+GPATH
+GRTAGS
+GTAGS
+
+
+## OS / editor / misc
+.DS_Store
+~$*.*
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+## FinalBuilder
+*.fbpInf
+*.fbl8
+*.fbpbrk
+*.fb8lck
+
+## Claude Code
+.claude/settings.local.json
+
