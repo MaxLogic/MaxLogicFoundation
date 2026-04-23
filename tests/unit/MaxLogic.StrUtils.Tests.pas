@@ -39,7 +39,7 @@ type
 
     [Test] procedure StrToFloatWCC_Formats;
     [Test] procedure StrToFloatWCC_LettersRaise_And_TryFalse_And_Default;
-    [Test] procedure StrToFloatWCC_Negative_Numbers_And_GroupingOnly;
+    [Test] procedure StrToFloatWCC_Negative_Numbers_And_SingleSeparatorDecimals;
 
     [Test] procedure CharPosEx_Unsorted_And_Sorted_And_Bounds;
     [Test] procedure CharPosEx_EndOffsetClamping;
@@ -705,14 +705,20 @@ begin
   Assert.AreEqual(42.5, StrToFLoatWccDef('', 42.5), 1e-12);
 end;
 
-procedure TMaxLogicStrUtilsTests.StrToFloatWCC_Negative_Numbers_And_GroupingOnly;
+procedure TMaxLogicStrUtilsTests.StrToFloatWCC_Negative_Numbers_And_SingleSeparatorDecimals;
 begin
   // Negative with both separators
   Assert.AreEqual(-1234.56, StrToFloatWCC('-1,234.56'), 1e-9);
   Assert.AreEqual(-1234.56, StrToFloatWCC('-1.234,56'), 1e-9);
-  // Grouping-only inputs (no decimals) → 1234
-  Assert.AreEqual(1234.0, StrToFloatWCC('1,234'), 1e-9);
-  Assert.AreEqual(1234.0, StrToFloatWCC('1.234'), 1e-9);
+  Assert.AreEqual(-1234.56, StrToFLoatWccDef('-1,234.56', 0), 1e-9);
+  Assert.AreEqual(-1234.56, StrToFLoatWccDef('-1.234,56', 0), 1e-9);
+  // Single separator with three digits on the right remains a decimal input.
+  Assert.AreEqual(1.234, StrToFloatWCC('1,234'), 1e-9);
+  Assert.AreEqual(1.234, StrToFloatWCC('1.234'), 1e-9);
+  Assert.AreEqual(23.023, StrToFloatWCC('23,023'), 1e-9);
+  Assert.AreEqual(23.023, StrToFloatWCC('23.023'), 1e-9);
+  Assert.AreEqual(23.023, StrToFLoatWccDef('23,023', 0), 1e-9);
+  Assert.AreEqual(23.023, StrToFLoatWccDef('23.023', 0), 1e-9);
 end;
 
 { CharPosEx tests }

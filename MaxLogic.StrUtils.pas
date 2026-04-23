@@ -1193,35 +1193,6 @@ begin
         decimalSeparatorIndex := LastCommaIndex;
     end;
   end
-  else if (DotCount + CommaCount = 1) then
-  begin
-    // one separator total: decide decimal vs grouping-only
-    var lSepIndex: integer := IfThen(DotCount = 1, FirstDotIndex, firstCommaIndex);
-    var lDigitsRight: integer := 0;
-    var lJ: integer := lSepIndex + 1;
-
-    while (lJ <= length(s)) and System.SysUtils.CharInSet(s[lJ], ['0'..'9']) do
-    begin
-      Inc(lDigitsRight);
-      Inc(lJ);
-    end;
-
-    if (lJ > length(s)) and (lDigitsRight = 3) then
-    begin
-      // treat as thousands grouping: keep decimalSeparatorIndex = -1 so the separator is removed
-      // delDot/delComma remain True to delete the single separator
-    end
-    else if DotCount = 1 then
-    begin
-      decimalSeparatorIndex := FirstDotIndex;
-      delDot := False; // keep the single dot as decimal
-    end
-    else
-    begin
-      decimalSeparatorIndex := firstCommaIndex;
-      delComma := False; // keep the single comma as decimal
-    end;
-  end
   else if DotCount = 1 then
   begin
     decimalSeparatorIndex := FirstDotIndex;
