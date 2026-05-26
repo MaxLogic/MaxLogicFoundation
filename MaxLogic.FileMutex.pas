@@ -28,7 +28,29 @@ Type
 Implementation
 
 Uses
+  {$IFDEF POSIX}
+  Posix.Base,
+  {$ENDIF}
   ioUtils, diagnostics, math;
+
+{$IFDEF POSIX}
+Const
+  cLockExclusive = 2;
+  cLockNonBlocking = 4;
+  cLockUnlock = 8;
+
+Function Cflock(fd: Integer; operation: Integer): Integer; Cdecl; External libc Name _PU + 'flock';
+
+Function TryLockHandle(aHandle: THandle): Boolean;
+Begin
+  Result := Cflock(Integer(aHandle), cLockExclusive Or cLockNonBlocking) = 0;
+End;
+
+Procedure UnlockHandle(aHandle: THandle);
+Begin
+  Cflock(Integer(aHandle), cLockUnlock);
+End;
+{$ENDIF}
 
 Function TFileMutex.Open(Const aFileName: String; aTimeOutInMs: Integer): Boolean;
 Var
@@ -44,6 +66,14 @@ Begin
       // chmod is as octal value
       FFileHandle := FileCreate(aFileName, fmOpenReadWrite Or fmShareExclusive, 420);
     end;
+
+    {$IFDEF POSIX}
+    If (FFileHandle <> INVALID_HANDLE_VALUE) And Not TryLockHandle(FFileHandle) Then
+    Begin
+      FileClose(FFileHandle);
+      FFileHandle := INVALID_HANDLE_VALUE;
+    End;
+    {$ENDIF}
 
     // we do not spin forever, the cpu would not like that. Rather go to sleep after some time
     If (FFileHandle = INVALID_HANDLE_VALUE) And (st.ElapsedMilliseconds < aTimeOutInMs) And (st.ElapsedMilliseconds > 30) Then
@@ -74,6 +104,9 @@ Procedure TFileMutex.Close;
 Begin
   if fFileHandle <> INVALID_HANDLE_VALUE Then
   Begin
+    {$IFDEF POSIX}
+    UnlockHandle(FFileHandle);
+    {$ENDIF}
     FileClose(FFileHandle);
     FFileHandle := INVALID_HANDLE_VALUE;
   End;
