@@ -8,7 +8,8 @@ uses
 
 procedure AdjustMadExcept(const aLogdir: string);
 
-procedure SetUpWebUpload(const aUrl, aTenant: String; aDisableOtherSendBugRportMethods: Boolean = True);
+procedure SetUpWebUpload(const aUrl, aTenant: String;
+  aDisableOtherSendBugRportMethods: Boolean = True; const aUploadToken: String = '');
 
 // --- smtp specific
 procedure SetUpSmtp(const aServer, aUsername, aPassword: string; aPort: integer);
@@ -100,7 +101,8 @@ begin
   end;
 end;
 
-procedure SetUpWebUpload(const aUrl, aTenant: String; aDisableOtherSendBugRportMethods: Boolean = True);
+procedure SetUpWebUpload(const aUrl, aTenant: String;
+  aDisableOtherSendBugRportMethods: Boolean = True; const aUploadToken: String = '');
 var
   mcfg: IMEModuleSettings;
 begin
@@ -129,8 +131,11 @@ begin
 
   // Optional: add extra form fields if needed
   // mcfg.AdditionalFields['username'] := 'exampleuser';
-  if aTenant<>'' then
+  if aTenant <> '' then
     mcfg.AdditionalFields['customerIdentifier'] := aTenant;
+
+  if aUploadToken <> '' then
+    mcfg.AdditionalFields['uploadToken'] := aUploadToken;
 end;
 
 procedure SetUpSmtp(const aServer, aUsername, aPassword: string; aPort: integer);
