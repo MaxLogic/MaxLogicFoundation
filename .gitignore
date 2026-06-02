@@ -135,3 +135,4 @@ GTAGS
 .claude/settings.local.json
 .codex
 .dak/
+msbuild.log
