@@ -126,9 +126,9 @@ begin
   while i <= Length(s) do
   begin
     c1 := s[i];
-    if (i < Length(s)) and TCharacter.IsHighSurrogate(c1) and TCharacter.IsLowSurrogate(s[i+1]) then
+    if (i < Length(s)) and c1.IsHighSurrogate and s[i+1].IsLowSurrogate then
     begin
-      cp := TCharacter.ConvertToUtf32(c1, s[i+1]);
+      cp := ((Ord(c1) - $D800) shl 10) + (Ord(s[i+1]) - $DC00) + $10000;
       Inc(i, 2);
     end else begin
       cp := Ord(c1);

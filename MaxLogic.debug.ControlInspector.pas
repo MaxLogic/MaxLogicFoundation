@@ -449,7 +449,7 @@ begin
   lHandled := False;
   if (ssCtrl in aShift) and (ssShift in aShift) then
   begin
-    if Char(aKey) in ['Q', 'q'] then
+    if (aKey = Ord('Q')) or (aKey = Ord('q')) then
     begin
       lHandled := True;
       fMouseOverControl := FindVCLWindow(Mouse.CursorPos);

@@ -232,13 +232,13 @@ type
 
     function ReadString(const aSection, aKey, aDefault: string): string; override;
     procedure WriteString(const aSection, aKey, aValue: string); overload; override;
-    procedure WriteString(const aSection, aKey, aValue: string; aKeyIndex: Integer); overload;
+    procedure WriteString(const aSection, aKey, aValue: string; aKeyIndex: Integer); reintroduce; overload;
     function ReadInteger(const aSection, aKey: string; aDefault: Integer): Integer; override;
     procedure WriteInteger(const aSection, aKey: string; aValue: Integer); override;
     function ReadBool(const aSection, aKey: string; aDefault: Boolean): Boolean; override;
     procedure WriteBool(const aSection, aKey: string; aValue: Boolean); override;
     procedure DeleteKey(const aSection, aKey: string); overload; override;
-    procedure DeleteKey(const aSection, aKey: string; aKeyIndex: Integer); overload;
+    procedure DeleteKey(const aSection, aKey: string; aKeyIndex: Integer); reintroduce; overload;
     procedure EraseSection(const aSection: string); override;
     procedure ReadSection(const aSection: string; aStrings: TStrings); override;
     procedure ReadSections(aStrings: TStrings); override;

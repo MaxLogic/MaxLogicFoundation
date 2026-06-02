@@ -274,6 +274,7 @@ end;
 
 procedure TSimpleAsyncCallTests.SimpleAsyncCallAppliesCustomPriority;
 {$IFDEF MsWindows}
+{$WARN SYMBOL_PLATFORM OFF}
 var
   lAsync: iAsync;
   lObservedPriority: TThreadPriority;
@@ -291,6 +292,7 @@ begin
   Assert.AreEqual<Integer>(Ord(tpHighest), Ord(lObservedPriority),
     'SimpleAsyncCall should apply explicit non-default thread priority.');
 end;
+{$WARN SYMBOL_PLATFORM ON}
 {$ELSE}
 begin
   Assert.Pass('Thread priority is Windows-only.');

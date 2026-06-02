@@ -120,7 +120,7 @@ type
   /// <summary>
   ///   TFastCaseAwareComparer keeps allocations at zero for ASCII-heavy workloads by folding characters
   ///   through a lookup table and feeding them into a highly parallelized XXHash-style logic with overflow checks disabled.
-  ///   Non-ASCII inputs fall back to TCharacter.ToUpper calls on the fly, avoiding string allocations.
+  ///   Non-ASCII inputs fall back to TCharHelper.ToUpper calls on the fly, avoiding string allocations.
   ///   Latest DUnitX perf runs (Debug/Win32, 200k mixed keys) show ~2.8× vs TIStringComparer.Ordinal for case-insensitive hashes
   ///   and ~1.7× vs TStringComparer.Ordinal for ordinal mode, so prefer this comparer when we own both the key creation and dictionary lifetime.
   ///   If a caller can’t tolerate case-folding differences or needs locale-aware comparisons, stick with the RTL comparer.
@@ -149,8 +149,8 @@ type
     constructor Create(aCaseSensitive: Boolean);
     class function Ordinal: IEqualityComparer<string>; static;
     class function OrdinalIgnoreCase: IEqualityComparer<string>; static;
-    function Equals(const aLeft, aRight: string): Boolean;
-    function GetHashCode(const aValue: string): Integer;
+    function Equals(const aLeft, aRight: string): Boolean; reintroduce;
+    function GetHashCode(const aValue: string): Integer; reintroduce;
   end;
 
 /// <summary>
@@ -1252,7 +1252,7 @@ var
   i: Integer;
 begin
   for i := 0 to 255 do
-    FUpperAscii[i] := TCharacter.ToUpper(Char(i)); //PALOFF we only cast 0..255 here
+    FUpperAscii[i] := Char(i).ToUpper; //PALOFF we only cast 0..255 here
 end;
 
 class destructor TFastCaseAwareComparer.Destroy;
@@ -1271,14 +1271,14 @@ class function TFastCaseAwareComparer.FoldAscii(aChar: Char): Char;
 begin
   if Ord(aChar) <= 255 then
     Exit(FUpperAscii[Ord(aChar)]);
-  Result := TCharacter.ToUpper(aChar);
+  Result := aChar.ToUpper;
 end;
 
 class function TFastCaseAwareComparer.FoldCharValue(aChar: Char): Word;
 begin
   if Ord(aChar) <= 255 then
     Exit(Ord(FUpperAscii[Ord(aChar)]));
-  Result := Ord(TCharacter.ToUpper(aChar));
+  Result := Ord(aChar.ToUpper);
 end;
 
 class function TFastCaseAwareComparer.FoldPair(const aPair: Cardinal): Cardinal;
@@ -1409,6 +1409,7 @@ var
   lLen: Integer;
   lPtr, lEnd, lLimit: PChar;
   v1, v2, v3, v4: Cardinal;
+  lHash: Cardinal;
   lFolded: Cardinal;
 begin
   // xxHash32-style algorithm with case-folding on the fly
@@ -1452,18 +1453,18 @@ begin
     end;
 
     // Step 2: Merge accumulators
-    Result := Rotl32(v1, 1) + Rotl32(v2, 7) + Rotl32(v3, 12) + Rotl32(v4, 18);
+    lHash := Rotl32(v1, 1) + Rotl32(v2, 7) + Rotl32(v3, 12) + Rotl32(v4, 18);
   end
   else
-    Result := CXXPrime5; // Short string: start with seed value
+    lHash := CXXPrime5; // Short string: start with seed value
 
   // Step 3: Add total byte length
-  Result := Result + Cardinal(lLen * SizeOf(Char));
+  lHash := lHash + Cardinal(lLen * SizeOf(Char));
 
   // Step 4: Process remaining 2-char (4-byte) chunks
   while (lEnd - lPtr) >= 2 do
   begin
-    Result := Rotl32(Result + FoldPair(ReadCardinalUnaligned(lPtr)) * CXXPrime3, 17) * CXXPrime4;
+    lHash := Rotl32(lHash + FoldPair(ReadCardinalUnaligned(lPtr)) * CXXPrime3, 17) * CXXPrime4;
     Inc(lPtr, 2);
   end;
 
@@ -1472,18 +1473,18 @@ begin
   begin
     lFolded := FoldCharValue(lPtr^);
     // Hash UTF-16 char as 2 bytes (low byte, then high byte)
-    Result := Rotl32(Result + (lFolded and $FF) * CXXPrime5, 11) * CXXPrime1;
-    Result := Rotl32(Result + (lFolded shr 8) * CXXPrime5, 11) * CXXPrime1;
+    lHash := Rotl32(lHash + (lFolded and $FF) * CXXPrime5, 11) * CXXPrime1;
+    lHash := Rotl32(lHash + (lFolded shr 8) * CXXPrime5, 11) * CXXPrime1;
   end;
 
   // Step 6: Final avalanche mixing (ensures all bits influence final hash)
-  Result := Result xor (Result shr 15);
-  Result := Result * CXXPrime2;
-  Result := Result xor (Result shr 13);
-  Result := Result * CXXPrime3;
-  Result := Result xor (Result shr 16);
+  lHash := lHash xor (lHash shr 15);
+  lHash := lHash * CXXPrime2;
+  lHash := lHash xor (lHash shr 13);
+  lHash := lHash * CXXPrime3;
+  lHash := lHash xor (lHash shr 16);
 
-  Result := Integer(Result);
+  Result := Integer(lHash);
 {$IFDEF FASTCASE_HASHCI_RPLUS}
   {$UNDEF FASTCASE_HASHCI_RPLUS}
   {$R+}
