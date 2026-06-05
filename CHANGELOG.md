@@ -6,6 +6,7 @@ All notable changes to MaxLogicFoundation are documented here.
 
 ### Added
 
+- `MaxLogic.MadExcept.AiRunner`: DEBUG/agent-friendly madExcept setup that suppresses modal UI, deletes stale reports on startup, writes a trimmed last `bugreport.txt`, and exits with a deterministic code for automated runs.
 - `SetUpWebUpload` now accepts an optional upload token for token-protected madExcept HTTP uploads while remaining backwards compatible with existing callers.
 - `MaxLogic.Cache`: multi-namespace, single-flight cache with TTL/idle expiration, tag invalidation, lazy dependency validation, sweeper eviction, metrics, and fail-fast shutdown.
 - `readme.cache.md`: usage and behavior notes for `MaxLogic.Cache`.

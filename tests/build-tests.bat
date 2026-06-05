@@ -5,6 +5,12 @@ set SCRIPT_DIR=%~dp0
 set EXITCODE=0
 pushd "%SCRIPT_DIR%"
 
+call build-delphi.bat fixtures\MaxLogic.MadExcept.AiRunner.CrashFixture.dproj -config Debug
+if errorlevel 1 (
+  set EXITCODE=%ERRORLEVEL%
+  goto done
+)
+
 call build-delphi.bat MaxLogic.Tests.dproj
 if errorlevel 1 (
   set EXITCODE=%ERRORLEVEL%

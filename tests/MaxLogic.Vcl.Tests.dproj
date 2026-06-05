@@ -171,6 +171,7 @@
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
         <DCCReference Include="..\maxAsync.pas"/>
+        <DCCReference Include="..\MaxLogic.MadExcept.AiRunner.pas"/>
         <DCCReference Include="unit\MaxLogic.Async.Waiter.Vcl.Tests.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>

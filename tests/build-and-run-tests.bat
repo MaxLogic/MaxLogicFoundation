@@ -4,6 +4,7 @@ setlocal
 pushd "%~dp0"
 
 rem Run both test suites only if each previous step succeeded.
+call build-delphi.bat fixtures\MaxLogic.MadExcept.AiRunner.CrashFixture.dproj -config Debug && ^
 call build-delphi.bat MaxLogic.Tests.dproj -config Debug && ^
 call MaxLogic.Tests.exe && ^
 call build-and-run-vcl-tests.bat

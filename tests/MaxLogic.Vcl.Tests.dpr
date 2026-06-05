@@ -9,6 +9,9 @@ uses
   madListHardware,
   madListProcesses,
   madListModules,
+  {$IFDEF madExcept}
+  MaxLogic.MadExcept.AiRunner in '..\MaxLogic.MadExcept.AiRunner.pas',
+  {$ENDIF}
   Vcl.Forms,
   System.SysUtils,
   DUnitX.TestFramework,
@@ -23,6 +26,9 @@ var
 
 begin
   ReportMemoryLeaksOnShutdown := False;
+  {$IFDEF madExcept}
+  MaxLogic.MadExcept.AiRunner.ConfigureMadExceptForAiRunner;
+  {$ENDIF}
   Application.Initialize;
   Application.ShowMainForm := False;
   try

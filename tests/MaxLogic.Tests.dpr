@@ -9,6 +9,9 @@ uses
   madListHardware,
   madListProcesses,
   madListModules,
+  {$IFDEF madExcept}
+  MaxLogic.MadExcept.AiRunner in '..\MaxLogic.MadExcept.AiRunner.pas',
+  {$ENDIF}
  System.SysUtils,
   DUnitX.TestFramework,
   DUnitX.Loggers.Console,
@@ -33,6 +36,7 @@ uses
   MaxLogic.Cache.Tests in 'unit\MaxLogic.Cache.Tests.pas',
   MaxLogic.GitHubReleaseChecker.Tests in 'unit\MaxLogic.GitHubReleaseChecker.Tests.pas',
   MaxLogic.Hash.Tests in 'unit\MaxLogic.Hash.Tests.pas',
+  MaxLogic.MadExcept.AiRunner.Tests in 'unit\MaxLogic.MadExcept.AiRunner.Tests.pas',
   MaxLogic.Process.Tests in 'unit\MaxLogic.Process.Tests.pas';
 
 var
@@ -42,6 +46,9 @@ var
   XMLLogger: ITestLogger;
 begin
   ReportMemoryLeaksOnShutdown := True;
+  {$IFDEF madExcept}
+  MaxLogic.MadExcept.AiRunner.ConfigureMadExceptForAiRunner;
+  {$ENDIF}
   try
     TDUnitX.CheckCommandLine;
     Runner := TDUnitX.CreateRunner;
