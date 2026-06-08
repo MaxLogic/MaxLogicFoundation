@@ -2,9 +2,9 @@
 
 ## Status
 
-Nia is being built like a PC-level important NPC.
+Nia is built as a PC-level important NPC.
 
-Confirmed choices so far.
+No major pre-game Nia decisions remain.
 
 ## Role
 
@@ -190,11 +190,13 @@ When full, the Cradle makes a claim:
 
 This makes her useful without making the Cradle her superpower. She is a keyhole shaped like a person.
 
-## Patron / blackmailer
+## Blackmailer
 
-Use **Caeloran Whitewake** as the visible blackmailer.
+**Caeloran Whitewake** is the visible blackmailer only. He is not Nia's Warlock patron.
 
-He is the white wizard rival of Veyr. Publicly, he is a high wizard, protector, scholar, and moral counterweight to Marrowglass cruelty.
+Nia's Warlock power comes from Veyr's Marrowglass training, the alterations built into her, and the defensive sorcery she learned to survive the tower.
+
+Caeloran is the white wizard rival of Veyr. Publicly, he is a high wizard, protector, scholar, and moral counterweight to Marrowglass cruelty.
 
 Privately, he is controlled, cold, and willing to use Nia as gently as Veyr used her brutally.
 
@@ -245,6 +247,8 @@ Campaign structure:
 - **Caeloran** is the active blackmailer.
 - **The Black Cradle** is the deeper horror.
 - **Nia** is trapped between survival, guilt, and attachment to the monsters she betrayed.
+
+The first scene where Caeloran's pressure reaches Nia will be discovered during actual play, not decided in advance.
 
 ## Relationships with the Wicked Ones
 
@@ -326,5 +330,4 @@ Nia should matter emotionally and tactically, but should not become the protagon
 
 ## Still open
 
-- Decide whether Caeloran is also Nia's warlock patron or only her blackmailer.
-- Decide the exact first scene where Caeloran's pressure reaches her after the tower falls.
+No major pre-game Nia decisions remain.
