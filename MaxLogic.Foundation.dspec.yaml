@@ -24,7 +24,7 @@ targetPlatforms:
 templates:
   - name: default
     dependencies:
-      - id: Jcl
+      - id: ProjectJedi.Jcl
         version: "[0.0.1,)"
     source:
       - src: .\*.pas
