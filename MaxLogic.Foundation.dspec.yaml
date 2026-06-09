@@ -32,6 +32,7 @@ templates:
       - src: .\*.dfm
       - src: .\*.res
       - src: .\*.rc
+      - src: .\lib\jedi\*.inc
       - src: .\Package\*.dpk
       - src: .\Package\*.dproj
       - src: .\Package\*.res
