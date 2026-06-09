@@ -107,7 +107,7 @@ type
 
     // convenience helpers to load the whole CSV into memory
     /// <summary>
-    ///  Reads the complete CSV file into a <see cref="TList<TRow>"/> where each entry
+    ///  Reads the complete CSV file into a list where each entry
     ///  represents a row. Caller owns the list and its contained dynamic arrays.
     /// </summary>
     class function ReadAllToList(const aFileName: string; aUseDelimiter: char = #0): TList<TRow>; static;
