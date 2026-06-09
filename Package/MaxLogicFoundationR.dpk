@@ -108,6 +108,7 @@ contains
   MaxLogic.Windows in '..\MaxLogic.Windows.pas',
   maxOutOfScopeAutomation in '..\maxOutOfScopeAutomation.pas',
   maxSignal in '..\maxSignal.pas',
-  maxTextStream in '..\maxTextStream.pas';
+  maxTextStream in '..\maxTextStream.pas',
+  maxWndSubClassing in '..\maxWndSubClassing.pas';
 
 end.

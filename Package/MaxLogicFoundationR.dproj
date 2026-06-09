@@ -310,6 +310,7 @@
         <DCCReference Include="..\maxOutOfScopeAutomation.pas"/>
         <DCCReference Include="..\maxSignal.pas"/>
         <DCCReference Include="..\maxTextStream.pas"/>
+        <DCCReference Include="..\maxWndSubClassing.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
             <DependentOn>..\MaxLogicDefault.optset</DependentOn>
