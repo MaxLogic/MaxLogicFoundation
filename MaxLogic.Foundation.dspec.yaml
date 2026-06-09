@@ -23,6 +23,9 @@ targetPlatforms:
     template: default
 templates:
   - name: default
+    dependencies:
+      - id: Jcl
+        version: "[0.0.1,)"
     source:
       - src: .\*.pas
       - src: .\*.inc
@@ -37,4 +40,4 @@ templates:
     build:
       - project: .\Package\MaxLogicFoundationR.dproj
     environmentVariables:
-      PATH: $packageDir$\lib\Win32
+      PATH: $packageDir$\bpl\Win32
