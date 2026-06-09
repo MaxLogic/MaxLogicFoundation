@@ -185,7 +185,8 @@
         <DCC_UsePackage>vcl;rtl;dbrtl;bindengine;vclie;vcledge;CustomIPTransport;IndyIPCommon;IndySystem;IndyProtocols;IndyCore;IndyIPClient;RESTComponents;bindcomp;VCLRESTComponents;Jcl;$(DCC_UsePackage)</DCC_UsePackage>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base_Win64)'!=''">
-        <DCC_UsePackage>vcl;rtl;dbrtl;bindengine;vclie;vcledge;CustomIPTransport;IndyIPCommon;IndySystem;IndyProtocols;IndyCore;IndyIPClient;RESTComponents;bindcomp;VCLRESTComponents;$(DCC_UsePackage)</DCC_UsePackage>
+        <DCC_Namespace>Winapi;System.Win;Data.Win;Datasnap.Win;Web.Win;Soap.Win;Xml.Win;$(DCC_Namespace)</DCC_Namespace>
+        <DCC_UsePackage>vcl;rtl;dbrtl;bindengine;vclie;vcledge;CustomIPTransport;IndyIPCommon;IndySystem;IndyProtocols;IndyCore;IndyIPClient;RESTComponents;bindcomp;VCLRESTComponents;Jcl;$(DCC_UsePackage)</DCC_UsePackage>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base_Win64x)'!=''">
         <DCC_UsePackage>vcl;rtl;dbrtl;bindengine;vclie;vcledge;CustomIPTransport;IndyIPCommon;IndySystem;IndyProtocols;IndyCore;IndyIPClient;RESTComponents;bindcomp;VCLRESTComponents;$(DCC_UsePackage)</DCC_UsePackage>
@@ -280,6 +281,7 @@
         <DCCReference Include="..\MaxLogic.debug.ControlInspector.pas"/>
         <DCCReference Include="..\MaxLogic.Debug.pas"/>
         <DCCReference Include="..\maxlogic.DotEnv.pas"/>
+        <DCCReference Include="..\maxlogic.fpc.compatibility.pas"/>
         <DCCReference Include="..\MaxLogic.hash.FNV1a.pas"/>
         <DCCReference Include="..\MaxLogic.hash.Murmur.pas"/>
         <DCCReference Include="..\MaxLogic.hash.xxHash.pas"/>

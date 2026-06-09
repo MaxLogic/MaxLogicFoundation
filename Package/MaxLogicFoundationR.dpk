@@ -80,6 +80,7 @@ contains
   MaxLogic.debug.ControlInspector in '..\MaxLogic.debug.ControlInspector.pas',
   MaxLogic.Debug in '..\MaxLogic.Debug.pas',
   maxlogic.DotEnv in '..\maxlogic.DotEnv.pas',
+  maxlogic.fpc.compatibility in '..\maxlogic.fpc.compatibility.pas',
   MaxLogic.hash.FNV1a in '..\MaxLogic.hash.FNV1a.pas',
   MaxLogic.hash.Murmur in '..\MaxLogic.hash.Murmur.pas',
   MaxLogic.hash.xxHash in '..\MaxLogic.hash.xxHash.pas',
