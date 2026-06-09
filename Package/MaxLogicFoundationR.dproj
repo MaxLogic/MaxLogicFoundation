@@ -269,6 +269,7 @@
         <DCCReference Include="..\maxBurnMemory.pas"/>
         <DCCReference Include="..\maxBytes.pas"/>
         <DCCReference Include="..\maxCallMeLater.pas"/>
+        <DCCReference Include="..\maxConsoleRunner.pas"/>
         <DCCReference Include="..\maxCsv.pas"/>
         <DCCReference Include="..\maxInMemoryFile.pas"/>
         <DCCReference Include="..\maxInterOpCommunication.pas"/>
@@ -286,6 +287,7 @@
         <DCCReference Include="..\MaxLogic.hash.Murmur.pas"/>
         <DCCReference Include="..\MaxLogic.hash.xxHash.pas"/>
         <DCCReference Include="..\MaxLogic.HtmlUtils.pas"/>
+        <DCCReference Include="..\maxLogic.AnonymousProcToEvent.pas"/>
         <DCCReference Include="..\maxLogic.IfThenEx.pas"/>
         <DCCReference Include="..\maxLogic.IndyHttpHelper.pas"/>
         <DCCReference Include="..\MaxLogic.ioUtils.pas"/>
