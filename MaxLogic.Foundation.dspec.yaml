@@ -1,0 +1,40 @@
+packageKind: git
+metadata:
+  id: MaxLogic.Foundation
+  version: 0.0.1
+  description: Common Delphi foundation units and runtime package used by MaxLogic projects.
+  authors:
+    - MaxLogic
+  projectUrl: https://github.com/MaxLogic/MaxLogicFoundation
+  repositoryUrl: https://github.com/MaxLogic/MaxLogicFoundation.git
+  repositoryType: git
+  repositoryBranch: main
+  license: MIT
+  tags:
+    - MaxLogic
+    - Delphi
+    - VCL
+    - runtime
+  frameworks:
+    - VCL
+targetPlatforms:
+  - compiler: 12.0
+    platforms: [Win32, Win64]
+    template: default
+templates:
+  - name: default
+    source:
+      - src: .\*.pas
+      - src: .\*.inc
+      - src: .\*.dfm
+      - src: .\*.res
+      - src: .\*.rc
+      - src: .\Package\*.dpk
+      - src: .\Package\*.dproj
+      - src: .\Package\*.res
+      - src: .\README.md
+      - src: .\LICENSE
+    build:
+      - project: .\Package\MaxLogicFoundationR.dproj
+    environmentVariables:
+      PATH: $packageDir$\lib\Win32
