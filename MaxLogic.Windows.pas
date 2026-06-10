@@ -160,7 +160,7 @@ begin
         if BytesRead > 0 then
         begin
           pCommandLine[BytesRead] := #0;
-          Result := Result + pCommandLine;
+          Result := Result + string(pCommandLine);
         end;
       until not WasOK or (BytesRead = 0);
       WaitForSingleObject(ProcessInfo.hProcess, INFINITE);

@@ -120,7 +120,7 @@ begin
   end;
 
   mcfg.UploadToCustomScript := true;
-  mcfg.HttpServer:= aUrl;
+  mcfg.HttpServer := AnsiString(aUrl);
   mcfg.HttpSsl:= True;
   // Default port (0) means auto-select based on HttpSsl (443 for HTTPS, 80 for HTTP)
   mcfg.HttpPort := 0;
@@ -151,7 +151,7 @@ begin
 
   // smtp client
   mcfg.MailAsSmtpClient := True;
-  mcfg.SmtpServer := aServer;
+  mcfg.SmtpServer := AnsiString(aServer);
   mcfg.SmtpPort := aPort;
   mcfg.SmtpAccount := aUsername;
   mcfg.SmtpPassword := aPassword;

@@ -68,6 +68,7 @@ contains
   maxBurnMemory in '..\maxBurnMemory.pas',
   maxBytes in '..\maxBytes.pas',
   maxCallMeLater in '..\maxCallMeLater.pas',
+  maxConsoleRunner in '..\maxConsoleRunner.pas',
   maxCsv in '..\maxCsv.pas',
   maxInMemoryFile in '..\maxInMemoryFile.pas',
   maxInterOpCommunication in '..\maxInterOpCommunication.pas',
@@ -80,10 +81,12 @@ contains
   MaxLogic.debug.ControlInspector in '..\MaxLogic.debug.ControlInspector.pas',
   MaxLogic.Debug in '..\MaxLogic.Debug.pas',
   maxlogic.DotEnv in '..\maxlogic.DotEnv.pas',
+  maxlogic.fpc.compatibility in '..\maxlogic.fpc.compatibility.pas',
   MaxLogic.hash.FNV1a in '..\MaxLogic.hash.FNV1a.pas',
   MaxLogic.hash.Murmur in '..\MaxLogic.hash.Murmur.pas',
   MaxLogic.hash.xxHash in '..\MaxLogic.hash.xxHash.pas',
   MaxLogic.HtmlUtils in '..\MaxLogic.HtmlUtils.pas',
+  maxLogic.AnonymousProcToEvent in '..\maxLogic.AnonymousProcToEvent.pas',
   maxLogic.IfThenEx in '..\maxLogic.IfThenEx.pas',
   maxLogic.IndyHttpHelper in '..\maxLogic.IndyHttpHelper.pas',
   MaxLogic.ioUtils in '..\MaxLogic.ioUtils.pas',
@@ -107,6 +110,7 @@ contains
   MaxLogic.Windows in '..\MaxLogic.Windows.pas',
   maxOutOfScopeAutomation in '..\maxOutOfScopeAutomation.pas',
   maxSignal in '..\maxSignal.pas',
-  maxTextStream in '..\maxTextStream.pas';
+  maxTextStream in '..\maxTextStream.pas',
+  maxWndSubClassing in '..\maxWndSubClassing.pas';
 
 end.
