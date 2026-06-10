@@ -142,7 +142,7 @@
         <VerInfo_Locale>1045</VerInfo_Locale>
         <VerInfo_Keys>CompanyName=;FileDescription=;FileVersion=1.0.0.0;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProductName=;ProductVersion=1.0.0.0;Comments=;CFBundleName=</VerInfo_Keys>
         <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;Vcl;Vcl.Imaging;Vcl.Touch;Vcl.Samples;Vcl.Shell;$(DCC_Namespace)</DCC_Namespace>
-        <DCC_UnitSearchPath>..\lib\jedi;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_UnitSearchPath>include\jedi;..\lib\jedi;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
         <RuntimeOnlyPackage>true</RuntimeOnlyPackage>
         <DCC_BplOutput>$(BDSCOMMONDIR)\Bpl</DCC_BplOutput>
         <DCC_DcpOutput>$(BDSCOMMONDIR)\Dcp</DCC_DcpOutput>
@@ -185,7 +185,8 @@
         <DCC_UsePackage>vcl;rtl;dbrtl;bindengine;vclie;vcledge;CustomIPTransport;IndyIPCommon;IndySystem;IndyProtocols;IndyCore;IndyIPClient;RESTComponents;bindcomp;VCLRESTComponents;Jcl;$(DCC_UsePackage)</DCC_UsePackage>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base_Win64)'!=''">
-        <DCC_UsePackage>vcl;rtl;dbrtl;bindengine;vclie;vcledge;CustomIPTransport;IndyIPCommon;IndySystem;IndyProtocols;IndyCore;IndyIPClient;RESTComponents;bindcomp;VCLRESTComponents;$(DCC_UsePackage)</DCC_UsePackage>
+        <DCC_Namespace>Winapi;System.Win;Data.Win;Datasnap.Win;Web.Win;Soap.Win;Xml.Win;$(DCC_Namespace)</DCC_Namespace>
+        <DCC_UsePackage>vcl;rtl;dbrtl;bindengine;vclie;vcledge;CustomIPTransport;IndyIPCommon;IndySystem;IndyProtocols;IndyCore;IndyIPClient;RESTComponents;bindcomp;VCLRESTComponents;Jcl;$(DCC_UsePackage)</DCC_UsePackage>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base_Win64x)'!=''">
         <DCC_UsePackage>vcl;rtl;dbrtl;bindengine;vclie;vcledge;CustomIPTransport;IndyIPCommon;IndySystem;IndyProtocols;IndyCore;IndyIPClient;RESTComponents;bindcomp;VCLRESTComponents;$(DCC_UsePackage)</DCC_UsePackage>
@@ -268,6 +269,7 @@
         <DCCReference Include="..\maxBurnMemory.pas"/>
         <DCCReference Include="..\maxBytes.pas"/>
         <DCCReference Include="..\maxCallMeLater.pas"/>
+        <DCCReference Include="..\maxConsoleRunner.pas"/>
         <DCCReference Include="..\maxCsv.pas"/>
         <DCCReference Include="..\maxInMemoryFile.pas"/>
         <DCCReference Include="..\maxInterOpCommunication.pas"/>
@@ -280,10 +282,12 @@
         <DCCReference Include="..\MaxLogic.debug.ControlInspector.pas"/>
         <DCCReference Include="..\MaxLogic.Debug.pas"/>
         <DCCReference Include="..\maxlogic.DotEnv.pas"/>
+        <DCCReference Include="..\maxlogic.fpc.compatibility.pas"/>
         <DCCReference Include="..\MaxLogic.hash.FNV1a.pas"/>
         <DCCReference Include="..\MaxLogic.hash.Murmur.pas"/>
         <DCCReference Include="..\MaxLogic.hash.xxHash.pas"/>
         <DCCReference Include="..\MaxLogic.HtmlUtils.pas"/>
+        <DCCReference Include="..\maxLogic.AnonymousProcToEvent.pas"/>
         <DCCReference Include="..\maxLogic.IfThenEx.pas"/>
         <DCCReference Include="..\maxLogic.IndyHttpHelper.pas"/>
         <DCCReference Include="..\MaxLogic.ioUtils.pas"/>
@@ -308,6 +312,7 @@
         <DCCReference Include="..\maxOutOfScopeAutomation.pas"/>
         <DCCReference Include="..\maxSignal.pas"/>
         <DCCReference Include="..\maxTextStream.pas"/>
+        <DCCReference Include="..\maxWndSubClassing.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
             <DependentOn>..\MaxLogicDefault.optset</DependentOn>
