@@ -459,7 +459,7 @@ begin
   if aImageList.BkColor <> clNone then
     lSrcQP.TransparencyToAlphaChannel(aImageList.BkColor);
 
-  // Safe, non-zero values (Max(1, …)) to avoid div-by-zero in mod/div
+  // Safe, non-zero values (Max(1, ï¿½)) to avoid div-by-zero in mod/div
   lImagesPerRow := System.Math.Max(1, lBitmap.Width div aImageList.Width);
   lImagesPerColumn := System.Math.Max(1, lBitmap.Height div aImageList.Height);
 
@@ -787,7 +787,7 @@ var
   lGarbo: iGarbo;
 begin
   Result := True;
-  aImageName:= Self.CalcHash(aGraphic);
+  aImageName:= string(Self.CalcHash(aGraphic));
 
   Log('THighDpiAdjuster.AddToImageCol("'+aImageName+'")');
 
@@ -841,7 +841,7 @@ begin
   aGraphic.SaveToStream(lStream);
   lStream.Position := 0;
   // as hex
-  Result:= BobJenkinsHash(lStream.Memory^, lStream.Size, 0).ToHexString;
+  Result:= RawByteString(THashBobJenkins.GetHashValue(lStream.Memory^, lStream.Size, 0).ToHexString);
 end;
 
 constructor THighDpiAdjuster.Create;

@@ -613,14 +613,14 @@ begin
   D := nil;
   try
 
-    if (AnsiCompareText(Source, Dest) <> 0) and (Trim(Dest) <> '') then
+    if (AnsiCompareText(string(Source), string(Dest)) <> 0) and (Trim(string(Dest)) <> '') then
     begin
-      S := TFileStream.Create(Source, fmOpenRead or fmShareDenyNone);
-      D := TFileStream.Create(Dest, fmCreate);
+      S := TFileStream.Create(string(Source), fmOpenRead or fmShareDenyNone);
+      D := TFileStream.Create(string(Dest), fmCreate);
     end
     else
     begin
-      S := TFileStream.Create(Source, fmOpenReadWrite);
+      S := TFileStream.Create(string(Source), fmOpenReadWrite);
       D := S;
     end;
     InternalCodeStream(S, D, -1, Encode);

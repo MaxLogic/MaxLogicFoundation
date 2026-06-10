@@ -177,8 +177,11 @@ begin
 end;
 
 function fstr(s: single; vs, ns: Byte): string;
+var
+  lValue: ShortString;
 begin
-  str(s: vs: ns, Result);
+  str(s: vs: ns, lValue);
+  Result := string(lValue);
 end;
 
 function PixelFormatToStr(PixelFormat: TPixelFormat): string;
