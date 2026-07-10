@@ -15,6 +15,7 @@ All notable changes to MaxLogicFoundation are documented here.
 
 ### Fixed
 
+- `TCancelToken` now publishes cancellation atomically across threads while preserving its existing interface.
 - `TRichIniFile.ReadBool`/`WriteBool` now use regular INI-compatible defaults (`1`/`0`) with configurable true-token parsing and configurable output tokens.
 - `maxAsync.TmaxAsyncGlobal` now serializes waiting-thread pool teardown against worker return/pop paths and the async regression tests now cover cached-worker reset cleanup, preventing shutdown-time access violations and cleanup leaks in the shutdown-sensitive reuse paths.
 

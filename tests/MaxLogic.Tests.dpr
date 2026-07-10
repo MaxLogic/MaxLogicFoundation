@@ -16,6 +16,7 @@ uses
   DUnitX.TestFramework,
   DUnitX.Loggers.Console,
   DUnitX.Loggers.Xml.NUnit,
+  CancelToken.Tests in 'unit\CancelToken.Tests.pas',
   MaxLogic.BufferedFile in '..\MaxLogic.BufferedFile.pas',
   MaxLogic.BufferedFile.Tests in 'unit\MaxLogic.BufferedFile.Tests.pas',
   maxAsync in '..\maxAsync.pas',

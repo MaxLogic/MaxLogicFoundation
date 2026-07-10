@@ -3,7 +3,11 @@ unit CancelToken;
 interface
 
 uses
-  SysUtils, Classes;
+  {$IFDEF FPC}
+  Classes, SysUtils;
+  {$ELSE}
+  System.Classes, System.SyncObjs, System.SysUtils;
+  {$ENDIF}
 
 Type
   iCancelToken = Interface
@@ -14,7 +18,7 @@ Type
 
   TCancelToken = class(TInterfacedObject, iCancelToken)
   private
-    fCanceled: Boolean;
+    fCanceled: Integer;
     function GetCanceled: Boolean;
   public
     procedure Cancel;
@@ -27,12 +31,20 @@ implementation
 
 procedure TCancelToken.Cancel;
 begin
-  fCanceled := True;
+  {$IFDEF FPC}
+  System.InterlockedExchange(fCanceled, 1);
+  {$ELSE}
+  TInterlocked.Exchange(fCanceled, 1);
+  {$ENDIF}
 end;
 
 function TCancelToken.GetCanceled: Boolean;
 begin
-  Result := fCanceled;
+  {$IFDEF FPC}
+  Result := System.InterlockedCompareExchange(fCanceled, 0, 0) <> 0;
+  {$ELSE}
+  Result := TInterlocked.CompareExchange(fCanceled, 0, 0) <> 0;
+  {$ENDIF}
 end;
 
 end.

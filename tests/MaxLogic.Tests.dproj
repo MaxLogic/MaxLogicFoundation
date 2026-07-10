@@ -171,6 +171,7 @@
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
         <DCCReference Include="..\MaxLogic.BufferedFile.pas"/>
+        <DCCReference Include="unit\CancelToken.Tests.pas"/>
         <DCCReference Include="unit\MaxLogic.BufferedFile.Tests.pas"/>
         <DCCReference Include="unit\MaxLogic.DotEnv.Tests.pas"/>
         <DCCReference Include="..\maxlogic.DotEnv.pas"/>
