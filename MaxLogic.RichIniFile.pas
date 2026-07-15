@@ -181,8 +181,6 @@ type
     fHasSource: Boolean;
     function CurrentComparer: IEqualityComparer<string>; inline;
     function TokensEqual(const aLeft, aRight: string): Boolean; inline;
-    procedure RebuildDictionaries;
-    procedure SetCaseSensitivity(const aValue: TCaseSensitivity);
     procedure EnsureOptionsDefaults;
     procedure ClearDocument;
     procedure CreateGlobalSection;
@@ -216,7 +214,6 @@ type
     procedure ResolveSaveEncoding(out aEncoding: TEncoding; out aWriteBom: Boolean);
     function CreateTempFileName(const aTarget: string): string;
     procedure ReplaceFileAtomic(const aSource, aDestination: string);
-    class procedure RaiseNotImplemented(const aMethod: string); static;
   protected
     function GetLineCount: Integer;
     function GetSectionBlockCount: Integer;
@@ -824,82 +821,6 @@ begin
   Result := CurrentComparer.Equals(aLeft, aRight);
 end;
 
-procedure TRichIniFile.RebuildDictionaries;
-var
-  lNewMap: TObjectDictionary<string, TObjectList<TRichIniSectionBlock>>;
-  lBlock: TRichIniSectionBlock;
-  lToken: string;
-  lList: TObjectList<TRichIniSectionBlock>;
-  lNewKeyMap: TObjectDictionary<string, TObjectList<TRichIniKeyLine>>;
-  lKeyLine: TRichIniKeyLine;
-  lKeyToken: string;
-  lKeyList: TObjectList<TRichIniKeyLine>;
-begin
-  if (fSections = nil) or (fSectionMap = nil) then
-    Exit;
-
-  for lBlock in fSections do
-  begin
-    if lBlock = nil then
-      Continue;
-
-    lNewKeyMap := TObjectDictionary<string, TObjectList<TRichIniKeyLine>>.Create([doOwnsValues], CurrentComparer);
-    try
-      for lKeyLine in lBlock.fKeyOrder do
-      begin
-        if lKeyLine = nil then
-          Continue;
-        lKeyToken := KeyToken(lKeyLine.Key);
-        lKeyLine.LookupKey := lKeyToken;
-        if not lNewKeyMap.TryGetValue(lKeyToken, lKeyList) then
-        begin
-          lKeyList := TObjectList<TRichIniKeyLine>.Create(False);
-          lNewKeyMap.Add(lKeyToken, lKeyList);
-        end;
-        lKeyList.Add(lKeyLine);
-      end;
-
-      lBlock.fKeyMap.Free;
-      lBlock.fKeyMap := lNewKeyMap;
-      lNewKeyMap := nil;
-    finally
-      lNewKeyMap.Free;
-    end;
-  end;
-
-  lNewMap := TObjectDictionary<string, TObjectList<TRichIniSectionBlock>>.Create([doOwnsValues], CurrentComparer);
-  try
-    for lBlock in fSections do
-    begin
-      if lBlock = nil then
-        Continue;
-      lToken := SectionToken(lBlock.Name);
-      lBlock.LookupName := lToken;
-      if not lNewMap.TryGetValue(lToken, lList) then
-      begin
-        lList := TObjectList<TRichIniSectionBlock>.Create(False);
-        lNewMap.Add(lToken, lList);
-      end;
-      lList.Add(lBlock);
-    end;
-
-    fSectionMap.Free;
-    fSectionMap := lNewMap;
-    lNewMap := nil;
-  finally
-    lNewMap.Free;
-  end;
-end;
-
-procedure TRichIniFile.SetCaseSensitivity(const aValue: TCaseSensitivity);
-begin
-  if fOptions.CaseSensitivity = aValue then
-    Exit;
-  fOptions.CaseSensitivity := aValue;
-  fComparer := nil;
-  RebuildDictionaries;
-end;
-
 function TRichIniFile.FindSectionList(const aSection: string): TObjectList<TRichIniSectionBlock>;
 var
   lToken: string;
@@ -1468,11 +1389,6 @@ begin
   else
     Result := PlatformNewline;
   end;
-end;
-
-class procedure TRichIniFile.RaiseNotImplemented(const aMethod: string);
-begin
-  raise EInvalidOperation.CreateFmt('%s is not implemented yet.', [aMethod]);
 end;
 
 procedure TRichIniFile.SaveToFile(const aFileName: string);

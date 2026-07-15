@@ -376,13 +376,8 @@ type
       FSimultanousThreadCount: integer;
       fActivThreadCount: integer;
       fThreads: array of iAsync;
-      fRunProcWithCancel: TAsyncEnumProcWithCancel;
-      fRunOnDone: TProc;
-
       procedure SetOnFinished(const Value: TThreadProcedure);
       procedure SetSimultanousThreadCount(const Value: integer);
-      procedure RunIteration(CurIndex: integer);
-      procedure RunFinished;
       procedure asyncLoopIteration;
     public
       constructor Create;
@@ -469,10 +464,7 @@ type
       procedure EnsureWorkersStarted;
       procedure WaitForWorkersToExit;
       procedure WorkerMain(const aThreadId: Int64);
-      function TryDequeueItem(out aItem: t): Boolean;
-      function TryEnqueueItem(const aItem: t): Boolean;
       function TryEnqueueItemRaw(const aItem: t): Boolean;
-      function EnqueueItem(const aItem: t; const aBlockWhenFull: Boolean): Boolean;
       function DequeueBatch(var aBatch: array of t; const aRequestedCount: Integer): Integer;
       function LockFreeTryEnqueue(const aItem: t): Boolean;
       function LockFreeTryDequeue(out aItem: t): Boolean;
@@ -606,7 +598,9 @@ property Value: t read getValue write SetValue;
       class procedure CleanupWaitingThreadDataState(const aFreeLocks: Boolean);
       class procedure InitializeWaitingThreadDataState;
       class procedure ReleaseThreadData(const aThreadData: iThreadData);
+      {$IFDEF UNITTESTS}
       class procedure ReleaseSimpleAsyncThreadDataCache;
+      {$ENDIF}
       class function GetThreadData: iThreadData;
       class procedure AddToWaiting(ThreadData: iThreadData; const aPoolWakeMode: boolean = False);
       class function GetWaitingBucketIndex(const aThreadId: TThreadId): Integer; static;
@@ -1562,28 +1556,6 @@ begin
     FSimultanousThreadCount := Max(1, Integer(TmaxAsyncGlobal.NumberOfProcessors) * 4 - 2);
 end;
 
-procedure TAsyncLoop.RunIteration(CurIndex: integer);
-var
-  lCancel: boolean;
-begin
-  lCancel := False;
-  fRunProcWithCancel(CurIndex, lCancel);
-  if lCancel then
-    Cancel;
-end;
-
-procedure TAsyncLoop.RunFinished;
-var
-  lOnDone: TProc;
-begin
-  lOnDone := fRunOnDone;
-  fRunProcWithCancel := nil;
-  fRunOnDone := nil;
-  Free;
-  if Assigned(lOnDone) then
-    lOnDone;
-end;
-
 destructor TAsyncLoop.Destroy;
 var
   X: integer;
@@ -1701,7 +1673,6 @@ begin
   for lOffset := 0 to cWaitingThreadBucketCount - 1 do
   begin
     lBucketIndex := (aPreferredBucket + lOffset) mod cWaitingThreadBucketCount;
-    lLock := nil;
     fCS.Enter;
     try
       if TInterlocked.CompareExchange(fGlobalThreadListDestroyed, 0, 0) <> 0 then
@@ -1741,7 +1712,6 @@ var
   lBucket: TList<iThreadData>;
   lLock: TObject;
 begin
-  lLock := nil;
   fCS.Enter;
   try
     if TInterlocked.CompareExchange(fGlobalThreadListDestroyed, 0, 0) <> 0 then
@@ -1867,7 +1837,6 @@ class destructor TmaxAsyncGlobal.DestroyClass;
 var
   lAllThreads: TList<TThreadData>;
 begin
-  lAllThreads := nil;
   CleanupWaitingThreadDataState(True);
 
   fCS.Enter;
@@ -1935,6 +1904,7 @@ begin
   aThreadData.StartSignal.setSignaled;
 end;
 
+{$IFDEF UNITTESTS}
 class procedure TmaxAsyncGlobal.ReleaseSimpleAsyncThreadDataCache;
 var
   lThreadData: iThreadData;
@@ -1946,6 +1916,7 @@ begin
   gSimpleAsyncThreadDataCache := nil;
   ReleaseThreadData(lThreadData);
 end;
+{$ENDIF}
 
 class procedure TmaxAsyncGlobal.addToAllThreadList(aData: TThreadData);
 begin
@@ -2618,81 +2589,6 @@ begin
 
 end;
 
-function TAsyncCollectionProcessor<t>.TryEnqueueItem(const aItem: t): Boolean;
-begin
-  Result := TryEnqueueItemRaw(aItem);
-  if Result then
-    fItemsAvailable.Release;
-end;
-
-function TAsyncCollectionProcessor<t>.EnqueueItem(const aItem: t; const aBlockWhenFull: Boolean): Boolean;
-begin
-  repeat
-    if not AcquireQueueSpace(aBlockWhenFull) then
-      Exit(False);
-
-    if TryEnqueueItemRaw(aItem) then
-    begin
-      fItemsAvailable.Release;
-      Exit(True);
-    end;
-
-    ReleaseQueueSpace(1);
-
-    if fShuttingDown <> 0 then
-      Exit(False);
-
-    TThread.Yield;
-  until False;
-end;
-
-function TAsyncCollectionProcessor<t>.TryDequeueItem(out aItem: t): Boolean;
-begin
-  Result := False;
-  aItem := default(t);
-  case fQueueMode of
-    acpqmLegacyLockedQueue:
-      begin
-        fCriticalSection.Enter;
-        try
-          if fItems.Count <> 0 then
-          begin
-            aItem := fItems.Dequeue;
-            Result := True;
-          end;
-        finally
-          fCriticalSection.leave;
-        end;
-      end;
-    acpqmLockedRingQueue:
-      begin
-        fCriticalSection.Enter;
-        try
-          if fRingCount <> 0 then
-          begin
-            aItem := fRingItems[fRingHead];
-            fRingItems[fRingHead] := default(t);
-            fRingHead := (fRingHead + 1) mod Length(fRingItems);
-            Dec(fRingCount);
-            Result := True;
-            fSpaceSignal.setSignaled;
-          end;
-        finally
-          fCriticalSection.leave;
-        end;
-      end;
-    acpqmLockFreeMpmcRingQueue:
-      begin
-        Result := LockFreeTryDequeue(aItem);
-        if Result then
-          fSpaceSignal.setSignaled;
-      end;
-  end;
-
-  if Result then
-    ReleaseQueueSpace(1);
-end;
-
 function TAsyncCollectionProcessor<t>.DequeueBatch(var aBatch: array of t; const aRequestedCount: Integer): Integer;
 var
   lMaxCount: Integer;
@@ -2947,7 +2843,6 @@ begin
   EnsureWorkersStarted;
 
   lAddedCount := 0;
-  lReplayCompletion := False;
   lFailed := False;
   lFailedBecauseShutdown := False;
 
@@ -3027,8 +2922,6 @@ var
 begin
   EnsureWorkersStarted;
 
-  lReplayCompletion := False;
-
   if fQueueMode = acpqmLegacyLockedQueue then
   begin
     fCriticalSection.Enter;
@@ -3082,8 +2975,6 @@ begin
   EnsureWorkersStarted;
 
   lAddedCount := 0;
-  lReplayCompletion := False;
-
   if fQueueMode = acpqmLegacyLockedQueue then
   begin
     fCriticalSection.Enter;
@@ -3155,8 +3046,6 @@ var
   lReplayCompletion: Boolean;
 begin
   EnsureWorkersStarted;
-
-  lReplayCompletion := False;
 
   if fQueueMode = acpqmLegacyLockedQueue then
   begin

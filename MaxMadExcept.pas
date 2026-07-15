@@ -80,7 +80,6 @@ var
   end;
 
 var
-  s: string;
   lTranslations: TStringList;
 begin
   // madexcept.RegisterExceptionHandler(handleException, stDontSync, epQuickFiltering);
@@ -132,7 +131,6 @@ var
   mcfg: IMEModuleSettings;
   Attachments: IMEAttachments;
   ZipFileName: string;
-  X: integer;
   found: boolean;
   LoFn: string;
   lCS: TFixedCriticalSection;

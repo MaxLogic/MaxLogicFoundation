@@ -142,7 +142,7 @@ function maxCmdLineParams: iCmdLineparams;
 implementation
 
 uses
-  maxLogic.StrUtils, System.StrUtils;
+  System.StrUtils, maxLogic.StrUtils;
 
 var
   GlobalMaxCmdLineParams: iCmdLineparams = nil;
@@ -274,7 +274,7 @@ begin
     if IsSwitch(lPotentialValue) then
     begin
       lTreatAsValue := (Length(lPotentialValue) > 1) and (lPotentialValue[1] = '-') and
-        (lPotentialValue[2] in ['0'..'9']);
+        CharInSet(lPotentialValue[2], ['0'..'9']);
       if lTreatAsValue then
         aValue := lPotentialValue;
       // Next item looks like a switch, so current switch has no value.
@@ -291,7 +291,6 @@ var
   lDic: TDictionary<string, integer>;
   lEffectiveSwitch: string;
 begin
-  Result := False;
   aIndex := -1;
 
   if aIgnoreCase then

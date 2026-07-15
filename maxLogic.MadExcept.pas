@@ -41,7 +41,6 @@ var
 
   glAddFieldToBugReportHeaderList: TStringList;
   glAddFieldToBugReportHeaderCS: TCriticalSection;
-  glLastBugReport: string;
 
 function GetExceptionStackTrace(aException: Exception): string;
 begin
@@ -173,7 +172,6 @@ procedure AdjustMadExcept(const aLogdir: string);
 var
   mcfg: IMEModuleSettings;
   ZipFileName: string;
-  s: string;
 begin
 
   madExcept.RegisterExceptActionHandler(MadExceptOnBeforeSendMail, stDontSync);
@@ -241,7 +239,6 @@ var
   mcfg: IMEModuleSettings;
   Attachments: IMEAttachments;
   ZipFileName: string;
-  X: integer;
   found: boolean;
   LoFn: string;
 begin
