@@ -309,6 +309,7 @@
         <DCCReference Include="..\MaxLogic.VCL.ControlDrawingDisabler.pas"/>
         <DCCReference Include="..\MaxLogic.VersionNumberParser.pas"/>
         <DCCReference Include="..\MaxLogic.Windows.pas"/>
+        <DCCReference Include="..\MaxLogic.Windows.Identity.pas"/>
         <DCCReference Include="..\maxOutOfScopeAutomation.pas"/>
         <DCCReference Include="..\maxSignal.pas"/>
         <DCCReference Include="..\maxTextStream.pas"/>

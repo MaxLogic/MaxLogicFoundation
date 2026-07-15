@@ -108,6 +108,7 @@ contains
   MaxLogic.VCL.ControlDrawingDisabler in '..\MaxLogic.VCL.ControlDrawingDisabler.pas',
   MaxLogic.VersionNumberParser in '..\MaxLogic.VersionNumberParser.pas',
   MaxLogic.Windows in '..\MaxLogic.Windows.pas',
+  MaxLogic.Windows.Identity in '..\MaxLogic.Windows.Identity.pas',
   maxOutOfScopeAutomation in '..\maxOutOfScopeAutomation.pas',
   maxSignal in '..\maxSignal.pas',
   maxTextStream in '..\maxTextStream.pas',
