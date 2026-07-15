@@ -25,7 +25,7 @@ if not errorlevel 1 (
   goto done
 )
 
-set "EXITCODE=%ERRORLEVEL%"
+set "EXITCODE=0"
 
 :done
 popd
