@@ -129,8 +129,8 @@ begin
   aUtcMilliseconds := 0;
   if (Length(aValue) < 25) or
     (aValue[15] <> '.') or
-    not CharInSet(aValue[22], ['+', '-']) or
-    not TryStrToInt(Copy(aValue, 23, 3), lOffsetMinutes) then
+    (not CharInSet(aValue[22], ['+', '-'])) or
+    (not TryStrToInt(Copy(aValue, 23, 3), lOffsetMinutes)) then
     Exit;
   lIsoDateTime := Format(
     '%s-%s-%sT%s:%s:%s.%s%s%.2d:%.2d',
@@ -149,7 +149,7 @@ begin
   if not TryISO8601ToDate(lIsoDateTime, lUtcDateTime, True) then
     Exit;
   aUtcMilliseconds :=
-    DateTimeToUnix(lUtcDateTime, True) * 1000 +
+    (DateTimeToUnix(lUtcDateTime, True) * 1000) +
     MilliSecondOf(lUtcDateTime);
   Result := aUtcMilliseconds > 0;
 end;
@@ -176,7 +176,7 @@ begin
     cEoacNone,
     nil);
   Result := Succeeded(lHResult) or (lHResult = RPC_E_TOO_LATE);
-  if not Result and aShouldUninitialize then
+  if (not Result) and aShouldUninitialize then
   begin
     CoUninitialize;
     aShouldUninitialize := False;
@@ -259,8 +259,8 @@ begin
     nil);
   Result :=
     Succeeded(lHResult) and
-    not VarIsNull(lValue) and
-    not VarIsEmpty(lValue);
+    (not VarIsNull(lValue)) and
+    (not VarIsEmpty(lValue));
   if Result then
     aValue := VarToWideStr(lValue);
 end;
@@ -406,7 +406,7 @@ begin
     lFailureAge := lNow - gFailureCachedAt;
     if gHasCachedFailure and
       (lFailureAge < cUnavailableCacheMilliseconds) and
-      not aRetryUnavailable then
+      (not aRetryUnavailable) then
       Exit(bicdUnavailable);
     if gLookup = nil then
     begin
@@ -565,7 +565,7 @@ begin
     Exit(False);
   lCreationDateTime := SystemTimeToDateTime(lSystemTime);
   aStartedAtUtcMilliseconds :=
-    DateTimeToUnix(lCreationDateTime, True) * 1000 +
+    (DateTimeToUnix(lCreationDateTime, True) * 1000) +
     lSystemTime.wMilliseconds;
   Result := aStartedAtUtcMilliseconds > 0;
 end;
