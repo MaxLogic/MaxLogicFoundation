@@ -1288,7 +1288,8 @@ end;
 
 function TRGBA.Equal(const aRgba: TRGBA): boolean;
 begin
-  Result := cardinal(self) = cardinal(aRgba);
+  Result := (R = aRgba.R) and (G = aRgba.G) and
+    (B = aRgba.B) and (A = aRgba.A);
 end;
 
 class function TRGBA.FromColor(aColor: TColor): TRGBA;

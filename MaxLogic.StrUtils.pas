@@ -481,17 +481,18 @@ var
   i1, i2: integer;
   lInvalidCharOffset, lIndexOfInvalidChar: integer;
 begin
+  Result := False;
   while True do
   begin
     aStartMarkerFoundAtIndex := PosEx(aStartMarker, aTextForCaseSensitiveSearch, aStartoffset);
     if aStartMarkerFoundAtIndex = 0 then
-      exit(False);
+      exit;
 
     i1 := aStartMarkerFoundAtIndex + length(aStartMarker);
 
     i2 := PosEx(aEndMarker, aTextForCaseSensitiveSearch, i1);
     if i2 = 0 then
-      exit(False);
+      exit;
 
     if CharPosEx(aOrgCasedText,
       aInvalidChars,
@@ -504,7 +505,8 @@ begin
     end;
 
     aValue := copy(aOrgCasedText, i1, i2 - i1);
-    exit(True);
+    Result := True;
+    exit;
   end;
 end;
 
