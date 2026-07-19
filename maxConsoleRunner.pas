@@ -52,10 +52,8 @@ type
     procedure prepareSecurityAttributes;
     function preparePipes: boolean;
     procedure ClosehandleAndZeroIt(var ahandle: THandle);
-    function CreateAsyncPipe(const name: string): THandle;
     procedure prepareStartUpInfo;
     function startProcess: boolean;
-    function getCommand: string;
     function quote(const s: string): string;
     procedure StartAsyncReadPipes;
     procedure startWaitForProcessFinished;
@@ -68,7 +66,7 @@ type
     procedure SetRedirectErrOutToStdOut(const Value: Boolean);
   public
     constructor Create;
-    destructor destroy; override;
+    destructor Destroy; override;
 
     function Execute: boolean;
 
@@ -124,7 +122,7 @@ type
     procedure unLock;
   public
     constructor Create(aParent: TmaxConsoleRunner);
-    destructor destroy; override;
+    destructor Destroy; override;
 
     procedure StartReading(const aHandle: THandle);
     procedure safeRetrieveOutput(out aOutput: string);
@@ -164,38 +162,6 @@ begin
 
   fPipeErrorsRead:= INVALID_HANDLE_VALUE;
   fPipeErrorsWrite:= INVALID_HANDLE_VALUE;
-end;
-
-function TmaxConsoleRunner.CreateAsyncPipe(const name: string): THandle;
-const
-  cPipeFormat = '\\%s\pipe\%s';
-var
-  s: string;
-begin
-  Result := 0;
-  { s:= Format(cPipeFormat, [
-    // server name
-    className,,
-    // pipename
-    name]);
-
-    Result:= CreateNamedPipe(
-    PChar(s), PIPE_ACCESS_DUPLEX,
-    PIPE_TYPE_MESSAGE or PIPE_READMODE_MESSAGE or PIPE_WAIT,
-    PIPE_UNLIMITED_INSTANCES,
-    5*cBufferSize ,
-    5*cBufferSize ,
-    NMPWAIT_USE_DEFAULT_WAIT,
-    nil);
-    // check if pipe was created
-    if FHandle = INVALID_HANDLE_VALUE then
-    raise Exception.Create('Could not create PIPE.');
-
-
-    if ConnectNamedPipe(Result, nil) then
-    begin
-    end; }
-  // DisconnectNamedPipe(FHandle);
 end;
 
 procedure TmaxConsoleRunner.DecodeCommand(const aCmd: String);
@@ -295,7 +261,7 @@ begin
   fSignal.SetSignaled;
 end;
 
-destructor TmaxConsoleRunner.destroy;
+destructor TmaxConsoleRunner.Destroy;
 begin
   fPipeStdReadThread.free;
   fPipeErrorReadThread.free;
@@ -356,11 +322,6 @@ begin
     fWaitForProcess.WaitFor;
     fWaitForProcess := nil;
   end;
-end;
-
-function TmaxConsoleRunner.getCommand: string;
-begin
-  Result := trim(trim(quote(FExeName)) + ' ' + trim(fParamsString));
 end;
 
 var
@@ -574,7 +535,7 @@ begin
   fParent := aParent;
 end;
 
-destructor TPipeThread.destroy;
+destructor TPipeThread.Destroy;
 begin
   if fAsync <> nil then
     fAsync.WaitFor;

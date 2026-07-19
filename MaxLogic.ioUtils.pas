@@ -856,7 +856,7 @@ end;
 
 function NormalizePath(const aPath: string): string;
 var
-  badSlash, goodSlash: char;
+  goodSlash: char;
   s: string;
   lDoubleSlash: string;
 begin
@@ -915,8 +915,6 @@ function QuoteWindowsShellArgument(const aValue: string): string;
 var
   lNeedsQuoting: boolean;
   i: integer;
-  lBuilder: TStringBuilder;
-  lBackslashCount: integer;
 begin
   // Check if we need to quote the string at all
   lNeedsQuoting := False;

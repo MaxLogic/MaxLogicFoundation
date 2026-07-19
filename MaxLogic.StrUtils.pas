@@ -135,7 +135,6 @@ type
     class var FOrdinalIgnoreCaseComparer: IEqualityComparer<string>;
     class constructor Create;
     class destructor Destroy;
-    class function FoldAscii(aChar: Char): Char; static; inline;
     class function FoldCharValue(aChar: Char): Word; static; inline;
     class function FoldPair(const aPair: Cardinal): Cardinal; static; inline;
     class function Rotl32(aValue: Cardinal; aBits: Integer): Cardinal; static; inline;
@@ -482,8 +481,6 @@ var
   i1, i2: integer;
   lInvalidCharOffset, lIndexOfInvalidChar: integer;
 begin
-  Result := False;
-
   while True do
   begin
     aStartMarkerFoundAtIndex := PosEx(aStartMarker, aTextForCaseSensitiveSearch, aStartoffset);
@@ -1123,7 +1120,6 @@ begin
   s := Text;
   PrepareTextForStrToFloatWcc(s);
 
-  Result := default;
   Result := StrToFloatDef(s, default);
 end;
 
@@ -1265,13 +1261,6 @@ constructor TFastCaseAwareComparer.Create(aCaseSensitive: Boolean);
 begin
   inherited Create;
   FCaseSensitive := aCaseSensitive;
-end;
-
-class function TFastCaseAwareComparer.FoldAscii(aChar: Char): Char;
-begin
-  if Ord(aChar) <= 255 then
-    Exit(FUpperAscii[Ord(aChar)]);
-  Result := aChar.ToUpper;
 end;
 
 class function TFastCaseAwareComparer.FoldCharValue(aChar: Char): Word;

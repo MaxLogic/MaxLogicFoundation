@@ -927,7 +927,7 @@ end;
 procedure TSimpleList<t>.addSortedArray(const avalues: array of t; aStartIndex: integer; acount: integer);
 var
   X, i1, i2: integer;
-  elementsToMove, NewPosToMove: integer;
+  elementsToMove: integer;
 begin
   if acount = -1 then
     acount := length(avalues) - aStartIndex;
@@ -1134,8 +1134,6 @@ function TSimpleList<t>.GetRangeIndices(const LeftValue, RightValue: t;
 var
   c: integer;
 begin
-  Result := False;
-
   if not FSorted then
     raise Exception.Create(classname + '.GetRangeIndices requires sorted property to be true!');
 
@@ -1332,7 +1330,7 @@ function TSortedList<TKey, TValue>.DoFind(const Id: TKey;
   var l, H: integer;
   out Index: integer): boolean;
 var
-  cmp, c, i: integer;
+  c, i: integer;
 begin
   Result := False;
 
@@ -1521,7 +1519,7 @@ end;
 
 function TSimpleList<t>.find(const Value: t; out Index: integer): boolean;
 var
-  cmp, c, l, H, i: integer;
+  c, l, H, i: integer;
 begin
   Result := False;
 
@@ -2023,7 +2021,7 @@ class
 
   function TSortedList<TKey, TValue>.FindMinMaxIndex(const aId: TKey; out aLowIndex, aHighIndex: integer): boolean;
   var
-    i, c: integer;
+    i: integer;
     lLow, lHigh: integer;
   begin
     Result := False;
@@ -2068,10 +2066,8 @@ class
   function TSortedList<TKey, TValue>.FindValuesBetween(const aLeftKey, aRightKey: TKey;
     out aLowIndex, aHighIndex: integer): boolean;
   var
-    c: integer;
     lLow, lHigh: integer;
   begin
-    Result := False;
     if self.Count = 0 then
       exit(False);
 

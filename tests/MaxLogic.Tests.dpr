@@ -12,10 +12,13 @@ uses
   {$IFDEF madExcept}
   MaxLogic.MadExcept.AiRunner in '..\MaxLogic.MadExcept.AiRunner.pas',
   {$ENDIF}
+  System.IOUtils,
+  System.StrUtils,
  System.SysUtils,
   DUnitX.TestFramework,
   DUnitX.Loggers.Console,
   DUnitX.Loggers.Xml.NUnit,
+  CancelToken.Tests in 'unit\CancelToken.Tests.pas',
   MaxLogic.BufferedFile in '..\MaxLogic.BufferedFile.pas',
   MaxLogic.BufferedFile.Tests in 'unit\MaxLogic.BufferedFile.Tests.pas',
   maxAsync in '..\maxAsync.pas',
@@ -37,7 +40,39 @@ uses
   MaxLogic.GitHubReleaseChecker.Tests in 'unit\MaxLogic.GitHubReleaseChecker.Tests.pas',
   MaxLogic.Hash.Tests in 'unit\MaxLogic.Hash.Tests.pas',
   MaxLogic.MadExcept.AiRunner.Tests in 'unit\MaxLogic.MadExcept.AiRunner.Tests.pas',
-  MaxLogic.Process.Tests in 'unit\MaxLogic.Process.Tests.pas';
+  MaxLogic.Process.Tests in 'unit\MaxLogic.Process.Tests.pas',
+  MaxLogic.Windows.Identity in '..\MaxLogic.Windows.Identity.pas',
+  MaxLogic.Windows.Identity.Tests in 'unit\MaxLogic.Windows.Identity.Tests.pas';
+
+const
+  cBootIdentityProbePrefix = '--probe-windows-boot-identity=';
+
+procedure RunWindowsBootIdentityProbeIfRequested;
+var
+  i: Integer;
+  lArgument: string;
+  lFileName: string;
+  lIdentity: TWindowsBootIdentity;
+begin
+  for i := 1 to ParamCount do
+  begin
+    lArgument := ParamStr(i);
+    if StartsText(cBootIdentityProbePrefix, lArgument) then
+    begin
+      lFileName := Copy(
+        lArgument,
+        Length(cBootIdentityProbePrefix) + 1,
+        MaxInt);
+      if not TryGetWindowsBootIdentity(1000, True, lIdentity) then
+        Halt(2);
+      TFile.WriteAllText(
+        lFileName,
+        IntToStr(lIdentity.UtcMilliseconds),
+        TEncoding.UTF8);
+      Halt(0);
+    end;
+  end;
+end;
 
 var
   Runner: ITestRunner;
@@ -46,6 +81,7 @@ var
   XMLLogger: ITestLogger;
 begin
   ReportMemoryLeaksOnShutdown := True;
+  RunWindowsBootIdentityProbeIfRequested;
   {$IFDEF madExcept}
   MaxLogic.MadExcept.AiRunner.ConfigureMadExceptForAiRunner;
   {$ENDIF}

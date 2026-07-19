@@ -148,7 +148,7 @@ begin
     // if disabled or no handler, idle with a longer wait but still wake-able
     if (not lEnabled) or (not Assigned(lHandler)) then
     begin
-      lRes := lOwner.fWake.WaitForSignaled(1000);
+      lOwner.fWake.WaitForSignaled(1000);
       if fCancel.Canceled or Terminated then Break;
       // state might have changed; refresh and set next due relative to now
       SnapshotState;
