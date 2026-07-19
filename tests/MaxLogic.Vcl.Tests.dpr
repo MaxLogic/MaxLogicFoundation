@@ -17,7 +17,9 @@ uses
   DUnitX.TestFramework,
   DUnitX.Loggers.Xml.NUnit,
   maxAsync in '..\maxAsync.pas',
-  MaxLogic.Async.Waiter.Vcl.Tests in 'unit\MaxLogic.Async.Waiter.Vcl.Tests.pas';
+  MaxLogic.Async.Waiter.Vcl.Tests in 'unit\MaxLogic.Async.Waiter.Vcl.Tests.pas',
+  MaxLogic.Vcl.HighDpi.Tests in 'unit\MaxLogic.Vcl.HighDpi.Tests.pas',
+  MaxLogic.vcl.highDpi in '..\MaxLogic.vcl.highDpi.pas';
 
 var
   lRunner: ITestRunner;

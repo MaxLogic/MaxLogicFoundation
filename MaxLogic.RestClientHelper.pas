@@ -427,7 +427,7 @@ function TmaxRestClient.GetResponseJSONValueAsString: String;
 begin
   if Assigned(self.Response.JSONValue) then
     Result :=
-      TJson.Format(self.Response.JSONValue)
+      self.Response.JSONValue.Format
   else
     Result := '';
 end;
