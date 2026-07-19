@@ -9,9 +9,10 @@ unit maxLogic.IndyHttpHelper;
 
 
 {
-  Version: 1.8
+  Version: 1.9
 
   History:
+  2026.07.18: expose the configured platform THTTPClient factory
   2023.10.18: swith to net client but leave the interface basically as it was to simplify upgrade of older projects
 
 }
@@ -22,11 +23,7 @@ interface
 
 uses
   {$IFDEF MSWINDOWS} winapi.Windows, {$ENDIF}
-  system.classes, system.sysUtils,
-
-  {$IFDEF UseNetClient}
-  system.Net.HTTPClient, system.Net.URLClient,
-  {$ENDIF}
+  system.classes, system.Net.HTTPClient, system.Net.URLClient, system.sysUtils,
   idHTTP, idComponent, idGlobal, idStream, IdMultipartFormData, IdZLibCompressorBase, IdCookieManager, IdGlobalProtocols, IdHTTPHeaderInfo, IdException, IdStack, IdCompressorZLib,
   IdSSLOpenSSLHeaders, IdSSLOpenSSL, // ssl
   IdAuthenticationNTLM, // NTLM - uses OpenSSL libraries,
@@ -68,6 +65,7 @@ type
     const bytesProcessed, bytesMax: int64;
     var cancel: boolean);
 
+function CreateNetHttp(const aOptions: TOptions): THTTPClient;
 function CreateHttp(const Options: TOptions; const ProgressProc: TProgressProc = nil): TIdHttp;
 procedure assignCustomHeaders(headers: TStringList; http: TIdHttp);
 // call this to make sure the CloseGracefuly error will cause no harm.
@@ -142,6 +140,18 @@ end;
 procedure TEventToProcForIdHttp.OnWorkEnd(ASender: TObject; aWorkMode: TWorkMode);
 begin
   CallProc(kWorkEnd, aWorkMode);
+end;
+
+function CreateNetHttp(const aOptions: TOptions): THTTPClient;
+begin
+  Result := THTTPClient.Create;
+  Result.ConnectionTimeout := aOptions.ConnectTimeout;
+  Result.ResponseTimeout := aOptions.ReadTimeOut;
+  Result.SendTimeout := aOptions.ReadTimeOut;
+  Result.HandleRedirects := oHandleRedirects in aOptions.Options;
+  Result.UserAgent := 'Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:47.0) Gecko/20100101 Firefox/47.0';
+  if oGZIP in aOptions.Options then
+    Result.AutomaticDecompression := [THTTPCompressionMethod.Any];
 end;
 
 function CreateHttp(const Options: TOptions; const ProgressProc: TProgressProc = nil): TIdHttp;
@@ -411,6 +421,7 @@ function downloadStream(const aurl: string; postParams: TStringList; response: T
   // TimeOuts: -1 means use the defailt from the Toptions
   ConnectTimeout: Integer = -1; ReadTimeOut: Integer = -1): boolean;
 var
+  g: TGarbos;
   {$IFNDEF UseNetClient}
   http: TIdHttp;
   {$ELSE}
@@ -448,9 +459,9 @@ begin
     Options.ReadTimeOut := ReadTimeOut;
 
   {$IFNDEF UseNetClient}
-  gc(http, CreateHttp(Options, ProgressProc));
+  gc(http, CreateHttp(Options, ProgressProc), g);
   {$ELSE}
-  gc(http, THTTPClient.Create);
+  gc(http, CreateNetHttp(Options), g);
   {$ENDIF}
 
   try
@@ -464,12 +475,6 @@ begin
     {$ELSE}
 
     // net http client version
-    http.ConnectionTimeout := Options.ConnectTimeout;
-    http.ResponseTimeout := Options.ReadTimeOut;
-    http.SendTimeout := Options.ReadTimeOut;
-    http.HandleRedirects := True;
-    Http.AutomaticDecompression:= [THTTPCompressionMethod.Any];
-
     if postParams = nil then
       lHttpResult := http.get(lUrl, response)
     else
