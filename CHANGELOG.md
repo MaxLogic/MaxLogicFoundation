@@ -16,6 +16,7 @@ All notable changes to MaxLogicFoundation are documented here.
 
 ### Fixed
 
+- `MaxLogic.vcl.highDpi` now scales fixed-size `TImage` graphics through the VCL image collection instead of an ABI-unsafe `TImage.DestRect` detour, preserving image layout semantics across monitor-DPI changes and source replacement.
 - `TRichIniFile.ReadBool`/`WriteBool` now use regular INI-compatible defaults (`1`/`0`) with configurable true-token parsing and configurable output tokens.
 - `maxAsync.TmaxAsyncGlobal` now serializes waiting-thread pool teardown against worker return/pop paths and the async regression tests now cover cached-worker reset cleanup, preventing shutdown-time access violations and cleanup leaks in the shutdown-sensitive reuse paths.
 

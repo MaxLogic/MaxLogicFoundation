@@ -1,8 +1,4 @@
-unit maxLogic.vcl.highDpi;
-
-{ Requires:
-  https://github.com/MahdiSafsafi/DDetours
-}
+﻿unit maxLogic.vcl.highDpi;
 
 {
   to review:
@@ -15,8 +11,9 @@ unit maxLogic.vcl.highDpi;
 }
 
 {
-  Version: 2.2
+  Version: 2.3
   History:
+  2026-07-19: replace the unsafe TImage.DestRect detour with per-image DPI materialization through TImageCollection and TVirtualImageList
   2024-02-14: add support for TImageCollection and TVirtualImageList to move glyphs and images there on app startup for all forms to enable high dpi support for legacy applications
   2022-06-22: remove threading + remove monitor dpi dependancy, use TControl.ScaleFactor
   added more RTTI based replacement to support a wider array of components
@@ -37,7 +34,6 @@ uses
   system.syncObjs, generics.collections, Messages,
   vcl.BaseImageCollection, vcl.ImageCollection, vcl.VirtualImageList,
   maxLogic.GraphicUtils,
-  DDetours,
   System.Generics.Defaults, System.Types;
 
 type
@@ -142,17 +138,13 @@ type
     property doNotScale: boolean read FdoNotScale write SetdoNotScale;
   end;
 
-  TTrampolineTImageDestRect = function(Sender: TObject): TRect;
-
   TTImageMarker = class(THighDpiMarker)
   private
-    class var TrampolineDestRect: TTrampolineTImageDestRect;
-    class var Intercepted: boolean;
-    class destructor ClassDestroy;
-  public
-    ImageHash: AnsiString; // as hex enoded sha256
+    ImageName: string;
     ImageSize: TPoint; // used for TImage
+    RenderedImageHash: AnsiString;
     WasAutoSized: boolean;
+  public
 
     // returns nil if none was found
     class function GetMarker(aComponent: TComponent): TTImageMarker; static;
@@ -209,69 +201,6 @@ type
   OpenVirtualImageList = class(TVirtualImageList)
 
   end;
-
-  TOpenImage = class(TImage)
-
-  end;
-
-  TImageHelper = class helper for TImage
-  public
-    function CloneOfdDestRect: TRect;
-  end;
-
-function TImageHelper.CloneOfdDestRect: TRect;
-var
-  w, h, cw, ch: integer;
-  xyaspect: double;
-begin
-  w := Picture.Width;
-  h := Picture.Height;
-  cw := ClientWidth;
-  ch := ClientHeight;
-  if Stretch or (Proportional and ((w > cw) or (h > ch))) then
-  begin
-    if Proportional and (w > 0) and (h > 0) then
-    begin
-      xyaspect := w / h;
-      if w > h then
-      begin
-        w := cw;
-        h := trunc(cw / xyaspect);
-        if h > ch then // woops, too big
-        begin
-          h := ch;
-          w := trunc(ch * xyaspect);
-        end;
-      end
-      else
-      begin
-        h := ch;
-        w := trunc(ch * xyaspect);
-        if w > cw then // woops, too big
-        begin
-          w := cw;
-          h := trunc(cw / xyaspect);
-        end;
-      end;
-    end
-    else
-    begin
-      w := cw;
-      h := ch;
-    end;
-  end;
-
-  with Result do
-  begin
-    Left := 0;
-    Top := 0;
-    Right := w;
-    Bottom := h;
-  end;
-
-  if Center then
-    OffsetRect(Result, (cw - w) div 2, (ch - h) div 2);
-end;
 
 function TryScale(aOwner: TComponent; const p: TPoint): TPoint;
 var
@@ -667,68 +596,17 @@ begin
     fMaxComponentCount := Max(fMaxComponentCount, aAlreadyProcessedDic.Count);
 end;
 
-function interceptTTImageDestRect(Sender: TObject): TRect;
-var
-  lImage: TOpenImage;
-  lMarker: TTImageMarker;
-  lSize: TPoint;
-  w, h, cw, ch: integer;
-begin
-  lImage := nil;
-  if (Sender <> nil) and (Sender is TImage) then
-    lImage := TOpenImage(Sender);
-
-  if assigned(TTImageMarker.TrampolineDestRect) then
-    Result := TTImageMarker.TrampolineDestRect(Sender)
-  else
-  begin
-    if assigned(lImage) then
-      Result := lImage.CloneOfdDestRect
-    else
-      Result := TRect.Empty;
-  end;
-
-  if assigned(lImage) then
-  begin
-    if (not lImage.Stretch) then
-    begin
-      lMarker := TTImageMarker.GetMarker(lImage);
-      if lMarker <> nil then
-      begin
-        lSize := point(Result.Width, Result.Height);
-        lSize := lImage.ScaleValue(lSize);
-        if lSize <> point(Result.Width, Result.Height) then
-        begin
-          Result.Width := lSize.X;
-          Result.Height := lSize.y;
-
-          if lImage.Center then
-          begin
-            Result.Location := point(0, 0);
-            cw := lImage.ClientWidth;
-            ch := lImage.ClientHeight;
-            w := Result.Width;
-            h := Result.Height;
-            OffsetRect(Result, (cw - w) div 2, (ch - h) div 2);
-          end;
-        end;
-      end;
-    end;
-  end;
-end;
-
 procedure THighDpiAdjuster.AdjustTImage(aImage: TImage);
-type
-  TDestRectMethod = function: TRect of object;
-
 var
+  g: TGarbos;
+  lBitmap: TBitmap;
+  lCurrentHash: RawByteString;
+  lImageIndex: Integer;
+  lImageName: string;
   lMarker: TTImageMarker;
-  lHash: RawByteString;
   lIsNew: boolean;
   lSize: TPoint;
-  lImage: TOpenImage;
-  lTargetproc: Pointer;
-  lDestRectMethod: TDestRectMethod;
+  lVirtualImageList: TVirtualImageList;
 begin
   // if there is no image or if it is already stretched... then just do nothing
   if (aImage.Picture.Graphic = nil) or aImage.Stretch then
@@ -738,16 +616,22 @@ begin
   if (not lMarker.CanScale) then
     exit;
 
-  lHash := CalcHash(aImage.Picture.Graphic);
-  if (not lIsNew) and (lMarker.ImageHash <> lHash) then
-    lIsNew := True;
-  lMarker.ImageHash := lHash;
+  lCurrentHash := CalcHash(aImage.Picture.Graphic);
+  if lIsNew or (lCurrentHash <> lMarker.RenderedImageHash) then
+  begin
+    if not AddToImageCol(aImage.Picture.Graphic, lImageName) then
+      exit;
+    lMarker.ImageName := lImageName;
+    lMarker.ImageSize := Point(
+      aImage.Picture.Graphic.Width, aImage.Picture.Graphic.Height);
+    if lMarker.VirtualImageList <> nil then
+      lMarker.VirtualImageList.Clear;
+  end;
 
   // let images that auto scaled manage themself
   if aImage.autosize or (lMarker.WasAutoSized) then
   begin
     aImage.autosize := False;
-    lMarker.ImageSize := point(aImage.Picture.Graphic.Width, aImage.Picture.Graphic.Height);
     lSize := aImage.ScaleValue(lMarker.ImageSize);
     aImage.Width := lSize.X;
     aImage.Height := lSize.y;
@@ -757,25 +641,30 @@ begin
     exit;
   end;
 
-  if not lMarker.Intercepted then
-  begin
-    lImage := TOpenImage(aImage);
-
-    { In Delphi, you cannot directly obtain the address of a method or function of an object using the @ operator as you would with procedural variables.
-      The DestRect in TImage is a method, not a field, so its address cannot be taken directly. To achieve what you want, you can use a method reference.
-      Define a procedural type that matches the signature of the DestRect method.
-      Assign the method to a variable of that type.
-      Retrieve the address from that variable. }
-    lDestRectMethod := lImage.DestRect;
-    lTargetproc := TMethod(lDestRectMethod).code;
-
-    // now intercept it
-    lMarker.TrampolineDestRect :=
-      InterceptCreate(
-      lTargetproc,
-      @interceptTTImageDestRect);
-    lMarker.Intercepted := True;
+  lSize := aImage.ScaleValue(lMarker.ImageSize);
+  if lMarker.VirtualImageList = nil then
+    lVirtualImageList := CreateVirtualImgList(
+      aImage, lMarker, lMarker.ImageSize.X, lMarker.ImageSize.Y)
+  else begin
+    lVirtualImageList := lMarker.VirtualImageList;
   end;
+  lVirtualImageList.Width := lSize.X;
+  lVirtualImageList.Height := lSize.Y;
+
+  lImageIndex := lVirtualImageList.GetIndexByName(lMarker.ImageName);
+  if lImageIndex < 0 then
+  begin
+    lVirtualImageList.Add(lMarker.ImageName, lMarker.ImageName, False);
+    lImageIndex := lVirtualImageList.GetIndexByName(lMarker.ImageName);
+  end;
+  if lImageIndex < 0 then
+    exit;
+
+  GC(lBitmap, TBitmap.Create, g);
+  if not lVirtualImageList.GetBitmap(lImageIndex, lBitmap) then
+    exit;
+  aImage.Picture.Assign(lBitmap);
+  lMarker.RenderedImageHash := CalcHash(aImage.Picture.Graphic);
   aImage.Invalidate; // force repaint
 end;
 
@@ -1233,18 +1122,6 @@ begin
 end;
 
 { TTImageMarker }
-
-class destructor TTImageMarker.ClassDestroy;
-begin
-  if Intercepted then
-  begin
-    InterceptRemove(@TrampolineDestRect);
-    TrampolineDestRect := nil;
-    Intercepted := False;
-  end;
-
-  inherited;
-end;
 
 class function TTImageMarker.GetMarker(
   aComponent: TComponent): TTImageMarker;
