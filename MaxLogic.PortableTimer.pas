@@ -96,7 +96,7 @@ implementation
 
 constructor TThreadedTimer.TTimerThread.Create(aOwner: TObject; const aWake: iSignal; const aCancel: iCancelToken);
 begin
-  inherited Create(False);
+  inherited Create(True);
   FreeOnTerminate := False;
   fOwner  := aOwner;
   fWake   := aWake;
@@ -222,6 +222,7 @@ begin
   fDataIntf := nil;
 
   fThread := TTimerThread.Create(Self, fWake, fCancel);
+  fThread.Start;
 end;
 
 destructor TThreadedTimer.Destroy;
