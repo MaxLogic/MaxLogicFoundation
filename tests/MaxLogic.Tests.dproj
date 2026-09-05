@@ -1,4 +1,4 @@
-﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
         <ProjectGuid>{2FEE4453-BB84-4171-A00D-B663B283F39D}</ProjectGuid>
         <MainSource>MaxLogic.Tests.dpr</MainSource>
@@ -176,7 +176,9 @@
         <DCCReference Include="unit\MaxLogic.DotEnv.Tests.pas"/>
         <DCCReference Include="..\maxlogic.DotEnv.pas"/>
         <DCCReference Include="..\MaxLogic.RichIniFile.pas"/>
+        <DCCReference Include="..\MaxLogic.RichIniFile.Utf8.pas"/>
         <DCCReference Include="unit\MaxLogic.RichIniFiles.Tests.pas"/>
+        <DCCReference Include="unit\MaxLogic.RichIniFile.Utf8.Tests.pas"/>
         <DCCReference Include="..\MaxLogic.StrUtils.pas"/>
         <DCCReference Include="unit\MaxLogic.PortableTimer.Tests.pas"/>
         <DCCReference Include="unit\MaxLogic.StrUtils.Tests.pas"/>

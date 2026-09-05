@@ -27,6 +27,8 @@ uses
   MaxLogic.DotEnv.Tests in 'unit\MaxLogic.DotEnv.Tests.pas',
   maxlogic.DotEnv in '..\maxlogic.DotEnv.pas',
   MaxLogic.RichIniFile in '..\MaxLogic.RichIniFile.pas',
+  MaxLogic.RichIniFile.Utf8 in '..\MaxLogic.RichIniFile.Utf8.pas',
+  MaxLogic.RichIniFile.Utf8.Tests in 'unit\MaxLogic.RichIniFile.Utf8.Tests.pas',
   MaxLogic.RichIniFiles.Tests in 'unit\MaxLogic.RichIniFiles.Tests.pas',
   maxLogic.StrUtils in '..\MaxLogic.StrUtils.pas',
   MaxLogic.PortableTimer.Tests in 'unit\MaxLogic.PortableTimer.Tests.pas',

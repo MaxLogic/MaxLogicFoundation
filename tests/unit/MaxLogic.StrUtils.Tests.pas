@@ -66,6 +66,19 @@ type
     [Test] procedure FastComparer_HashBoundaryCoverage;
     [Test] procedure FastComparer_VeryLargeInput;
 
+    [Test] procedure Utf8Comparer_OrdinalBytesAndDictionary;
+    [Test] procedure Utf8Comparer_IgnoreCaseUnicodeAndDictionary;
+    [Test] procedure Utf8Comparer_HashBoundaries;
+    [Test] procedure Utf8FilterEx_NativeSyntax;
+    [Test] procedure Utf8Masks_UnicodeAndEmptyFilters;
+    [Test] procedure Utf8_NativePathsDoNotAllocate;
+    [Test] procedure Utf8_Performance;
+    [Test] procedure Utf8_MaskScalarsSetsAndBacktracking;
+    [Test] procedure Utf8_MalformedBytesStayDistinct;
+    [Test] procedure Utf8_FilterParsingAndRecordCopies;
+    [Test] procedure Utf8_ComparerAllBmpCaseMappings;
+
+
     // Additional tests
     [Test] procedure Utf8Truncate_ZeroAndNegative_ReturnsEmpty;
     [Test] procedure ExpandEnvVars_CustomTokens_Windows;
@@ -107,9 +120,59 @@ type
 implementation
 
 uses
-  System.SysUtils, System.Classes, System.Types, System.Diagnostics, System.Character,
-  System.Generics.Collections, System.Generics.Defaults, System.RegularExpressions, maxLogic.StrUtils
-  {$IFDEF MSWINDOWS}, Winapi.Windows{$ENDIF};
+  System.Character, System.Classes, System.Diagnostics, System.Generics.Collections, System.Generics.Defaults,
+  System.Masks, System.RegularExpressions, System.SysUtils, System.Types,
+  {$IFDEF MSWINDOWS}Winapi.Windows,{$ENDIF}
+  AutoFree, maxLogic.StrUtils;
+
+var
+  fUtf8MemoryManager: TMemoryManagerEx;
+threadvar
+  fCountUtf8Allocations: Boolean;
+  fUtf8AllocationCount: NativeInt;
+
+function CountedUtf8GetMem(aSize: NativeInt): Pointer;
+begin
+  if fCountUtf8Allocations then
+    Inc(fUtf8AllocationCount);
+  Result := fUtf8MemoryManager.GetMem(aSize);
+end;
+
+function CountedUtf8AllocMem(aSize: NativeInt): Pointer;
+begin
+  if fCountUtf8Allocations then
+    Inc(fUtf8AllocationCount);
+  Result := fUtf8MemoryManager.AllocMem(aSize);
+end;
+
+function CountedUtf8ReallocMem(p: Pointer; aSize: NativeInt): Pointer;
+begin
+  if fCountUtf8Allocations then
+    Inc(fUtf8AllocationCount);
+  Result := fUtf8MemoryManager.ReallocMem(p, aSize);
+end;
+
+function CountUtf8Allocations(const aProc: TProc): NativeInt;
+var
+  lCountingManager: TMemoryManagerEx;
+begin
+  // Forward to the real allocator and count this test thread only; restore even on failure.
+  GetMemoryManager(fUtf8MemoryManager);
+  lCountingManager := fUtf8MemoryManager;
+  lCountingManager.GetMem := CountedUtf8GetMem;
+  lCountingManager.AllocMem := CountedUtf8AllocMem;
+  lCountingManager.ReallocMem := CountedUtf8ReallocMem;
+  fUtf8AllocationCount := 0;
+  SetMemoryManager(lCountingManager);
+  try
+    fCountUtf8Allocations := True;
+    aProc();
+    Result := fUtf8AllocationCount;
+  finally
+    fCountUtf8Allocations := False;
+    SetMemoryManager(fUtf8MemoryManager);
+  end;
+end;
 
 function IsDUnitXSilent: Boolean; forward;
 procedure LogPerfMessage(const aMessage: string); forward;
@@ -1484,6 +1547,343 @@ begin
 
   lComparerOrd := TFastCaseAwareComparer.Ordinal;
   Assert.IsFalse(lComparerOrd.Equals(lLarge, lLargeUpper));
+end;
+
+procedure TMaxLogicStrUtilsTests.Utf8Comparer_OrdinalBytesAndDictionary;
+var
+  lComparer: IEqualityComparer<UTF8String>;
+  g: TGarbos;
+  lDictionary: TDictionary<UTF8String, Integer>;
+  lKey, lOther, lCopy: UTF8String;
+begin
+  lComparer := TFastCaseAwareComparer.OrdinalUtf8;
+  lKey := UTF8String('Grüße'#0'東京😀');
+  lOther := UTF8String('grüße'#0'東京😀');
+  lCopy := Copy(lKey, 1, Length(lKey));
+  Assert.IsTrue(lComparer.Equals(lKey, lCopy));
+  Assert.AreEqual(lComparer.GetHashCode(lKey), lComparer.GetHashCode(lCopy));
+  Assert.IsFalse(lComparer.Equals(lKey, lOther));
+  Assert.IsFalse(lComparer.Equals(lKey, UTF8String('Grüße')));
+  Assert.IsTrue(lComparer.Equals('', ''));
+  Assert.IsFalse(lComparer.Equals('', lKey));
+  // Ordinal comparison preserves bytes even for malformed UTF-8.
+  SetLength(lKey, 1);
+  lKey[1] := AnsiChar($FF);
+  SetLength(lOther, 1);
+  lOther[1] := AnsiChar($FE);
+  Assert.IsFalse(lComparer.Equals(lKey, lOther));
+  GC(lDictionary, TDictionary<UTF8String, Integer>.Create(lComparer), g);
+  lDictionary.Add(lKey, 17);
+  Assert.AreEqual(17, lDictionary[lKey]);
+  Assert.IsFalse(lDictionary.ContainsKey(lOther));
+end;
+
+procedure TMaxLogicStrUtilsTests.Utf8Comparer_IgnoreCaseUnicodeAndDictionary;
+var
+  lComparer: IEqualityComparer<UTF8String>;
+  lUnicodeComparer: IEqualityComparer<string>;
+  g: TGarbos;
+  lDictionary: TDictionary<UTF8String, Integer>;
+  lLeft, lRight: TArray<string>;
+  lKey, lOther: UTF8String;
+  i: Integer;
+begin
+  lComparer := TFastCaseAwareComparer.OrdinalIgnoreCaseUtf8;
+  lUnicodeComparer := TFastCaseAwareComparer.OrdinalIgnoreCase;
+  lLeft := ['', 'Key42', 'Grüße', 'ſ', 'ı', 'σ', 'Ж', '東京😀',
+    'ab'#0'cd', 'ß', 'é', '𐐀'];
+  lRight := ['', 'kEY42', 'GRÜßE', 'S', 'I', 'ς', 'ж', '東京😀',
+    'AB'#0'CD', 'SS', 'é', '𐐨'];
+  GC(lDictionary, TDictionary<UTF8String, Integer>.Create(lComparer), g);
+  for i := 0 to High(lLeft) do
+  begin
+    lKey := UTF8String(lLeft[i]);
+    lOther := UTF8String(lRight[i]);
+    Assert.AreEqual(lUnicodeComparer.Equals(lLeft[i], lRight[i]),
+      lComparer.Equals(lKey, lOther), 'Case-fold parity at ' + IntToStr(i));
+    lDictionary.Clear;
+    lDictionary.Add(lKey, i);
+    if lUnicodeComparer.Equals(lLeft[i], lRight[i]) then
+    begin
+      Assert.AreEqual(lComparer.GetHashCode(lKey), lComparer.GetHashCode(lOther));
+      Assert.AreEqual(i, lDictionary[lOther]);
+    end else begin
+      Assert.IsFalse(lDictionary.ContainsKey(lOther));
+    end;
+  end;
+  Assert.IsFalse(lComparer.Equals(UTF8String('ab'#0'cd'), UTF8String('ab'#0'ce')));
+  Assert.IsFalse(lComparer.Equals('', UTF8String('x')));
+end;
+
+procedure TMaxLogicStrUtilsTests.Utf8Comparer_HashBoundaries;
+var
+  lComparer: IEqualityComparer<UTF8String>;
+  lLeft, lRight: UTF8String;
+  lSuffix: Char;
+  i: Integer;
+begin
+  lComparer := TFastCaseAwareComparer.OrdinalIgnoreCaseUtf8;
+  for lSuffix in string('sµıȿſ') do
+    for i := 0 to 65 do
+    begin
+      lLeft := UTF8String(StringOfChar('a', i) + lSuffix);
+      lRight := UTF8String(StringOfChar('A', i) + lSuffix.ToUpper);
+      Assert.IsTrue(lComparer.Equals(lLeft, lRight));
+      Assert.AreEqual(lComparer.GetHashCode(lLeft), lComparer.GetHashCode(lRight));
+    end;
+  lComparer := TFastCaseAwareComparer.OrdinalUtf8;
+  for i := 0 to 65 do
+  begin
+    lLeft := UTF8String(StringOfChar('a', i));
+    lRight := Copy(lLeft, 1, Length(lLeft));
+    Assert.IsTrue(lComparer.Equals(lLeft, lRight));
+    Assert.AreEqual(lComparer.GetHashCode(lLeft), lComparer.GetHashCode(lRight));
+  end;
+end;
+
+procedure TMaxLogicStrUtilsTests.Utf8FilterEx_NativeSyntax;
+var
+  lFilter: TFilterExUtf8;
+begin
+  lFilter := TFilterExUtf8.Create('grüße 東京 !pdf *txt');
+  Assert.IsTrue(lFilter.Matches(UTF8String('GRÜßE 東京 file.TXT')));
+  Assert.IsFalse(lFilter.Matches(UTF8String('GRÜßE 東京 file.pdf.txt')));
+  lFilter := TFilterExUtf8.Create('"grün blau"|東京');
+  Assert.IsTrue(lFilter.Matches(UTF8String('prefix GRÜN BLAU suffix')));
+  Assert.IsTrue(lFilter.Matches(UTF8String('東京')));
+  Assert.IsFalse(lFilter.Matches(UTF8String('grün other blau')));
+  lFilter := TFilterExUtf8.Create('ä* *東京');
+  Assert.IsTrue(lFilter.Matches(UTF8String('Äx 東京')));
+  Assert.IsFalse(lFilter.Matches(UTF8String('xÄ 東京')));
+  lFilter := TFilterExUtf8.Create('*grün*');
+  Assert.IsTrue(lFilter.Matches(UTF8String('xGRÜNy')));
+  lFilter := TFilterExUtf8.Create('ä?');
+  Assert.IsTrue(lFilter.Matches(UTF8String('Ä😀')));
+  Assert.IsFalse(lFilter.Matches(UTF8String('Ä😀x')));
+  lFilter := TFilterExUtf8.Create('');
+  Assert.IsTrue(lFilter.Matches(''));
+end;
+
+procedure TMaxLogicStrUtilsTests.Utf8Masks_UnicodeAndEmptyFilters;
+var
+  lText, lPattern: UTF8String;
+  lFilters: TArray<UTF8String>;
+begin
+  lText := UTF8String('Grün.txt');
+  lPattern := UTF8String('Gr?n.txt');
+  Assert.IsTrue(StringMatches(lText, lPattern));
+  lPattern := UTF8String('gr?n.TXT');
+  Assert.IsFalse(StringMatches(lText, lPattern));
+  Assert.IsTrue(StringMatches(lText, lPattern, False));
+  lFilters := [];
+  Assert.IsTrue(MatchesFilter(lText, lFilters));
+  lFilters := [UTF8String('*.pdf'), UTF8String('Gr?n.txt')];
+  Assert.IsTrue(MatchesFilter(lText, lFilters));
+  lFilters := [UTF8String('*.pdf')];
+  Assert.IsFalse(MatchesFilter(lText, lFilters));
+end;
+
+procedure TMaxLogicStrUtilsTests.Utf8_NativePathsDoNotAllocate;
+var
+  lComparer: IEqualityComparer<UTF8String>;
+  lFilter: TFilterExUtf8;
+  lText, lOther, lMask: UTF8String;
+  lMasks: TArray<UTF8String>;
+  lMatch: Boolean;
+  lHash: Integer;
+  lCount: NativeInt;
+begin
+  lComparer := TFastCaseAwareComparer.OrdinalIgnoreCaseUtf8;
+  lText := UTF8String('Grüße 東京😀 file.txt');
+  lOther := UTF8String('GRÜßE 東京😀 FILE.TXT');
+  lMask := UTF8String('Grüße*?.txt');
+  lMasks := [UTF8String('*.pdf'), lMask];
+  lFilter := TFilterExUtf8.Create(UTF8String('grüße 東京 !pdf *txt'));
+  lComparer.GetHashCode(lText);
+  lComparer.Equals(lText, lOther);
+  lFilter.Matches(lText);
+  StringMatches(lText, lMask, False);
+  lCount := CountUtf8Allocations(
+    procedure
+    begin
+      lHash := lComparer.GetHashCode(lText);
+      lMatch := lComparer.Equals(lText, lOther) and lFilter.Matches(lText) and
+        StringMatches(lText, lMask, False) and MatchesFilter(lText, lMasks);
+    end);
+  Assert.IsTrue(lMatch);
+  Assert.AreEqual(lComparer.GetHashCode(lText), lHash);
+  Assert.AreEqual(NativeInt(0), lCount, 'Prepared UTF-8 matching and comparison must allocate nothing');
+end;
+
+procedure TMaxLogicStrUtilsTests.Utf8_Performance;
+const
+  cIterations = 4000;
+  cSamples = 9;
+var
+  lComparer: IEqualityComparer<UTF8String>;
+  lFilter: TFilterExUtf8;
+  lTexts: TArray<UTF8String>;
+  lTimes: TArray<Int64>;
+  lWatch: TStopwatch;
+  lMatches, lHash, i, j, n: Integer;
+begin
+  lComparer := TFastCaseAwareComparer.OrdinalIgnoreCaseUtf8;
+  lFilter := TFilterExUtf8.Create(UTF8String('grüße 東京 !pdf *txt'));
+  lTexts := [UTF8String('Grüße 東京 short.txt'),
+    UTF8String('GRÜßE 東京 ' + StringOfChar('x', 256) + '.TXT'),
+    UTF8String('other text.pdf')];
+  SetLength(lTimes, cSamples);
+  lHash := 0;
+  for n := 0 to cSamples do
+  begin
+    lMatches := 0;
+    lWatch := TStopwatch.StartNew;
+    for i := 1 to cIterations do
+      for j := 0 to High(lTexts) do
+      begin
+        if lFilter.Matches(lTexts[j]) then
+          Inc(lMatches);
+        lHash := lHash xor lComparer.GetHashCode(lTexts[j]);
+      end;
+    if n > 0 then
+      lTimes[n - 1] := lWatch.ElapsedTicks;
+    Assert.AreEqual(cIterations * 2, lMatches);
+  end;
+  TArray.Sort<Int64>(lTimes);
+  LogPerfMessage(Format('UTF8 batch: median=%.0f us, p95=%.0f us, min=%.0f us, max=%.0f us; hash=%d',
+    [TicksToMicroseconds(lTimes[cSamples div 2]), TicksToMicroseconds(lTimes[cSamples - 1]),
+     TicksToMicroseconds(lTimes[0]), TicksToMicroseconds(lTimes[cSamples - 1]), lHash]));
+end;
+
+procedure TMaxLogicStrUtilsTests.Utf8_MaskScalarsSetsAndBacktracking;
+var
+  lFilter: TFilterExUtf8;
+begin
+  Assert.IsTrue(StringMatches(UTF8String('😀'), UTF8String('?')));
+  Assert.IsFalse(StringMatches(UTF8String('😀'), UTF8String('??')));
+  Assert.IsFalse(StringMatches(UTF8String(''), UTF8String('*?')));
+  Assert.IsTrue(StringMatches(UTF8String(#10), UTF8String('?')));
+  Assert.IsTrue(StringMatches(UTF8String('abcabcz'), UTF8String('*ab?z')));
+  Assert.IsFalse(StringMatches(UTF8String('abcabcz'), UTF8String('*ab?x')));
+  Assert.IsTrue(StringMatches(UTF8String('a😀b東京c'), UTF8String('*a*b??c')));
+  Assert.IsTrue(StringMatches(UTF8String(string('ö')), UTF8String('[ä-ö]')));
+  Assert.IsTrue(StringMatches(UTF8String('Öx'), UTF8String('[ä-ö]?'), False));
+  Assert.IsFalse(StringMatches(UTF8String('Öx'), UTF8String('[ä-ö]?'), True));
+  Assert.IsTrue(StringMatches(UTF8String('😀'), UTF8String('[😀-🙏]')));
+  Assert.IsTrue(StringMatches(UTF8String('9'), UTF8String('[!a-z]'), False));
+  Assert.IsFalse(StringMatches(UTF8String('A'), UTF8String('[!a-z]'), False));
+  Assert.IsTrue(StringMatches(UTF8String('a'#0'b'), UTF8String('a?b')));
+  Assert.WillRaise(
+    procedure
+    begin
+      StringMatches(UTF8String(''), UTF8String('[abc'));
+    end, EMaskException);
+  Assert.WillRaise(
+    procedure
+    begin
+      StringMatches(UTF8String('x'), UTF8String('[z-a]'));
+    end, EMaskException);
+  Assert.WillRaise(
+    procedure
+    begin
+      StringMatches(UTF8String('x'), UTF8String('[]'));
+    end, EMaskException);
+  lFilter := TFilterExUtf8.Create('*[!0-9].txt');
+  Assert.IsTrue(lFilter.Matches(UTF8String('fileö.txt')), 'Prepared negated character set');
+  Assert.IsFalse(lFilter.Matches(UTF8String('file9.txt')));
+end;
+
+procedure TMaxLogicStrUtilsTests.Utf8_MalformedBytesStayDistinct;
+var
+  lComparer: IEqualityComparer<UTF8String>;
+  lLeft, lRight: UTF8String;
+  lFilter: TFilterExUtf8;
+begin
+  lComparer := TFastCaseAwareComparer.OrdinalIgnoreCaseUtf8;
+  SetLength(lLeft, 1);
+  SetLength(lRight, 1);
+  for var i := $80 to $FF do
+  begin
+    lLeft[1] := AnsiChar(i);
+    lRight[1] := AnsiChar(i xor 1);
+    Assert.IsFalse(lComparer.Equals(lLeft, lRight));
+    Assert.IsTrue(StringMatches(lLeft, UTF8String('?')));
+    Assert.IsTrue(StringMatches(lLeft, lLeft));
+    lFilter := TFilterExUtf8.Create(UTF8String('*') + lLeft);
+    Assert.IsTrue(lFilter.Matches(UTF8String('x') + lLeft));
+    Assert.IsFalse(lFilter.Matches(UTF8String('x') + lRight));
+  end;
+  SetLength(lLeft, 3);
+  lLeft[1] := AnsiChar($ED);
+  lLeft[2] := AnsiChar($A0);
+  lLeft[3] := AnsiChar($80);
+  Assert.IsTrue(StringMatches(lLeft, UTF8String('???')));
+  Assert.IsFalse(StringMatches(lLeft, UTF8String('?')));
+  lRight := UTF8String(string('�'));
+  Assert.IsFalse(lComparer.Equals(lLeft, lRight));
+  lLeft[1] := AnsiChar($E0);
+  lLeft[2] := AnsiChar($80);
+  Assert.IsTrue(StringMatches(lLeft, UTF8String('???')));
+  SetLength(lLeft, 4);
+  lLeft[1] := AnsiChar($F4);
+  lLeft[2] := AnsiChar($8F);
+  lLeft[3] := AnsiChar($BF);
+  lLeft[4] := AnsiChar($BF);
+  Assert.IsTrue(StringMatches(lLeft, UTF8String('?')));
+  lRight := Copy(lLeft, 1, 4);
+  Assert.AreEqual(lComparer.GetHashCode(lLeft), lComparer.GetHashCode(lRight));
+  lFilter := TFilterExUtf8.Create(UTF8String('*') + lLeft);
+  Assert.IsTrue(lFilter.Matches(UTF8String('x') + lLeft));
+  lLeft[2] := AnsiChar($90);
+  Assert.IsTrue(StringMatches(lLeft, UTF8String('????')));
+  Assert.IsFalse(lComparer.Equals(lLeft, lRight));
+end;
+
+procedure TMaxLogicStrUtilsTests.Utf8_FilterParsingAndRecordCopies;
+var
+  lFilter, lCopy: TFilterExUtf8;
+begin
+  lFilter := Default(TFilterExUtf8);
+  Assert.IsTrue(lFilter.Matches('anything'));
+  lFilter := TFilterExUtf8.Create('  "a b"|東京  !pdf '#9);
+  Assert.IsTrue(lFilter.Matches('a b.txt'));
+  Assert.IsTrue(lFilter.Matches(UTF8String('東京.txt')));
+  Assert.IsFalse(lFilter.Matches('a b.pdf'));
+  lCopy := lFilter;
+  lFilter := TFilterExUtf8.Create('other');
+  Assert.IsFalse(lFilter.Matches('a b.txt'));
+  Assert.IsTrue(lCopy.Matches('a b.txt'));
+  lFilter := TFilterExUtf8.Create('"a""b"');
+  Assert.IsTrue(lFilter.Matches('a"b'));
+  lFilter := TFilterExUtf8.Create('"x|y"');
+  Assert.IsTrue(lFilter.Matches('x|y'));
+  Assert.IsFalse(lFilter.Matches('x'));
+  lFilter := TFilterExUtf8.Create('*');
+  Assert.IsTrue(lFilter.Matches(''));
+  lFilter := TFilterExUtf8.Create('**');
+  Assert.IsFalse(lFilter.Matches(''));
+  lFilter := TFilterExUtf8.Create(UTF8String('a'#0'b*'));
+  Assert.IsTrue(lFilter.Matches(UTF8String('A'#0'Btail')));
+  Assert.IsFalse(lFilter.Matches(UTF8String('A'#0'Ctail')));
+end;
+
+procedure TMaxLogicStrUtilsTests.Utf8_ComparerAllBmpCaseMappings;
+var
+  lComparer: IEqualityComparer<UTF8String>;
+  lLeft, lRight: UTF8String;
+  c: Char;
+begin
+  lComparer := TFastCaseAwareComparer.OrdinalIgnoreCaseUtf8;
+  for var i := 0 to $FFFF do
+  begin
+    if (i >= $D800) and (i <= $DFFF) then
+      Continue;
+    c := Char(i);
+    lLeft := UTF8String(string(c));
+    lRight := UTF8String(string(c.ToUpper));
+    Assert.IsTrue(lComparer.Equals(lLeft, lRight));
+    Assert.AreEqual(lComparer.GetHashCode(lLeft), lComparer.GetHashCode(lRight));
+  end;
 end;
 
 initialization

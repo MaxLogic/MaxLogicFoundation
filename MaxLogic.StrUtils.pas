@@ -7,15 +7,18 @@
 interface
 
 uses
-  System.Character, System.Classes, System.SysUtils, System.Types, System.generics.collections, System.generics.defaults,
-  System.StrUtils, System.RegularExpressions;
+  System.Character, System.Classes, System.Generics.Collections, System.Generics.Defaults,
+  System.RegularExpressions, System.StrUtils, System.SysUtils, System.Types;
 
 const
   CR = sLineBreak;
 
 // like system.masks.matchesMasks but platform independant and with the option to be case sensitive/insensitive
 function StringMatches(const aValue, aPattern: string;
-  aCaseSensitive: boolean = True): boolean;
+  aCaseSensitive: boolean = True): boolean; overload;
+// Native UTF-8 masks use scalar wildcards and ordinal BMP case folding; no temporary strings.
+function StringMatches(const aValue, aPattern: UTF8String;
+  aCaseSensitive: Boolean = True): Boolean; overload;
 
 function PutBefore(const AString: string; AChar: char; TotalLength: integer): string; overload;
 function PutBefore(num: integer; AChar: char; TotalLength: integer): string; overload;
@@ -118,7 +121,7 @@ type
     var aAction: TReplacePlaceholderAction);
 
   /// <summary>
-  ///   TFastCaseAwareComparer keeps allocations at zero for ASCII-heavy workloads by folding characters
+  ///   The UTF-16 overloads of TFastCaseAwareComparer keep allocations at zero for ASCII-heavy workloads by folding characters
   ///   through a lookup table and feeding them into a highly parallelized XXHash-style logic with overflow checks disabled.
   ///   Non-ASCII inputs fall back to TCharHelper.ToUpper calls on the fly, avoiding string allocations.
   ///   Latest DUnitX perf runs (Debug/Win32, 200k mixed keys) show ~2.8× vs TIStringComparer.Ordinal for case-insensitive hashes
@@ -127,10 +130,12 @@ type
   ///   Semantics stay strictly ordinal: no locale-driven expansions such as 'ß' → 'SS', ligature breaking, etc.; these inputs remain distinct.
   ///   Consumers that require locale-aware folding must continue using TIStringComparer/CompareText instead of this fast comparer.
   /// </summary>
-  TFastCaseAwareComparer = class(TInterfacedObject, IEqualityComparer<string>)
+  TFastCaseAwareComparer = class(TInterfacedObject, IEqualityComparer<string>, IEqualityComparer<UTF8String>)
   private
     FCaseSensitive: Boolean;
     class var FUpperAscii: array[0..255] of Char;
+    class var FOrdinalUtf8Comparer: IEqualityComparer<UTF8String>;
+    class var FOrdinalIgnoreCaseUtf8Comparer: IEqualityComparer<UTF8String>;
     class var FOrdinalComparer: IEqualityComparer<string>;
     class var FOrdinalIgnoreCaseComparer: IEqualityComparer<string>;
     class constructor Create;
@@ -148,8 +153,15 @@ type
     constructor Create(aCaseSensitive: Boolean);
     class function Ordinal: IEqualityComparer<string>; static;
     class function OrdinalIgnoreCase: IEqualityComparer<string>; static;
-    function Equals(const aLeft, aRight: string): Boolean; reintroduce;
-    function GetHashCode(const aValue: string): Integer; reintroduce;
+    // UTF-8 ordinal mode compares/hashes bytes. Ignore-case reads scalar values directly,
+    // folding BMP characters as the UTF-16 comparer does; no temporary strings are allocated.
+    // These factories return shared instances; hash values are specific to the string type.
+    class function OrdinalUtf8: IEqualityComparer<UTF8String>; static;
+    class function OrdinalIgnoreCaseUtf8: IEqualityComparer<UTF8String>; static;
+    function Equals(const aLeft, aRight: string): Boolean; reintroduce; overload;
+    function Equals(const aLeft, aRight: UTF8String): Boolean; reintroduce; overload;
+    function GetHashCode(const aValue: string): Integer; reintroduce; overload;
+    function GetHashCode(const aValue: UTF8String): Integer; reintroduce; overload;
   end;
 
 /// <summary>
@@ -204,7 +216,8 @@ function CombineUrl(const aParts: array of string; aSeparator: string = '/'): st
 // uses internally masks.MatchesMask
 // checks if the aText mathes any of the givem filter strings
 // returns always true if the filter array is empty
-function MatchesFilter(const aText: string; const aFilter: TStringDynArray): boolean;
+function MatchesFilter(const aText: string; const aFilter: TStringDynArray): boolean; overload;
+function MatchesFilter(const aText: UTF8String; const aFilter: TArray<UTF8String>): Boolean; overload;
 
 // Windows Explorer uses StrCmpLogicalW to compare file names. The RTL/VCL does not declare this function so you need to do it yourself.
 // on non windows platform we are falling back on CompareStr
@@ -259,6 +272,29 @@ type
     /// Returns true if the given text matches the filter or if the filter is empty
     /// </summary>
     function Matches(const aText: string): boolean;
+  end;
+
+  /// UTF-8-owned filter. AND, OR (|), negation (!) and quoted terms follow TFilterEx syntax.
+  /// Matching uses ordinal simple BMP uppercase folding without locale collation/normalization.
+  /// Masks support '*', '?', '[abc]', '[!abc]' and '[a-z]'; '?' consumes one Unicode scalar.
+  /// Malformed UTF-8 bytes remain distinct opaque values. Matches allocates no heap memory.
+  TFilterExUtf8 = record
+  private type
+    TKind = (ukContains, ukStarts, ukEnds, ukMask);
+    TTerm = record
+      fText: UTF8String;
+      fKind: TKind;
+    end;
+    TGroup = record
+      fIsNegated: Boolean;
+      fTerms: TArray<TTerm>;
+    end;
+  private
+    fGroups: TArray<TGroup>;
+    class function ParseTerm(const aText: UTF8String): TTerm; static;
+  public
+    class function Create(const aFilterText: UTF8String): TFilterExUtf8; static;
+    function Matches(const aText: UTF8String): Boolean;
   end;
 
 procedure Split(const line: string; delimiter: char; STRINGS: TStringList); overload;
@@ -344,7 +380,8 @@ Function ParseStatement(Const Statement: String; Const params: TArray<String>;
 implementation
 
 uses
-  System.Masks, AutoFree, System.Math;
+  System.Masks, System.Math,
+  AutoFree;
 
 function OccurrencesOfChar(const s: string; const c: char): integer;
 var
@@ -1251,10 +1288,14 @@ var
 begin
   for i := 0 to 255 do
     FUpperAscii[i] := Char(i).ToUpper; //PALOFF we only cast 0..255 here
+  FOrdinalUtf8Comparer := TFastCaseAwareComparer.Create(True);
+  FOrdinalIgnoreCaseUtf8Comparer := TFastCaseAwareComparer.Create(False);
 end;
 
 class destructor TFastCaseAwareComparer.Destroy;
 begin
+  FOrdinalUtf8Comparer := nil;
+  FOrdinalIgnoreCaseUtf8Comparer := nil;
   FOrdinalComparer := nil;
   FOrdinalIgnoreCaseComparer := nil;
 end;
@@ -1581,6 +1622,453 @@ end;
 class function TFastCaseAwareComparer.OrdinalIgnoreCase: IEqualityComparer<string>;
 begin
   Result := GetOrdinalIgnoreCaseComparer;
+end;
+
+// Invalid sequences consume one byte and map above the Unicode range. This keeps
+// malformed byte strings distinct without allocating replacements or throwing in hot paths.
+function ReadUtf8Multibyte(const aText: UTF8String; var aIndex: Integer): Cardinal;
+var
+  b, c, lMinimum: Cardinal;
+  i, n: Integer;
+begin
+  b := Ord(aText[aIndex]);
+  Inc(aIndex);
+  if b < $80 then
+    Exit(b);
+  if (b >= $C2) and (b <= $DF) then
+  begin
+    n := 1;
+    Result := b and $1F;
+    lMinimum := $80;
+  end else if (b >= $E0) and (b <= $EF) then
+  begin
+    n := 2;
+    Result := b and $0F;
+    lMinimum := $800;
+  end else if (b >= $F0) and (b <= $F4) then
+  begin
+    n := 3;
+    Result := b and $07;
+    lMinimum := $10000;
+  end else
+    Exit($110000 + b);
+  if n > Length(aText) - aIndex + 1 then
+    Exit($110000 + b);
+  for i := 0 to n - 1 do
+  begin
+    c := Ord(aText[aIndex + i]);
+    if (c and $C0) <> $80 then
+      Exit($110000 + b);
+    Result := (Result shl 6) or (c and $3F);
+  end;
+  if (Result < lMinimum) or (Result > $10FFFF) or
+    ((Result >= $D800) and (Result <= $DFFF)) then
+    Exit($110000 + b);
+  Inc(aIndex, n);
+end;
+
+function ReadUtf8CodePoint(const aText: UTF8String; var aIndex: Integer): Cardinal; inline;
+begin
+  Result := Ord(aText[aIndex]);
+  if Result < $80 then
+    Inc(aIndex)
+  else
+    Result := ReadUtf8Multibyte(aText, aIndex);
+end;
+
+function ReadPreviousUtf8CodePoint(const aText: UTF8String; var aIndex: Integer): Cardinal;
+var
+  i, j: Integer;
+begin
+  i := aIndex;
+  while (i > 1) and (aIndex - i < 3) and ((Ord(aText[i]) and $C0) = $80) do
+    Dec(i);
+  j := i;
+  Result := ReadUtf8CodePoint(aText, j);
+  if j = aIndex + 1 then
+    aIndex := i - 1
+  else begin
+    Result := $110000 + Ord(aText[aIndex]);
+    Dec(aIndex);
+  end;
+end;
+
+function FoldUtf8CodePoint(aValue: Cardinal): Cardinal; inline;
+begin
+  if aValue <= $FFFF then
+    Result := TFastCaseAwareComparer.FoldCharValue(Char(aValue)) //PALOFF the condition bounds aValue to the BMP
+  else
+    Result := aValue;
+end;
+
+function EqualUtf8CodePoints(aLeft, aRight: Cardinal; aCaseSensitive: Boolean): Boolean; inline;
+begin
+  Result := (aLeft = aRight) or (not aCaseSensitive and
+    (FoldUtf8CodePoint(aLeft) = FoldUtf8CodePoint(aRight)));
+end;
+
+function Utf8MatchAt(const aText, aPattern: UTF8String; aIndex: Integer; aPatternIndex: Integer = 1): Boolean;
+var
+  i: Integer;
+  lLeft, lRight: Cardinal;
+begin
+  i := aPatternIndex;
+  while i <= Length(aPattern) do
+  begin
+    if aIndex > Length(aText) then
+      Exit(False);
+    lLeft := ReadUtf8CodePoint(aText, aIndex);
+    lRight := ReadUtf8CodePoint(aPattern, i);
+    if not EqualUtf8CodePoints(lLeft, lRight, False) then
+      Exit(False);
+  end;
+  Result := True;
+end;
+
+function Utf8Contains(const aText, aPattern: UTF8String): Boolean;
+var
+  i, j: Integer;
+  lFirst: Cardinal;
+begin
+  if aPattern = '' then
+    Exit(False);
+  j := 1;
+  lFirst := FoldUtf8CodePoint(ReadUtf8CodePoint(aPattern, j));
+  i := 1;
+  while i <= Length(aText) do
+    if FoldUtf8CodePoint(ReadUtf8CodePoint(aText, i)) = lFirst then
+      if Utf8MatchAt(aText, aPattern, i, j) then
+        Exit(True);
+  Result := False;
+end;
+
+function Utf8EndsWith(const aText, aPattern: UTF8String): Boolean;
+var
+  i, j: Integer;
+  lLeft, lRight: Cardinal;
+begin
+  i := Length(aText);
+  j := Length(aPattern);
+  while j > 0 do
+  begin
+    if i = 0 then
+      Exit(False);
+    lLeft := ReadPreviousUtf8CodePoint(aText, i);
+    lRight := ReadPreviousUtf8CodePoint(aPattern, j);
+    if not EqualUtf8CodePoints(lLeft, lRight, False) then
+      Exit(False);
+  end;
+  Result := True;
+end;
+
+function Utf8MaskTokenMatches(const aPattern: UTF8String; var aIndex: Integer;
+  aValue: Cardinal; aCaseSensitive: Boolean): Boolean;
+var
+  lFirst, lLast: Cardinal;
+  lNegated, lHasItems: Boolean;
+begin
+  case aPattern[aIndex] of
+    '?':
+      begin
+        Inc(aIndex);
+        Exit(True);
+      end;
+    '[':
+      begin
+        Inc(aIndex);
+        lNegated := (aIndex <= Length(aPattern)) and (aPattern[aIndex] = '!');
+        if lNegated then
+          Inc(aIndex);
+        Result := False;
+        lHasItems := False;
+        if not aCaseSensitive then
+          aValue := FoldUtf8CodePoint(aValue);
+        while (aIndex <= Length(aPattern)) and (aPattern[aIndex] <> ']') do
+        begin
+          lFirst := ReadUtf8CodePoint(aPattern, aIndex);
+          lLast := lFirst;
+          if (aIndex < Length(aPattern)) and (aPattern[aIndex] = '-') and
+            (aPattern[aIndex + 1] <> ']') then
+          begin
+            Inc(aIndex);
+            lLast := ReadUtf8CodePoint(aPattern, aIndex);
+          end;
+          if not aCaseSensitive then
+          begin
+            lFirst := FoldUtf8CodePoint(lFirst);
+            lLast := FoldUtf8CodePoint(lLast);
+          end;
+          if lFirst > lLast then
+            raise EMaskException.Create('Descending range in UTF-8 mask');
+          Result := Result or ((aValue >= lFirst) and (aValue <= lLast));
+          lHasItems := True;
+        end;
+        if not lHasItems or (aIndex > Length(aPattern)) then
+          raise EMaskException.Create('Invalid character set in UTF-8 mask');
+        Inc(aIndex);
+        Result := Result xor lNegated;
+      end;
+  else
+    lFirst := ReadUtf8CodePoint(aPattern, aIndex);
+    Result := EqualUtf8CodePoints(aValue, lFirst, aCaseSensitive);
+  end;
+end;
+
+procedure ValidateUtf8Mask(const aPattern: UTF8String; aCaseSensitive: Boolean);
+var
+  i: Integer;
+begin
+  i := 1;
+  while i <= Length(aPattern) do
+    Utf8MaskTokenMatches(aPattern, i, $FFFFFFFF, aCaseSensitive); //PALOFF validation intentionally discards the match result
+end;
+
+function Utf8MatchesMask(const aText, aPattern: UTF8String; aCaseSensitive: Boolean): Boolean;
+var
+  i, j, lNextText, lNextPattern, lStarText, lStarPattern: Integer;
+  cp: Cardinal;
+begin
+  i := 1;
+  j := 1;
+  lStarText := 0;
+  lStarPattern := 0;
+  while i <= Length(aText) do
+  begin
+    if (j <= Length(aPattern)) and (aPattern[j] = '*') then
+    begin
+      Inc(j);
+      lStarPattern := j;
+      lStarText := i;
+      Continue;
+    end;
+    if j <= Length(aPattern) then
+    begin
+      lNextText := i;
+      lNextPattern := j;
+      cp := ReadUtf8CodePoint(aText, lNextText);
+      if Utf8MaskTokenMatches(aPattern, lNextPattern, cp, aCaseSensitive) then
+      begin
+        i := lNextText;
+        j := lNextPattern;
+        Continue;
+      end;
+    end;
+    if lStarPattern = 0 then
+      Exit(False);
+    ReadUtf8CodePoint(aText, lStarText); //PALOFF advance the retry position by one scalar
+    i := lStarText;
+    j := lStarPattern;
+  end;
+  while (j <= Length(aPattern)) and (aPattern[j] = '*') do
+    Inc(j);
+  Result := j > Length(aPattern);
+end;
+
+function StringMatches(const aValue, aPattern: UTF8String; aCaseSensitive: Boolean): Boolean;
+begin
+  ValidateUtf8Mask(aPattern, aCaseSensitive);
+  Result := Utf8MatchesMask(aValue, aPattern, aCaseSensitive);
+end;
+
+function MatchesFilter(const aText: UTF8String; const aFilter: TArray<UTF8String>): Boolean;
+var
+  lFilter: UTF8String;
+begin
+  if Length(aFilter) = 0 then
+    Exit(True);
+  for lFilter in aFilter do
+    if StringMatches(aText, lFilter, False) then
+      Exit(True);
+  Result := False;
+end;
+
+{ TFilterExUtf8 }
+
+class function TFilterExUtf8.ParseTerm(const aText: UTF8String): TTerm;
+var
+  i, n: Integer;
+begin
+  Result.fText := aText;
+  Result.fKind := TKind.ukContains;
+  if (Pos(AnsiChar('?'), aText) > 0) or (Pos(AnsiChar('['), aText) > 0) then
+    Result.fKind := TKind.ukMask
+  else begin
+    i := Pos(AnsiChar('*'), aText);
+    n := Length(aText);
+    if i > 0 then
+    begin
+      if i = n then
+      begin
+        Result.fKind := TKind.ukStarts;
+        SetLength(Result.fText, n - 1);
+      end else if i = 1 then
+      begin
+        i := Pos(AnsiChar('*'), aText, 2);
+        if i = 0 then
+        begin
+          Result.fKind := TKind.ukEnds;
+          Result.fText := Copy(aText, 2, n - 1);
+        end else if i = n then
+          Result.fText := Copy(aText, 2, n - 2)
+        else
+          Result.fKind := TKind.ukMask;
+      end else
+        Result.fKind := TKind.ukMask;
+    end;
+  end;
+  if Result.fKind = TKind.ukMask then
+    ValidateUtf8Mask(Result.fText, False);
+end;
+
+class function TFilterExUtf8.Create(const aFilterText: UTF8String): TFilterExUtf8;
+var
+  lGroups: TList<TGroup>;
+  lTerms: TList<TTerm>;
+  lGroup: TGroup;
+  lToken: UTF8String;
+  g: TGarbos;
+  i, n, lTokenLength: Integer;
+  lInQuote: Boolean;
+  c: AnsiChar;
+begin
+  Result := Default(TFilterExUtf8);
+  GC(lGroups, TList<TGroup>.Create, g);
+  GC(lTerms, TList<TTerm>.Create, g);
+  n := Length(aFilterText);
+  SetLength(lToken, n);
+  i := 1;
+  while i <= n do
+  begin
+    while (i <= n) and (aFilterText[i] in [#1..#32]) do
+      Inc(i);
+    if i > n then
+      Break;
+    lGroup := Default(TGroup);
+    lGroup.fIsNegated := aFilterText[i] = '!';
+    if lGroup.fIsNegated then
+      Inc(i);
+    lTerms.Clear;
+    lInQuote := False;
+    lTokenLength := 0;
+    while i <= n do
+    begin
+      c := aFilterText[i];
+      if c = '"' then
+      begin
+        if lInQuote and (i < n) and (aFilterText[i + 1] = '"') then
+        begin
+          Inc(lTokenLength);
+          lToken[lTokenLength] := '"';
+          Inc(i);
+        end else
+          lInQuote := not lInQuote;
+      end else if not lInQuote and ((c = '|') or (c in [#1..#32])) then
+      begin
+        lTerms.Add(ParseTerm(Copy(lToken, 1, lTokenLength)));
+        lTokenLength := 0;
+        if c <> '|' then
+          Break;
+      end else begin
+        Inc(lTokenLength);
+        lToken[lTokenLength] := c;
+      end;
+      Inc(i);
+    end;
+    if (i > n) and ((lTokenLength > 0) or (lTerms.Count > 0)) then
+      lTerms.Add(ParseTerm(Copy(lToken, 1, lTokenLength)));
+    lGroup.fTerms := lTerms.ToArray;
+    lGroups.Add(lGroup);
+  end;
+  Result.fGroups := lGroups.ToArray;
+end;
+
+function TFilterExUtf8.Matches(const aText: UTF8String): Boolean;
+var
+  i, j: Integer;
+  lMatches: Boolean;
+begin
+  for i := 0 to High(fGroups) do
+  begin
+    lMatches := False;
+    for j := 0 to High(fGroups[i].fTerms) do
+    begin
+      case fGroups[i].fTerms[j].fKind of
+        TKind.ukContains: lMatches := Utf8Contains(aText, fGroups[i].fTerms[j].fText);
+        TKind.ukStarts: lMatches := Utf8MatchAt(aText, fGroups[i].fTerms[j].fText, 1);
+        TKind.ukEnds: lMatches := Utf8EndsWith(aText, fGroups[i].fTerms[j].fText);
+        TKind.ukMask: lMatches := Utf8MatchesMask(aText, fGroups[i].fTerms[j].fText, False);
+      end;
+      if lMatches then
+        Break;
+    end;
+    if lMatches = fGroups[i].fIsNegated then
+      Exit(False);
+  end;
+  Result := True;
+end;
+
+class function TFastCaseAwareComparer.OrdinalUtf8: IEqualityComparer<UTF8String>;
+begin
+  Result := FOrdinalUtf8Comparer;
+end;
+
+class function TFastCaseAwareComparer.OrdinalIgnoreCaseUtf8: IEqualityComparer<UTF8String>;
+begin
+  Result := FOrdinalIgnoreCaseUtf8Comparer;
+end;
+
+function TFastCaseAwareComparer.Equals(const aLeft, aRight: UTF8String): Boolean;
+var
+  i, j: Integer;
+  lLeft, lRight: Cardinal;
+begin
+  if Pointer(aLeft) = Pointer(aRight) then
+    Exit(True);
+  if FCaseSensitive then
+    Exit((Length(aLeft) = Length(aRight)) and
+      ((aLeft = '') or CompareMem(Pointer(aLeft), Pointer(aRight), NativeInt(Length(aLeft)))));
+  i := 1;
+  j := 1;
+  while (i <= Length(aLeft)) and (j <= Length(aRight)) do
+  begin
+    lLeft := ReadUtf8CodePoint(aLeft, i);
+    lRight := ReadUtf8CodePoint(aRight, j);
+    if not EqualUtf8CodePoints(lLeft, lRight, False) then
+      Exit(False);
+  end;
+  Result := (i > Length(aLeft)) and (j > Length(aRight));
+end;
+
+function TFastCaseAwareComparer.GetHashCode(const aValue: UTF8String): Integer;
+var
+  lHash, cp: Cardinal;
+  i: Integer;
+begin
+  if FCaseSensitive then
+    Exit(Integer(HashBytes(PByte(PAnsiChar(aValue)), Length(aValue))));
+  lHash := CFNVOffsetBasis32;
+  i := 1;
+{$IFOPT Q+}
+  {$DEFINE FASTCASE_UTF8_HASH_QPLUS}
+  {$Q-}
+{$ENDIF}
+  while i <= Length(aValue) do
+  begin
+    cp := FoldUtf8CodePoint(ReadUtf8CodePoint(aValue, i));
+    if (cp > $FFFF) and (cp <= $10FFFF) then
+    begin
+      // Match our existing UTF-16 comparer: supplementary pairs are not case-folded.
+      Dec(cp, $10000);
+      lHash := (lHash xor ($D800 + (cp shr 10))) * CFNVPrime32;
+      cp := $DC00 + (cp and $3FF);
+    end;
+    lHash := (lHash xor cp) * CFNVPrime32;
+  end;
+{$IFDEF FASTCASE_UTF8_HASH_QPLUS}
+  {$UNDEF FASTCASE_UTF8_HASH_QPLUS}
+  {$Q+}
+{$ENDIF}
+  Result := Integer(lHash);
 end;
 
 { TStringComparerHelper }

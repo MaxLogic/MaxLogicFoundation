@@ -6,6 +6,8 @@ All notable changes to MaxLogicFoundation are documented here.
 
 ### Added
 
+- Added native UTF8 RichIni storage, parsing, lookup and I/O through `TRichIniFileUtf8`, sharing document logic with the existing Unicode version.
+- `MaxLogic.StrUtils`: native `TFilterExUtf8`, UTF8String `StringMatches`/`MatchesFilter`, and `TFastCaseAwareComparer.OrdinalUtf8`/`OrdinalIgnoreCaseUtf8`. Prepared filtering, wildcard matching, equality and hashing operate without UTF-16 string conversions or per-call heap allocations, including non-ASCII text. Native masks support Unicode scalars and character sets; see `readme.strutils-utf8.md` for case-folding and malformed-input semantics.
 - `maxLogic.IndyHttpHelper.CreateNetHttp`: a shared configured `THTTPClient` factory for platform-native HTTP/TLS callers that still use the existing helper's timeout and redirect options.
 - `MaxLogic.Windows.Identity`: bounded, cached Windows boot identity and process-start UTC millisecond APIs for cross-process lifecycle correlation.
 - `MaxLogic.MadExcept.AiRunner`: DEBUG/agent-friendly madExcept setup that suppresses modal UI, deletes stale reports on startup, writes a trimmed last `bugreport.txt`, and exits with a deterministic code for automated runs.

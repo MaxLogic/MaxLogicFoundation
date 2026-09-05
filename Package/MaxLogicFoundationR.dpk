@@ -100,6 +100,7 @@ contains
   MaxLogic.RestClientHelper in '..\MaxLogic.RestClientHelper.pas',
   MaxLogic.RetryPolicy in '..\MaxLogic.RetryPolicy.pas',
   MaxLogic.RichIniFile in '..\MaxLogic.RichIniFile.pas',
+  MaxLogic.RichIniFile.Utf8 in '..\MaxLogic.RichIniFile.Utf8.pas',
   maxLogic.ringBuffer in '..\maxLogic.ringBuffer.pas',
   maxLogic.RTTIHelper in '..\maxLogic.RTTIHelper.pas',
   MaxLogic.SelfDeletingTemporaryFile in '..\MaxLogic.SelfDeletingTemporaryFile.pas',

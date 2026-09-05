@@ -1,4 +1,4 @@
-unit MaxLogic.RichIniFiles.Tests;
+﻿unit MaxLogic.RichIniFiles.Tests;
 
 interface
 
@@ -106,10 +106,10 @@ begin
   lOptions.BooleanFalseValue := '';
   lFile := TRichIniFile.Create('', lOptions);
   try
-    Assert.AreEqual(3, Length(lFile.Options.CommentPrefixes));
+    Assert.AreEqual(NativeInt(3), Length(lFile.Options.CommentPrefixes));
     Assert.AreEqual(';', lFile.Options.CommentPrefixes[0]);
     Assert.AreEqual('=', lFile.Options.KeyValueDelimiter);
-    Assert.AreEqual(6, Length(lFile.Options.BooleanTrueValues));
+    Assert.AreEqual(NativeInt(6), Length(lFile.Options.BooleanTrueValues));
     Assert.AreEqual('1', lFile.Options.BooleanTrueValue);
     Assert.AreEqual('0', lFile.Options.BooleanFalseValue);
   finally
@@ -130,12 +130,12 @@ begin
   Assert.AreEqual(Integer(csCaseSensitive), Integer(lOptions.CaseSensitivity));
   Assert.AreEqual(Integer(mbTreatAsKey), Integer(lOptions.AcceptMissingBracket));
   Assert.AreEqual(Integer(coAttachToNext), Integer(lOptions.CommentOwnership));
-  Assert.AreEqual(3, Length(lOptions.CommentPrefixes));
+  Assert.AreEqual(NativeInt(3), Length(lOptions.CommentPrefixes));
   Assert.AreEqual(';', lOptions.CommentPrefixes[0]);
   Assert.AreEqual('#', lOptions.CommentPrefixes[1]);
   Assert.AreEqual('//', lOptions.CommentPrefixes[2]);
   Assert.AreEqual('=', lOptions.KeyValueDelimiter);
-  Assert.AreEqual(6, Length(lOptions.BooleanTrueValues));
+  Assert.AreEqual(NativeInt(6), Length(lOptions.BooleanTrueValues));
   Assert.AreEqual('1', lOptions.BooleanTrueValues[0]);
   Assert.AreEqual('y', lOptions.BooleanTrueValues[1]);
   Assert.AreEqual('yes', lOptions.BooleanTrueValues[2]);
@@ -402,7 +402,7 @@ begin
   lIni := LoadIniFromText(cContent, lOptions);
   try
     lIni.ReadAllKeyValues('Main', 'Value', lValues);
-    Assert.AreEqual(3, Length(lValues));
+    Assert.AreEqual(NativeInt(3), Length(lValues));
     Assert.AreEqual('1', lValues[0]);
     Assert.AreEqual('2', lValues[1]);
     Assert.AreEqual('3', lValues[2]);
@@ -452,7 +452,7 @@ begin
     Assert.AreEqual('Value', lIni.ReadString('mixed', 'name', 'fallback'));
     Assert.AreEqual(1, lIni.KeyCount('MIXED', 'NAME'));
     lIni.ReadAllKeyValues('mixed', 'NAME', lValues);
-    Assert.AreEqual(1, Length(lValues));
+    Assert.AreEqual(NativeInt(1), Length(lValues));
     Assert.AreEqual('Value', lValues[0]);
   finally
     lIni.Free;
@@ -476,7 +476,7 @@ begin
     lIni.WriteString('Main', 'Value', '42');
     Assert.IsTrue(lIni.Dirty);
     lIni.ReadAllKeyValues('Main', 'Value', lValues);
-    Assert.AreEqual(2, Length(lValues));
+    Assert.AreEqual(NativeInt(2), Length(lValues));
     Assert.AreEqual('1', lValues[0]);
     Assert.AreEqual('42', lValues[1]);
   finally
@@ -532,7 +532,7 @@ begin
   try
     lIni.WriteString('Main', 'Value', '88', 1);
     lIni.ReadAllKeyValues('Main', 'Value', lValues);
-    Assert.AreEqual(3, Length(lValues));
+    Assert.AreEqual(NativeInt(3), Length(lValues));
     Assert.AreEqual('1', lValues[0]);
     Assert.AreEqual('88', lValues[1]);
     Assert.AreEqual('3', lValues[2]);
@@ -561,7 +561,7 @@ begin
     lIndex := lIni.AppendKey('Main', 'Value', '4');
     Assert.AreEqual(3, lIndex);
     lIni.ReadAllKeyValues('Main', 'Value', lValues);
-    Assert.AreEqual(4, Length(lValues));
+    Assert.AreEqual(NativeInt(4), Length(lValues));
     Assert.AreEqual('4', lValues[3]);
     Assert.AreEqual(4, lIni.KeyCount('Main', 'Value'));
     Assert.AreEqual(3, lIni.LastKeyIndex('Main', 'Value'));
@@ -616,7 +616,7 @@ begin
   try
     lIni.DeleteKey('Main', 'Value', 1);
     lIni.ReadAllKeyValues('Main', 'Value', lValues);
-    Assert.AreEqual(2, Length(lValues));
+    Assert.AreEqual(NativeInt(2), Length(lValues));
     Assert.AreEqual('1', lValues[0]);
     Assert.AreEqual('3', lValues[1]);
     Assert.AreEqual(2, lIni.KeyCount('Main', 'Value'));
@@ -1261,7 +1261,7 @@ begin
     Assert.AreEqual(1, lIni.KeyCount('', 'Alpha'));
     Assert.AreEqual('2', lIni.ReadString('', 'Alpha', 'fallback'));
     lIni.ReadAllKeyValues('', 'Beta', lValues);
-    Assert.AreEqual(1, Length(lValues));
+    Assert.AreEqual(NativeInt(1), Length(lValues));
     Assert.AreEqual('4', lValues[0]);
   finally
     lIni.Free;
@@ -1315,7 +1315,7 @@ begin
       for var item in lParts do
         if item <> '' then
           lFiltered.Add(item);
-      Assert.AreEqual(2, lFiltered.Count, 'Parts=' + String.Join(',', lFiltered.ToArray));
+      Assert.AreEqual(NativeInt(2), NativeInt(lFiltered.Count), 'Parts=' + String.Join(',', lFiltered.ToArray));
       Assert.AreEqual('[Main]', lFiltered[0], 'Parts=' + String.Join(',', lFiltered.ToArray));
       Assert.AreEqual('Key=2', lFiltered[1], 'Parts=' + String.Join(',', lFiltered.ToArray));
     finally

@@ -1,4 +1,4 @@
-# TRichIniFile – Rich INI reader/writer
+﻿# TRichIniFile – Rich INI reader/writer
 
 `TRichIniFile` is a Delphi 12+ drop-in friendly INI engine that keeps the source file intact while exposing a familiar `TIniFile`/`TMemIniFile` surface. It now descends from `System.IniFiles.TCustomIniFile`, so APIs that expect a `TCustomIniFile` instance can use it directly. It is designed for tooling and configuration scenarios that need comment preservation, duplicate keys, controlled encodings, and atomic saves without sacrificing performance.
 
@@ -131,3 +131,114 @@ Pick `TRichIniFile` when you need any of:
 - Atomic saves to avoid partial writes or file corruption on failure.
 
 Stick to `TIniFile` or `TMemIniFile` when we only need quick key/value access and do not care about formatting or duplicates (or when we need to save extremely frequently and want the lowest possible save latency).
+
+## Native UTF8 version
+
+`MaxLogic.RichIniFile.Utf8` provides `TRichIniFileUtf8` and `TRichIniOptionsUtf8`.
+The original `MaxLogic.RichIniFile.TRichIniFile` keeps its UnicodeString API and
+`TCustomIniFile` inheritance. Both compile the document algorithms from
+`MaxLogic.RichIniFile.Shared.inc`; native UTF8 primitives live in
+`MaxLogic.RichIniFile.Utf8.Helpers.inc`. No project define is required, and both
+units can be linked into the same application.
+
+```delphi
+uses
+  AutoFree, MaxLogic.RichIniFile.Utf8;
+
+function ReadUtf8Setting(const aText, aSection, aKey: UTF8String): UTF8String;
+var
+  g: TGarbos;
+  lIni: TRichIniFileUtf8;
+  lOptions: TRichIniOptionsUtf8;
+begin
+  lOptions := MaxLogic.RichIniFile.Utf8.DefaultRichIniOptions;
+  GC(lIni, TRichIniFileUtf8.Create('', lOptions), g);
+  lIni.LoadFromText(aText);
+  Result := lIni.ReadString(aSection, aKey, '');
+end;
+```
+
+For repeated access, keep the instance and load once. Document text, section
+names, keys, values, comments and dictionary keys stay UTF8String. Ordinary
+warmed string reads and the tested integer/boolean reads allocate no heap blocks.
+Writes allocate their new text but do not convert document strings to UTF16.
+
+- `ReadSection`, `ReadSections` and `ReadSectionValues` fill a caller-owned
+  `TList<UTF8String>` (also named `TRichIniStrings` in the UTF8 unit).
+  `ReadAllKeyValues` returns `TArray<UTF8String>` through its existing out parameter.
+- Filenames stay UnicodeString to match Delphi and Windows filesystem APIs.
+- `KeyValueDelimiter` stays `Char`; non-ASCII BMP delimiters are encoded once
+  and matched as complete UTF8 sequences.
+- Case-sensitive lookup is ordinal byte comparison. Case-insensitive lookup
+  and boolean tokens use our native `TFastCaseAwareComparer` UTF8 variants:
+  simple BMP uppercase mapping, no locale collation or Unicode normalization,
+  with supplementary code points kept case-sensitive.
+- Native UTF8 load/save preserves malformed bytes as opaque data. The native
+  `eoAutoDetect` mode recognizes BOMs and defaults to UTF8 without a BOM.
+  The existing Unicode version retains its system-encoding fallback.
+- ANSI, UTF16 and explicitly custom encodings convert at the file boundary.
+  A supplied custom decoder is honored, including its decoding errors.
+  Custom encoding objects remain caller-owned and must outlive the INI object.
+- The native class is independent of `TCustomIniFile`. The methods explicitly
+  declared by RichIni are available; inherited RTL conveniences such as
+  `ReadDate`, `ReadFloat` and `ReadBinaryStream` are not part of its API.
+- When importing both units, use the suffixed native class/options names and
+  qualify `DefaultRichIniOptions` with the intended unit. The option records
+  belong to their respective string versions.
+
+### UTF8 performance proof
+
+Measured on 2026-09-05 with Delphi 12 Release, outside the debugger, on this
+Windows development machine. The retained benchmark exercises 100 and 10,000
+keys, ASCII and non-ASCII text, both case modes, and short/256-byte-padded values.
+Each comparison uses two warmups and 15 measured samples, alternating execution
+order. Construction, input generation, document resets, logging and correctness
+checks are outside timing. The Unicode baseline includes conversions from and
+back to actual UTF8 caller variables. Writes update existing values on every pass.
+File load/save includes filesystem work and atomic replacement.
+
+Representative Win64 result: 10,000 keys, non-ASCII text, case-insensitive lookup.
+All times below are milliseconds; p95 uses nearest rank (the maximum of 15 samples).
+
+| Operation | Unicode median | UTF8 median | Unicode p95 | UTF8 p95 |
+| --- | ---: | ---: | ---: | ---: |
+| 50,000 reads | 86.624 | 37.776 | 109.225 | 43.941 |
+| 20,000 writes | 44.854 | 20.485 | 49.553 | 25.173 |
+| Load text | 24.589 | 17.769 | 28.234 | 20.391 |
+| Load file | 25.576 | 20.322 | 31.633 | 25.479 |
+| Atomic save | 7.793 | 4.144 | 9.966 | 25.290 |
+
+Across the eight scenarios, native reads were 1.70-4.34 times as fast on Win32
+and 1.71-4.76 times as fast on Win64. Native writes were 1.51-2.66 and 1.65-2.74
+times as fast respectively. Small file operations remain dominated by filesystem
+costs; some were slower, and the representative atomic-save p95 above regressed.
+These measurements establish the benefit for repeated access, not a universal
+speed guarantee for every INI workload.
+
+Reproduce the benchmark from the repository root (replace Win64 with Win32 for
+that platform):
+
+```powershell
+& $env:DAK_EXE build --project benchmarks\MaxLogic.RichIniUtf8.Benchmark.dproj --delphi 23.0 --platform Win64 --config Release --show-warnings --ai
+& benchmarks\Win64\Release\MaxLogic.RichIniUtf8.Benchmark.exe
+```
+
+The benchmark emits CSV with min/median/p95/max and returns a nonzero exit code
+if a checked read, write, load or saved-byte result is incorrect. It runs each
+platform separately and uses unique temporary input/output files.
+
+Tests cover both implementations, duplicate/order/comment behavior, native
+case handling, scalar parsing, multiline escapes, raw bytes, custom decoders,
+non-ASCII delimiters, missing/error paths and 48 encoding/BOM/newline combinations.
+The UTF8 read regression originally measured 300 allocations for 100 reads
+through the Unicode boundary; the native path measures zero. Both fixtures
+also passed in an isolated Win64 Debug runner with range/overflow checking.
+
+From `tests`, run the focused Win32 suites after a Release build:
+
+```powershell
+.\build-delphi.bat MaxLogic.Tests.dproj -config Release -no-brand -show-warnings-on-success
+$env:MAXLOGIC_MADEXCEPT_AI = '1'
+.\MaxLogic.Tests.exe --run:MaxLogic.RichIniFiles.Tests.TRichIniFilesTests --exitbehavior:Continue --consolemode:Quiet
+.\MaxLogic.Tests.exe --run:MaxLogic.RichIniFile.Utf8.Tests.TRichIniUtf8Tests --exitbehavior:Continue --consolemode:Quiet
+```
