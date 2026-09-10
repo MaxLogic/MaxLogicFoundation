@@ -72,6 +72,10 @@ type
     procedure DetectBom;
 
     // those methods are split for performance reasons. mostly quotes do not need to be checked, and we know when to check when the first char of a column is a quote char
+    // Moves the cursor to the next delimiter, LF or CR (aStopAtDelimiter) or to the next quote char,
+    // scanning every block with a raw pointer instead of one method call per byte. False at the end
+    // of the stream (cursor then at the end position).
+    function ScanToStopByte(aStopAtDelimiter: boolean): boolean;
     procedure ReadNonQuotedColValue(var aValue: rawByteString; var LineEndDetected: boolean);
     {$IFDEF USE_INLINE} inline;
     {$ENDIF}
@@ -85,7 +89,10 @@ type
     // this also calls detect delimiter if aUseDelimiter = #0. ATTENTION: the Delimiter will be converted to a ansiChar
     procedure Open(const FileName: string; aShareMode: Cardinal = fmShareDenyWrite; aUseDelimiter: char = #0); overload;
     procedure Open(const FileName: string; aUseDelimiter: char); overload;
-    procedure Open(aStream: TStream; aTakeOwnerShipOfStream: boolean = False; aUseDelimiter: char = #0); overload;
+    // aBufferSize is the block size of the underlying reader (tests use small blocks to cover cells that
+    // straddle a block boundary).
+    procedure Open(aStream: TStream; aTakeOwnerShipOfStream: boolean = False; aUseDelimiter: char = #0;
+      aBufferSize: integer = cBufferSize); overload;
 
     procedure Close;
 
@@ -607,11 +614,12 @@ begin
   Open(fs, True, aUseDelimiter);
 end;
 
-procedure TCsvReader.Open(aStream: TStream; aTakeOwnerShipOfStream: boolean = False; aUseDelimiter: char = #0);
+procedure TCsvReader.Open(aStream: TStream; aTakeOwnerShipOfStream: boolean = False; aUseDelimiter: char = #0;
+  aBufferSize: integer = cBufferSize);
 begin
   Close;
   fCsvFileSize := aStream.Size;
-  fBuffer := TBufferedFile.Create(cBufferSize);
+  fBuffer := TBufferedFile.Create(aBufferSize);
   fBuffer.Open(aStream, aTakeOwnerShipOfStream);
   DetectBom;
   if aUseDelimiter = #0 then
@@ -632,7 +640,10 @@ begin
 
   LineEndDetected := False;
 
-  if fMaxColCountFound <> 0 then
+  // a forced column count is the natural capacity; otherwise the widest row seen so far
+  if fForcedColCount <> 0 then
+    colCapacity := fForcedColCount
+  else if fMaxColCountFound <> 0 then
     colCapacity := fMaxColCountFound
   else
     colCapacity := 255;
@@ -767,38 +778,66 @@ begin
   end;
 end;
 
+function TCsvReader.ScanToStopByte(aStopAtDelimiter: boolean): boolean;
+var
+  lByte: pByte;
+  lDelimiter: Byte;
+  lLeft: integer;
+  lQuote: Byte;
+  lScanned: integer;
+begin
+  lDelimiter := Byte(fDelimiter);
+  lQuote := Byte(FQuoteChar);
+  while not fBuffer.EOF do
+  begin
+    lLeft := fBuffer.BlockBytesLeft;
+    lByte := fBuffer.Cursor;
+    lScanned := 0;
+    if aStopAtDelimiter then
+      while (lScanned < lLeft) and (lByte^ <> lDelimiter) and (lByte^ <> 10) and (lByte^ <> 13) do
+      begin
+        Inc(lByte);
+        Inc(lScanned);
+      end
+    else
+      while (lScanned < lLeft) and (lByte^ <> lQuote) do
+      begin
+        Inc(lByte);
+        Inc(lScanned);
+      end;
+    if lScanned < lLeft then
+    begin
+      fBuffer.AdvanceInBlock(lScanned);
+      Exit(True);
+    end;
+    // block exhausted: step onto its last byte and let NextByte load the next block (or reach EOF)
+    fBuffer.AdvanceInBlock(lLeft - 1);
+    if not fBuffer.NextByte then
+      Exit(False);
+  end;
+  Result := False;
+end;
+
 procedure TCsvReader.ReadNonQuotedColValue(var aValue: rawByteString; var LineEndDetected: boolean);
 var
   start, Count: Int64;
 begin
   start := fBuffer.Position;
-  while not fBuffer.EOF do
+  if ScanToStopByte(True) then
   begin
+    Count := (fBuffer.Position - start);
+    aValue := fBuffer.CopyRawByteString(start, Count);
     if fBuffer.CharCursor = fDelimiter then
-    begin
-      Count := (fBuffer.Position - start);
-      aValue := fBuffer.CopyRawByteString(start, Count);
-      fBuffer.NextByte; // move to the start of the next value
-      exit;
-
-    end else if fBuffer.Cursor^ in [10, 13] then
+      fBuffer.NextByte // move to the start of the next value
+    else
     begin
       LineEndDetected := True;
-
-      Count := (fBuffer.Position - start);
-      aValue := fBuffer.CopyRawByteString(start, Count);
-
       if fBuffer.Cursor^ = 10 then
         fBuffer.NextByte // move to the start of the next value
-      else if fBuffer.Cursor^ = 13 then // skip windows line break
+      else // skip windows line break
         fBuffer.Seek(2);
-
-      exit;
-
-    end
-    else
-      fBuffer.NextByte;
-
+    end;
+    exit;
   end;
 
   // if we are here, nothing was found, so Retrieve all
@@ -815,48 +854,44 @@ begin
   start := fBuffer.Position;
   aValue := '';
 
-  while not fBuffer.EOF do
+  while ScanToStopByte(False) do // the cursor is on a quote
   begin
-    if fBuffer.CharCursor = FQuoteChar then
-    begin
-      Count := (fBuffer.Position - start);
+    Count := (fBuffer.Position - start);
+    if aValue = '' then // one copy for the common unescaped cell
+      aValue := fBuffer.CopyRawByteString(start, Count)
+    else
       aValue := aValue + fBuffer.CopyRawByteString(start, Count); // copy all until before the quote
 
-      fBuffer.NextByte; // move either to the delimiter after the quote, an quote that makrs quote escape, or to a line break character
-      // was this quote escaped?
-      if not fBuffer.EOF and (fBuffer.CharCursor = FQuoteChar) then
-      begin
-        // so this quote is escaped...
-        aValue := aValue + FQuoteChar;
-        fBuffer.NextByte;
-        start := fBuffer.Position; // next time we will copy from here
-        Continue;
-      end;
-      // right now the cursor points just after the quote char that closes the column value
+    fBuffer.NextByte; // move either to the delimiter after the quote, an quote that makrs quote escape, or to a line break character
+    // was this quote escaped?
+    if not fBuffer.EOF and (fBuffer.CharCursor = FQuoteChar) then
+    begin
+      // so this quote is escaped...
+      aValue := aValue + FQuoteChar;
+      fBuffer.NextByte;
+      start := fBuffer.Position; // next time we will copy from here
+      Continue;
+    end;
+    // right now the cursor points just after the quote char that closes the column value
 
-      if fBuffer.EOF then
-      begin
-        LineEndDetected := True;
-        exit;
-      end;
-
-      if (not fBuffer.EOF) and (fBuffer.Cursor^ in [10, 13]) then
-      begin
-        LineEndDetected := True;
-        if fBuffer.Cursor^ = 10 then
-          fBuffer.NextByte // move to the start of the next value
-        else if fBuffer.Cursor^ = 13 then // skip windows line break
-          fBuffer.Seek(2);
-      end
-      else
-        fBuffer.NextByte; // move to the start of the next value
-
+    if fBuffer.EOF then
+    begin
+      LineEndDetected := True;
       exit;
+    end;
 
+    if fBuffer.Cursor^ in [10, 13] then
+    begin
+      LineEndDetected := True;
+      if fBuffer.Cursor^ = 10 then
+        fBuffer.NextByte // move to the start of the next value
+      else if fBuffer.Cursor^ = 13 then // skip windows line break
+        fBuffer.Seek(2);
     end
     else
-      fBuffer.NextByte;
+      fBuffer.NextByte; // move to the start of the next value
 
+    exit;
   end;
 
   // if we are here, nothing was found, so Retrieve all

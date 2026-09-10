@@ -77,6 +77,12 @@ Type
     Procedure copyBytes(Const aStartIndex, aCount: int64; Var aBuffer: TBytes); Overload; {$IFDEF USE_INLINE}Inline; {$ENDIF}
     Procedure copyBytes(Const aStartIndex, aCount: int64; aBuffer: pointer); Overload; {$IFDEF USE_INLINE}Inline; {$ENDIF}
     Function CopyRawByteString(Const aStartIndex, aCount: int64): rawByteString; {$IFDEF USE_INLINE}Inline; {$ENDIF}
+    // Bytes from the cursor to the end of the current block (0 at the end of the stream). Scanning
+    // callers walk `Cursor` with a raw pointer over at most this many bytes and then AdvanceInBlock.
+    Function BlockBytesLeft: Integer; {$IFDEF USE_INLINE}Inline; {$ENDIF}
+    // Moves the cursor aCount bytes forward inside the current block; aCount must stay below
+    // BlockBytesLeft so the cursor keeps pointing at a byte of the block (NextByte crosses blocks).
+    Procedure AdvanceInBlock(aCount: Integer); {$IFDEF USE_INLINE}Inline; {$ENDIF}
     Function CharCursor: AnsiChar; {$IFDEF USE_INLINE}Inline; {$ENDIF}
     Function pCharCursor: pAnsiChar; {$IFDEF USE_INLINE}Inline; {$ENDIF}
     // the current byte
@@ -283,6 +289,19 @@ End;
 Procedure TBufferedFile.SetPosition(Const Value: int64);
 Begin
   Seek(Value - fPosition);
+End;
+
+Function TBufferedFile.BlockBytesLeft: Integer;
+Begin
+  If fPosition >= fFileSize Then
+    Exit(0);
+  result := fBufferSize - Integer(NativeInt(FCursor) - NativeInt(fStartBuffer));
+End;
+
+Procedure TBufferedFile.AdvanceInBlock(aCount: Integer);
+Begin
+  Inc(FCursor, aCount);
+  Inc(fPosition, aCount);
 End;
 
 Function TBufferedFile.CharCursor: AnsiChar;
