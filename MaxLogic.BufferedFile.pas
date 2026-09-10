@@ -77,6 +77,9 @@ Type
     Procedure copyBytes(Const aStartIndex, aCount: int64; Var aBuffer: TBytes); Overload; {$IFDEF USE_INLINE}Inline; {$ENDIF}
     Procedure copyBytes(Const aStartIndex, aCount: int64; aBuffer: pointer); Overload; {$IFDEF USE_INLINE}Inline; {$ENDIF}
     Function CopyRawByteString(Const aStartIndex, aCount: int64): rawByteString; {$IFDEF USE_INLINE}Inline; {$ENDIF}
+    // Like CopyRawByteString, but into aValue: its buffer is reused when nothing else references it, so a
+    // caller that keeps one string per column allocates once per file instead of once per cell.
+    Procedure CopyRawByteStringInto(Const aStartIndex, aCount: int64; Var aValue: rawByteString); {$IFDEF USE_INLINE}Inline; {$ENDIF}
     // Bytes from the cursor to the end of the current block (0 at the end of the stream). Scanning
     // callers walk `Cursor` with a raw pointer over at most this many bytes and then AdvanceInBlock.
     Function BlockBytesLeft: Integer; {$IFDEF USE_INLINE}Inline; {$ENDIF}
@@ -319,6 +322,13 @@ Begin
   SetLength(result, aCount);
   If aCount <> 0 Then
     copyBytes(aStartIndex, aCount, @result[1]);
+End;
+
+Procedure TBufferedFile.CopyRawByteStringInto(Const aStartIndex, aCount: int64; Var aValue: rawByteString);
+Begin
+  SetLength(aValue, aCount); // in place when aValue is the only reference
+  If aCount <> 0 Then
+    copyBytes(aStartIndex, aCount, pointer(aValue));
 End;
 
 Procedure TBufferedFile.Open(aStream: TStream; aTakeOwnerShipOfStream: Boolean = False);

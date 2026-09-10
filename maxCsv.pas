@@ -826,7 +826,7 @@ begin
   if ScanToStopByte(True) then
   begin
     Count := (fBuffer.Position - start);
-    aValue := fBuffer.CopyRawByteString(start, Count);
+    fBuffer.CopyRawByteStringInto(start, Count, aValue);
     if fBuffer.CharCursor = fDelimiter then
       fBuffer.NextByte // move to the start of the next value
     else
@@ -842,25 +842,27 @@ begin
 
   // if we are here, nothing was found, so Retrieve all
   Count := (fBuffer.Position - start);
-  aValue := fBuffer.CopyRawByteString(start, Count);
+  fBuffer.CopyRawByteStringInto(start, Count, aValue);
   LineEndDetected := True;
 end;
 
 procedure TCsvReader.ReadQuotedColValue(var aValue: rawByteString; var LineEndDetected: boolean);
 var
   start, Count: Int64;
+  lFirstSegment: boolean;
 begin
   fBuffer.NextByte; // move beyond the first quote
   start := fBuffer.Position;
-  aValue := '';
+  lFirstSegment := True; // the first segment replaces aValue (reusing its buffer), later ones append
 
   while ScanToStopByte(False) do // the cursor is on a quote
   begin
     Count := (fBuffer.Position - start);
-    if aValue = '' then // one copy for the common unescaped cell
-      aValue := fBuffer.CopyRawByteString(start, Count)
+    if lFirstSegment then // one copy for the common unescaped cell
+      fBuffer.CopyRawByteStringInto(start, Count, aValue)
     else
       aValue := aValue + fBuffer.CopyRawByteString(start, Count); // copy all until before the quote
+    lFirstSegment := False;
 
     fBuffer.NextByte; // move either to the delimiter after the quote, an quote that makrs quote escape, or to a line break character
     // was this quote escaped?
@@ -896,7 +898,10 @@ begin
 
   // if we are here, nothing was found, so Retrieve all
   Count := (fBuffer.Position - start) + 1;
-  aValue := aValue + fBuffer.CopyRawByteString(start, Count);
+  if lFirstSegment then
+    fBuffer.CopyRawByteStringInto(start, Count, aValue)
+  else
+    aValue := aValue + fBuffer.CopyRawByteString(start, Count);
   LineEndDetected := True;
 end;
 
