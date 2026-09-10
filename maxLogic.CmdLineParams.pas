@@ -142,7 +142,8 @@ function maxCmdLineParams: iCmdLineparams;
 implementation
 
 uses
-  System.StrUtils, maxLogic.StrUtils;
+  System.StrUtils,
+  maxLogic.StrUtils;
 
 var
   GlobalMaxCmdLineParams: iCmdLineparams = nil;

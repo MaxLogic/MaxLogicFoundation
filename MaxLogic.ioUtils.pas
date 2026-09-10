@@ -230,13 +230,11 @@ procedure GetFileList(aFileList: TStringList; const aDirectory: String; const aF
 implementation
 
 uses
-  {$IFDEF MSWINDOWS}
-  ShellApi,
-  {$ENDIF}
-  {$IFDEF CanUseApplicationInstance}
-  Forms,
-  {$ENDIF}
-  System.IOUtils, System.StrUtils, AutoFree;
+  {$IFDEF MSWINDOWS} ShellApi,
+  {$ENDIF} {$IFDEF CanUseApplicationInstance} Forms,
+  {$ENDIF} System.IOUtils,
+  System.StrUtils,
+  AutoFree;
 
 {$IFDEF MSWINDOWS}
 

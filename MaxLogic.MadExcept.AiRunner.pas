@@ -49,13 +49,11 @@ function TrimBugReportForAi(const aBugReport: string;
 implementation
 
 uses
-  System.IOUtils, System.StrUtils, System.SysUtils
-  {$IF DEFINED(MSWINDOWS)}
-  , Winapi.Windows
-  {$IFEND}
-  {$IF DEFINED(madExcept)}
-  , madExcept
-  {$IFEND};
+  System.IOUtils,
+  System.StrUtils,
+  System.SysUtils {$IF DEFINED(MSWINDOWS)},
+  Winapi.Windows {$IFEND} {$IF DEFINED(madExcept)},
+  madExcept {$IFEND};
 
 var
   glBugReportFileName: string = '';
