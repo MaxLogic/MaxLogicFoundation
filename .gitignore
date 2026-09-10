@@ -137,3 +137,5 @@ GTAGS
 .codex
 .dak/
 msbuild.log
+.codex/
+.claude/skills/
