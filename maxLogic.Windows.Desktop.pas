@@ -123,7 +123,8 @@ begin
   if aPid = 0 then
     Exit;
 
-  lProcess := OpenProcess(cPROCESS_QUERY_LIMITED_INFORMATION or PROCESS_QUERY_INFORMATION, False, aPid);
+  // Limited query is all QueryFullProcessImageName needs; asking for more fails on elevated processes.
+  lProcess := OpenProcess(cPROCESS_QUERY_LIMITED_INFORMATION, False, aPid);
   if lProcess = 0 then
     Exit;
   try
