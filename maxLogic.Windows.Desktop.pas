@@ -17,6 +17,9 @@ function GetWinCaption(const aWnd: HWND): string;
 procedure GetWndList(const aList: TWndList);
 function IsWndValid(const aWnd: HWND): Boolean;
 procedure PrintWindow(const aWnd: HWND; const aBitmap: TBitmap);
+// Posts SC_RESTORE and waits until the window is no longer minimized.
+// Do not call from the thread that owns aWnd: it could not process the command while we wait.
+function RestoreMinimizedWindowByCommand(const aWnd: HWND; const aTimeoutMs: Cardinal = 1000): Boolean;
 function RetrieveAppUserModelID(const aWnd: HWND): string;
 function RetrieveCommandLine(const aPid: Cardinal): string;
 function RetrievePID(const aWnd: HWND): Cardinal;
@@ -202,10 +205,29 @@ begin
   Result := aIcon.Handle <> 0;
 end;
 
+function RestoreMinimizedWindowByCommand(const aWnd: HWND; const aTimeoutMs: Cardinal): Boolean;
+var
+  lDeadline: UInt64;
+begin
+  if not PostMessage(aWnd, WM_SYSCOMMAND, SC_RESTORE, 0) then
+    Exit(False);
+
+  lDeadline := GetTickCount64 + aTimeoutMs;
+  while IsWindow(aWnd) and IsIconic(aWnd) and (GetTickCount64 < lDeadline) do
+    Sleep(10);
+  Result := IsWindow(aWnd) and (not IsIconic(aWnd));
+end;
+
 function ForceForegroundWindow(const aWnd: THandle): Boolean;
 begin
   if IsIconic(aWnd) then
+  begin
     ShowWindow(aWnd, SW_RESTORE);
+    // UIPI refuses ShowWindow on a window of an elevated process while we run non-elevated
+    // (ERROR_ACCESS_DENIED); a posted WM_SYSCOMMAND still gets through.
+    if IsIconic(aWnd) then
+      RestoreMinimizedWindowByCommand(aWnd);
+  end;
 
   SetActiveWindow(aWnd);
   SetForegroundWindow(aWnd);
