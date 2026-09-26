@@ -139,3 +139,4 @@ GTAGS
 msbuild.log
 .codex/
 .claude/skills/
+/issues/
