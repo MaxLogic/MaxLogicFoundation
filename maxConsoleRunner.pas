@@ -26,6 +26,7 @@ type
     fPipeErrorsWrite: THandle;
     fPipeStdRead: THandle;
     fPipeStdWrite: THandle;
+    fStdInput: THandle;
 
     fPipeStdReadThread,
       fPipeErrorReadThread: TPipeThread;
@@ -40,8 +41,6 @@ type
     FOnErrorDataRead: TDataReadyProc;
     fStrOutput: string;
     fSignal: iSignal;
-    fProcessFinished: boolean;
-    fWaitForProcess: iAsync;
     fExitCode: Integer;
     FRedirectErrOutToStdOut: Boolean;
     fRunHidden: Boolean;
@@ -56,8 +55,8 @@ type
     function startProcess: boolean;
     function quote(const s: string): string;
     procedure StartAsyncReadPipes;
-    procedure startWaitForProcessFinished;
-    procedure asyncWaitForProcessFinished;
+    procedure StopReadingPipes;
+    procedure WaitForProcessAndPipes;
     procedure SetParamsString(const Value: String);
     procedure PullData;
     procedure SetOnErrorDataRead(const Value: TDataReadyProc);
@@ -109,11 +108,10 @@ type
     fData: TList<string>;
   private
     fHandle: THandle;
-    fAsync: iAsync;
+    fThread: TThread;
     fDone: boolean;
     fParent: TmaxConsoleRunner;
     fEmpty: boolean;
-    fWaitSignal: iSignal;
     fClosing: boolean;
     Buffer: array [0 .. cBufferSize + 1] of AnsiChar;
 
@@ -126,6 +124,7 @@ type
 
     procedure StartReading(const aHandle: THandle);
     procedure safeRetrieveOutput(out aOutput: string);
+    // stops reading (cancelling a blocked read) and waits for the reader to finish
     procedure DoClosing;
   end;
 
@@ -133,6 +132,19 @@ implementation
 
 uses
   system.strUtils, system.ioUtils, MaxLogic.strUtils, MaxLogic.ioUtils;
+
+const
+  // after the process exits, a grandchild may still hold the write ends of our pipes;
+  // we read for at most this long before cancelling the readers
+  cPipeGraceMs = 5000;
+  // not declared in Winapi.Windows (Delphi 12)
+  PROC_THREAD_ATTRIBUTE_HANDLE_LIST = $00020002;
+
+type
+  TStartupInfoExW = record
+    StartupInfo: TStartupInfoW;
+    lpAttributeList: PProcThreadAttributeList;
+  end;
 
 { TmaxConsoleRunner }
 
@@ -143,9 +155,15 @@ begin
     fPipeErrorReadThread.StartReading(fPipeErrorsRead);
 end;
 
+procedure TmaxConsoleRunner.StopReadingPipes;
+begin
+  fPipeStdReadThread.DoClosing;
+  fPipeErrorReadThread.DoClosing;
+end;
+
 procedure TmaxConsoleRunner.ClosehandleAndZeroIt(var ahandle: THandle);
 begin
-  if aHandle <> INVALID_HANDLE_VALUE then
+  if (aHandle <> 0) and (aHandle <> INVALID_HANDLE_VALUE) then
   begin
     closeHandle(aHandle);
     ahandle:= INVALID_HANDLE_VALUE;
@@ -160,32 +178,35 @@ begin
   fPipeStdReadThread := TPipeThread.Create(self);
   fPipeErrorReadThread := TPipeThread.Create(self);
 
+  fPipeStdRead:= INVALID_HANDLE_VALUE;
+  fPipeStdWrite:= INVALID_HANDLE_VALUE;
   fPipeErrorsRead:= INVALID_HANDLE_VALUE;
   fPipeErrorsWrite:= INVALID_HANDLE_VALUE;
+  fStdInput:= INVALID_HANDLE_VALUE;
 end;
 
 procedure TmaxConsoleRunner.DecodeCommand(const aCmd: String);
 var
-  lCmd: String;
   i: Integer;
 begin
-  lCmd:= aCmd;
-  if startsText('"', lCmd) then
+  if startsText('"', aCmd) then
   begin
-    Delete(lCmd, 1, 1);
-    i:= pos('"', lCmd);
-    if i>0 then
-      Delete(lCmd, i, 1);
-  end;
-
-  i := pos(' ', lCmd);
-  if i>0 then
-  begin
-    FExeName:= Copy(lCmd, 1, i-1);
-    fParamsString:= Copy(lCmd, i+1, Length(lCmd));
+    // a quoted exe name may contain spaces, so it ends at the closing quote
+    i:= PosEx('"', aCmd, 2);
+    if i = 0 then
+      i:= Length(aCmd) + 1;
+    FExeName:= Copy(aCmd, 2, i - 2);
+    fParamsString:= TrimLeft(Copy(aCmd, i + 1, MaxInt));
   end else begin
-    fExeName:= lCmd;
-    fParamsString:= '';
+    i := pos(' ', aCmd);
+    if i>0 then
+    begin
+      FExeName:= Copy(aCmd, 1, i-1);
+      fParamsString:= Copy(aCmd, i+1, Length(aCmd));
+    end else begin
+      fExeName:= aCmd;
+      fParamsString:= '';
+    end;
   end;
   fWorkDir:= ExtractFilepath(FExeName);
 end;
@@ -207,6 +228,10 @@ var
   lCmd: string;
   lWorkingDir: string;
   lExt, lExeName: string;
+  lStartupInfo: TStartupInfoExW;
+  lInherit: array [0 .. 2] of THandle;
+  lInheritCount: Integer;
+  lAttributesSize: NativeUInt;
 begin
   Result := false;
   FillChar(fProcessInfo, sizeOf(TProcessInformation), 0);
@@ -230,35 +255,72 @@ begin
   lExeName := lExeName + #0;
   UniqueString(lExeName);
 
-  if createProcess(
-    PChar(lExeName),
-    PChar(lCmd), @fSecurityAttributes,
-    @fSecurityAttributes, True,
-    NORMAL_PRIORITY_CLASS,
-    nil, PChar(lWorkingDir), fStartupInfo, fProcessInfo)
-  then
-    Result := True
-  else begin
-    fExitCode := GetLastError; // Return the error code if process creation fails
-    RaiseLastOSError;
+  // inherit only the child's std handles, never those of parallel runners or of our host
+  lInherit[0] := fStdInput;
+  lInherit[1] := fPipeStdWrite;
+  lInheritCount := 2;
+  if not RedirectErrOutToStdOut then
+  begin
+    lInherit[2] := fPipeErrorsWrite;
+    lInheritCount := 3;
+  end;
+
+  lStartupInfo := default (TStartupInfoExW);
+  lStartupInfo.StartupInfo := fStartupInfo;
+  lStartupInfo.StartupInfo.cb := sizeOf(TStartupInfoExW);
+  lAttributesSize := 0;
+  InitializeProcThreadAttributeList(nil, 1, 0, lAttributesSize);
+  GetMem(lStartupInfo.lpAttributeList, lAttributesSize);
+  try
+    if not InitializeProcThreadAttributeList(lStartupInfo.lpAttributeList, 1, 0, lAttributesSize) then
+      RaiseLastOSError;
+    try
+      if not UpdateProcThreadAttribute(lStartupInfo.lpAttributeList, 0,
+        PROC_THREAD_ATTRIBUTE_HANDLE_LIST, @lInherit, lInheritCount * sizeOf(THandle),
+        nil, PNativeUInt(nil)^) then // lpReturnSize is reserved: NULL
+        RaiseLastOSError;
+
+      if createProcess(
+        PChar(lExeName),
+        PChar(lCmd), nil, nil, True,
+        NORMAL_PRIORITY_CLASS or EXTENDED_STARTUPINFO_PRESENT,
+        nil, Pointer(lWorkingDir), lStartupInfo.StartupInfo, fProcessInfo)
+      then
+        Result := True
+      else begin
+        fExitCode := GetLastError; // Return the error code if process creation fails
+        RaiseLastOSError(fExitCode);
+      end;
+    finally
+      DeleteProcThreadAttributeList(lStartupInfo.lpAttributeList);
+    end;
+  finally
+    FreeMem(lStartupInfo.lpAttributeList);
   end;
 end;
 
-procedure TmaxConsoleRunner.startWaitForProcessFinished;
+procedure TmaxConsoleRunner.WaitForProcessAndPipes;
+var
+  lHandles: array [0 .. 1] of THandle;
+  lWatch: TStopwatch;
 begin
-  fProcessFinished := false;
-  fWaitForProcess := maxAsync.SimpleAsyncCall(
-    procedure
-    begin
-      asyncWaitForProcessFinished;
-    end);
-end;
+  lHandles[0] := fSignal.GetEvent.Handle;
+  lHandles[1] := fProcessInfo.hProcess;
+  repeat
+    WaitForMultipleObjects(Length(lHandles), @lHandles, False, INFINITE);
+    fSignal.SetNonSignaled;
+    PullData;
+  until WaitForSingleObject(fProcessInfo.hProcess, 0) = WAIT_OBJECT_0;
 
-procedure TmaxConsoleRunner.asyncWaitForProcessFinished;
-begin
-  WaitForSingleObject(fProcessInfo.hProcess, infinite);
-  fProcessFinished := True;
-  fSignal.SetSignaled;
+  // the readers end when all write ends are closed; that normally follows the exit at once
+  lWatch := TStopwatch.StartNew;
+  while not (fPipeStdReadThread.fDone and fPipeErrorReadThread.fDone)
+    and (lWatch.ElapsedMilliseconds < cPipeGraceMs) do
+  begin
+    fSignal.WaitForSignaled(50);
+    fSignal.SetNonSignaled;
+    PullData;
+  end;
 end;
 
 destructor TmaxConsoleRunner.Destroy;
@@ -274,53 +336,44 @@ var
   lExitCode: DWORD;
 begin
   Result := false;
+  FillChar(fProcessInfo, sizeOf(TProcessInformation), 0);
+  try
+    prepareSecurityAttributes;
+    if not preparePipes then
+      RaiseLastOSError;
+    prepareStartUpInfo;
 
-  prepareSecurityAttributes;
-  preparePipes;
-  prepareStartUpInfo;
+    if startProcess then
+    begin
+      Result := True;
+      ClosehandleAndZeroIt(fProcessInfo.hThread);
 
-  if startProcess then
-  begin
-    Result := True;
-
-    // close Write-Pipes
-    ClosehandleAndZeroIt(fPipeStdWrite);
-    if not RedirectErrOutToStdOut then
+      // the child owns its copies now; ours would keep the pipes open forever
+      ClosehandleAndZeroIt(fPipeStdWrite);
       ClosehandleAndZeroIt(fPipeErrorsWrite);
+      ClosehandleAndZeroIt(fStdInput);
 
-    fSignal.SetNonSignaled;
-    StartAsyncReadPipes;
-    startWaitForProcessFinished;
-
-    repeat
-      PullData;
-      fSignal.WaitForSignaled();
       fSignal.SetNonSignaled;
+      StartAsyncReadPipes;
+      WaitForProcessAndPipes;
+      StopReadingPipes;
       PullData;
-    until fProcessFinished;
 
-    if not GetExitCodeProcess(fProcessInfo.hProcess, lExitCode) then
-      fExitCode := -1 // Return -1 if exit code retrieval fails
-    else
-      fExitCode := Integer(lExitCode);
+      if not GetExitCodeProcess(fProcessInfo.hProcess, lExitCode) then
+        fExitCode := -1 // Return -1 if exit code retrieval fails
+      else
+        fExitCode := Integer(lExitCode);
+    end;
+  finally
+    // the readers must stop before their handles close, or they may read a recycled handle
+    StopReadingPipes;
     ClosehandleAndZeroIt(fProcessInfo.hProcess);
     ClosehandleAndZeroIt(fProcessInfo.hThread);
-
-    // give the threads a last chance to read out the data
-    if (not fPipeStdReadThread.fDone) or (not fPipeErrorReadThread.fDone) then
-      sleep(10);
-
-    fPipeStdReadThread.DoClosing;
-    fPipeErrorReadThread.DoClosing;
-
     ClosehandleAndZeroIt(fPipeStdRead);
+    ClosehandleAndZeroIt(fPipeStdWrite);
     ClosehandleAndZeroIt(fPipeErrorsRead);
-
-    PullData;
-
-    // ensure this closes
-    fWaitForProcess.WaitFor;
-    fWaitForProcess := nil;
+    ClosehandleAndZeroIt(fPipeErrorsWrite);
+    ClosehandleAndZeroIt(fStdInput);
   end;
 end;
 
@@ -354,22 +407,23 @@ begin
 
 end;
 
+// on failure, Execute closes whatever was created
 function TmaxConsoleRunner.preparePipes: boolean;
 begin
-  Result := false;
+  // only the child's write ends may be inherited; an inherited read end keeps the pipe alive
+  Result := CreatePipe(fPipeStdRead, fPipeStdWrite, @fSecurityAttributes, cBufferSize)
+    and SetHandleInformation(fPipeStdRead, HANDLE_FLAG_INHERIT, 0);
 
-  if CreatePipe(fPipeStdRead, fPipeStdWrite, @fSecurityAttributes, cBufferSize) then
+  if Result and not RedirectErrOutToStdOut then
+    Result := CreatePipe(fPipeErrorsRead, fPipeErrorsWrite, @fSecurityAttributes, cBufferSize)
+      and SetHandleInformation(fPipeErrorsRead, HANDLE_FLAG_INHERIT, 0);
+
+  if Result then
   begin
-    if RedirectErrOutToStdOut then
-      Result:= true
-    else if CreatePipe(fPipeErrorsRead, fPipeErrorsWrite, @fSecurityAttributes, cBufferSize) then
-      Result := True
-    else
-    begin
-      // close the handles that were created
-      ClosehandleAndZeroIt(fPipeStdRead);
-      ClosehandleAndZeroIt(fPipeStdWrite);
-    end;
+    // the child reads an empty stdin
+    fStdInput := CreateFile('NUL', GENERIC_READ, FILE_SHARE_READ or FILE_SHARE_WRITE,
+      @fSecurityAttributes, OPEN_EXISTING, 0, 0);
+    Result := fStdInput <> INVALID_HANDLE_VALUE;
   end;
 end;
 
@@ -387,7 +441,7 @@ begin
   fStartupInfo := default (TStartupInfo);
 
   fStartupInfo.cb := sizeOf(TStartupInfo);
-  fStartupInfo.hStdInput := fPipeStdRead;
+  fStartupInfo.hStdInput := fStdInput;
   fStartupInfo.hStdOutput := fPipeStdWrite;
   if not RedirectErrOutToStdOut then
     fStartupInfo.hStdError := fPipeErrorsWrite
@@ -478,35 +532,11 @@ procedure TPipeThread.asyncRead;
 var
   NumberOfBytesRead: DWORD;
   s: string;
-  PipeSize, lpBytesLeftThisMessage: DWORD;
 begin
-  NumberOfBytesRead := 0;
-
-  while True do
-  begin
-    NumberOfBytesRead := 0;
-    lpBytesLeftThisMessage := 0;
-    PipeSize := 0;
-    try
-      PeekNamedPipe(fHandle, nil, cBufferSize, @NumberOfBytesRead, @PipeSize, @lpBytesLeftThisMessage);
-    except
-      if fClosing then
-        break;
-      continue;
-    end;
-    if NumberOfBytesRead = 0 then
-    begin
-      if fClosing then
-        break;
-
-      fWaitSignal.WaitForSignaled(40);
-      continue;
-    end else begin
-      PipeSize := NumberOfBytesRead;
-      NumberOfBytesRead := 0;
-      if not ReadFile(fHandle, Buffer, PipeSize, NumberOfBytesRead, nil) then
-        break;
-
+  try
+    // ReadFile blocks until data arrives and fails with ERROR_BROKEN_PIPE once
+    // all write ends are closed, so everything the child wrote is read
+    while (not fClosing) and ReadFile(fHandle, Buffer, cBufferSize, NumberOfBytesRead, nil) do
       if NumberOfBytesRead > 0 then
       begin
         Buffer[NumberOfBytesRead] := #0;
@@ -521,24 +551,23 @@ begin
 
         fParent.fSignal.SetSignaled;
       end;
-    end;
+  finally
+    fDone := True;
+    fParent.fSignal.SetSignaled;
   end;
-  fDone := True;
 end;
 
 constructor TPipeThread.Create(aParent: TmaxConsoleRunner);
 begin
   inherited Create;
-  fWaitSignal := TSignal.Create;
-  fWaitSignal.SetNonSignaled;
+  fDone := True;
   fData := TList<string>.Create;
   fParent := aParent;
 end;
 
 destructor TPipeThread.Destroy;
 begin
-  if fAsync <> nil then
-    fAsync.WaitFor;
+  DoClosing;
   fData.free;
   inherited;
 end;
@@ -546,7 +575,12 @@ end;
 procedure TPipeThread.DoClosing;
 begin
   fClosing := True;
-  fWaitSignal.SetSignaled;
+  if fThread = nil then
+    exit;
+  // a grandchild may still hold the write end; cancel the blocked read until the reader exits
+  while WaitForSingleObject(fThread.Handle, 50) = WAIT_TIMEOUT do
+    CancelSynchronousIo(fThread.Handle);
+  FreeAndNil(fThread);
 end;
 
 procedure TPipeThread.lock;
@@ -585,16 +619,21 @@ end;
 
 procedure TPipeThread.StartReading(const aHandle: THandle);
 begin
+  DoClosing;
   fHandle := aHandle;
   fEmpty := True;
   fData.Clear;
   fDone := false;
+  fClosing := false;
 
-  fAsync := maxAsync.SimpleAsyncCall(
+  // a dedicated thread, so CancelSynchronousIo cannot hit unrelated pooled work
+  fThread := TThread.CreateAnonymousThread(
     procedure
     begin
       asyncRead;
     end);
+  fThread.FreeOnTerminate := False;
+  fThread.Start;
 end;
 
 procedure TPipeThread.unLock;

@@ -19,6 +19,9 @@ All notable changes to MaxLogicFoundation are documented here.
 
 ### Fixed
 
+- `maxConsoleRunner.TmaxConsoleRunner` (and the output-capturing `MaxLogic.ioUtils.ExecuteFile` overload) no longer loses the end of stdout/stderr: readers now drain the pipes until the child closes them, with a 5 s grace for pipes held by grandchild processes. The child gets an empty (`NUL`) stdin and inherits only its own std handles, so parallel runners no longer keep each other's pipes open.
+- `TmaxConsoleRunner.DecodeCommand` keeps a quoted exe path with spaces (e.g. `"C:\Program Files\...\tool.exe" args`) intact instead of cutting it at the first space.
+- `TmaxConsoleRunner.Execute` no longer leaks pipe handles when the process cannot be started.
 - `MaxLogic.vcl.highDpi` now scales fixed-size `TImage` graphics through the VCL image collection instead of an ABI-unsafe `TImage.DestRect` detour, preserving image layout semantics across monitor-DPI changes and source replacement.
 - `TCancelToken` now publishes cancellation atomically across threads while preserving its existing interface.
 - `TRichIniFile.ReadBool`/`WriteBool` now use regular INI-compatible defaults (`1`/`0`) with configurable true-token parsing and configurable output tokens.

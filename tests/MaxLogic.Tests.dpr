@@ -44,7 +44,9 @@ uses
   MaxLogic.MadExcept.AiRunner.Tests in 'unit\MaxLogic.MadExcept.AiRunner.Tests.pas',
   MaxLogic.Process.Tests in 'unit\MaxLogic.Process.Tests.pas',
   MaxLogic.Windows.Identity in '..\MaxLogic.Windows.Identity.pas',
-  MaxLogic.Windows.Identity.Tests in 'unit\MaxLogic.Windows.Identity.Tests.pas';
+  MaxLogic.Windows.Identity.Tests in 'unit\MaxLogic.Windows.Identity.Tests.pas',
+  maxConsoleRunner in '..\maxConsoleRunner.pas',
+  maxConsoleRunner.Tests in 'unit\maxConsoleRunner.Tests.pas';
 
 const
   cBootIdentityProbePrefix = '--probe-windows-boot-identity=';

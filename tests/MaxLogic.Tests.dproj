@@ -195,6 +195,8 @@
         <DCCReference Include="unit\MaxLogic.Process.Tests.pas"/>
         <DCCReference Include="..\MaxLogic.Windows.Identity.pas"/>
         <DCCReference Include="unit\MaxLogic.Windows.Identity.Tests.pas"/>
+        <DCCReference Include="..\maxConsoleRunner.pas"/>
+        <DCCReference Include="unit\maxConsoleRunner.Tests.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
             <DependentOn>..\MaxLogicDefault.optset</DependentOn>
