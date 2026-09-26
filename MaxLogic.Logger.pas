@@ -499,8 +499,7 @@ end;
 
 destructor TLogEntry.Destroy;
 begin
-  // TSortedList will be freed automatically by TInterfacedObject mechanism
-  // if fTags holds the only reference (which it should)
+  fTags.Free;
   inherited;
 end;
 

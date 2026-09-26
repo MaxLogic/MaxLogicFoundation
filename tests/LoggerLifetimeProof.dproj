@@ -1,0 +1,14 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ProjectGuid>{6AC9233E-D41A-4A12-97A1-05AA917586FD}</ProjectGuid>
+    <ProjectVersion>20.2</ProjectVersion>
+    <MainSource>LoggerLifetimeProof.dpr</MainSource>
+    <Base>True</Base><Config>Release</Config><Platform>Win32</Platform>
+    <AppType>Console</AppType><FrameworkType>None</FrameworkType>
+    <DCC_Namespace>System;Winapi;Vcl;System.Win</DCC_Namespace>
+  </PropertyGroup>
+  <Import Project="..\MaxLogicDefault.optset" />
+  <PropertyGroup><DCC_ExeOutput>bin\$(Platform)\$(Config)</DCC_ExeOutput><DCC_DcuOutput>$(DCC_ExeOutput)\dcu</DCC_DcuOutput><DCC_SYMBOL_PLATFORM>false</DCC_SYMBOL_PLATFORM></PropertyGroup>
+  <ItemGroup><DelphiCompile Include="$(MainSource)"><MainSource>MainSource</MainSource></DelphiCompile></ItemGroup>
+  <Import Project="$(BDS)\Bin\CodeGear.Delphi.Targets" />
+</Project>
