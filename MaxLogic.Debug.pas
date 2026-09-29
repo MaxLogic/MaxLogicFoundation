@@ -8,27 +8,27 @@ uses
 function GetCurMemoryUsageStr: string;
 /// <summary>
 /// Returns a human-readable string with current memory usage based on the Delphi memory manager
-/// and (on Windows) additional process memory information.
-/// Cross-platform; on non-Windows platforms only Delphi memory manager data is used.
+/// and additional Windows process memory information.
+/// This unit currently supports Windows only; non-Windows memory reporting is not implemented.
 /// </summary>
 
 function CurrentMemoryUsage: Int64;
 /// <summary>
 /// Returns bytes allocated according to Delphi's memory manager state
 /// (small, medium and large blocks).
-/// Cross-platform.
+/// Requires the Windows Delphi memory manager API.
 /// </summary>
 
 function CurrentMemoryUsageViaProcessManager: Cardinal;
 /// <summary>
 /// On Windows: returns the working set size (in bytes) using GetProcessMemoryInfo.
-/// On non-Windows: falls back to CurrentMemoryUsage (truncated to Cardinal).
+/// Non-Windows memory reporting is not currently supported.
 /// </summary>
 
 function GetUsedVirtualMemory: Cardinal;
 /// <summary>
 /// On Windows: returns used virtual memory in bytes via GlobalMemoryStatusEx.
-/// On non-Windows: falls back to CurrentMemoryUsage (truncated to Cardinal).
+/// Non-Windows memory reporting is not currently supported.
 /// </summary>
 
 function IsDelphiRunning: Boolean;
@@ -51,7 +51,14 @@ var
   lState: TMemoryManagerState;
   lSmallBlock: TSmallBlockTypeState;
 begin
+  // Intentional Windows RTL call; restore the project warning policy immediately afterward.
+  {$IFDEF MSWINDOWS}
+  {$WARN SYMBOL_PLATFORM OFF}
+  {$ENDIF}
   GetMemoryManagerState(lState);
+  {$IFDEF MSWINDOWS}
+  {$WARN SYMBOL_PLATFORM DEFAULT}
+  {$ENDIF}
 
   Result :=
     lState.TotalAllocatedMediumBlockSize +
