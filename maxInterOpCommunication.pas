@@ -306,7 +306,7 @@ Begin
   If self.GetHandleFromInterOpId(TargetInterOpId, Handle) Then
     windows.PostMessage(Handle, WM_UNREGISTERCLIENT, self.fForm.Handle, 0);
 
-  If fConnectedNodeHandles.Find(TargetInterOpId, i) Then
+  If fConnectedNodeHandles.Find(string(TargetInterOpId), i) Then
     fConnectedNodeHandles.Delete(i);
 End;
 
@@ -791,7 +791,7 @@ Var
   x: integer;
 Begin
   For x := fConnectedNodeHandles.Count - 1 Downto 0 Do
-    DisconnectFrom(fConnectedNodeHandles[x]);
+    DisconnectFrom(TIOString(fConnectedNodeHandles[x]));
 End;
 
 Function TInterOpNode.DoRequest(Const TargetInterOpId, CallCaption: TIOString; Var RequestParams, Responseparams: String): Boolean;
@@ -822,7 +822,7 @@ Var
   mmf: TInMemoryFile;
 Begin
   result := false;
-  mmf := TInMemoryFile.Create(aInterOpId, Sizeof(TServerheader));
+  mmf := TInMemoryFile.Create(string(aInterOpId), Sizeof(TServerheader));
   ServerHeader := mmf.Memory;
 
   If Not mmf.isnew Then
@@ -866,9 +866,9 @@ Begin
   Try
     If self.GetInterOpIdFromHandle(ClientHandle, InterOpId) Then
     Begin
-      If Not fConnectedNodeHandles.Find(InterOpId, i) Then
+      If Not fConnectedNodeHandles.Find(string(InterOpId), i) Then
       Begin
-          fConnectedNodeHandles.AddObject(InterOpId, Pointer(ClientHandle));
+          fConnectedNodeHandles.AddObject(string(InterOpId), Pointer(ClientHandle));
 
         ConnectTo(InterOpId, 1);
 
@@ -888,7 +888,7 @@ Begin
   fSec.enter;
   Try
     If Not Assigned(fServerheader) Then
-      fServerheader := TInMemoryFile.Create(self.FInterOpId, Sizeof(TServerheader));
+      fServerheader := TInMemoryFile.Create(string(self.FInterOpId), Sizeof(TServerheader));
 
     ServerHeader := fServerheader.Memory;
     ServerHeader.magic := maxInterOp_Magic;
@@ -911,7 +911,7 @@ Begin
       If THandle(fConnectedNodeHandles.Objects[x]) = ClientHandle Then
       Begin
         If Assigned(FOnDisconnectedWithNode) Then
-          FOnDisconnectedWithNode(self, fConnectedNodeHandles[x]);
+          FOnDisconnectedWithNode(self, TIOString(fConnectedNodeHandles[x]));
 
         fConnectedNodeHandles.Delete(x);
       End;
@@ -933,7 +933,7 @@ Begin
   fSec.enter;
   Try
     If Not Assigned(fServerheader) Then
-      fServerheader := TInMemoryFile.Create(self.FInterOpId, Sizeof(TServerheader));
+      fServerheader := TInMemoryFile.Create(string(self.FInterOpId), Sizeof(TServerheader));
 
     ServerHeader := fServerheader.Memory;
     ServerHeader.ServerIsRunning := false;
