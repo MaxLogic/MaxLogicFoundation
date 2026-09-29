@@ -73,6 +73,7 @@ type
     [Test] procedure ConcurrentProducersProcessAllItems;
     [Test] procedure WaitForIncludesOnFinishedMultiProducerBurst;
     [Test] procedure DestroyWhileBusyCompletesWithoutException;
+    [Test] procedure DestroyWaitsForActiveCallback;
     [Test] procedure LongRunStressProcessesAllItems;
     [Test] procedure AddWithoutProcRaises;
   end;
@@ -1873,6 +1874,83 @@ begin
     lDestroyDone.Free;
     if lProcessor <> nil then
       lProcessor.Free;
+  end;
+end;
+
+procedure TAsyncCollectionProcessorTests.DestroyWaitsForActiveCallback;
+const
+  cTimeoutMs = 15000;
+var
+  lProcessor: TAsyncCollectionProcessor<Integer>;
+  lEntered: TEvent;
+  lRelease: TEvent;
+  lDestroyStarted: TEvent;
+  lDestroyDone: TEvent;
+  lDestroyer: TThread;
+  lProcessed: Integer;
+  lCallbackTimedOut: Integer;
+  lDestroyError: string;
+begin
+  lProcessor := TAsyncCollectionProcessor<Integer>.Create;
+  lEntered := TEvent.Create(nil, True, False, '');
+  lRelease := TEvent.Create(nil, True, False, '');
+  lDestroyStarted := TEvent.Create(nil, True, False, '');
+  lDestroyDone := TEvent.Create(nil, True, False, '');
+  lDestroyer := nil;
+  lProcessed := 0;
+  lCallbackTimedOut := 0;
+  lDestroyError := '';
+  try
+    lProcessor.SimultanousThreadCount := 1;
+    lProcessor.Proc :=
+      procedure(const aValue: Integer)
+      begin
+        lEntered.SetEvent;
+        if lRelease.WaitFor(cTimeoutMs) <> wrSignaled then
+          TInterlocked.Exchange(lCallbackTimedOut, 1);
+        TInterlocked.Add(lProcessed, aValue);
+      end;
+    lProcessor.Add(7);
+    Assert.AreEqual<TWaitResult>(wrSignaled, lEntered.WaitFor(cTimeoutMs),
+      'The callback must be active before destruction starts');
+
+    lDestroyer := TThread.CreateAnonymousThread(
+      procedure
+      begin
+        lDestroyStarted.SetEvent;
+        try
+          lProcessor.Free;
+        except
+          on lException: Exception do
+            lDestroyError := lException.ClassName + ': ' + lException.Message;
+        end;
+        lDestroyDone.SetEvent;
+      end);
+    lDestroyer.FreeOnTerminate := False;
+    lDestroyer.Start;
+    Assert.AreEqual<TWaitResult>(wrSignaled, lDestroyStarted.WaitFor(cTimeoutMs));
+    Assert.AreEqual<TWaitResult>(wrTimeout, lDestroyDone.WaitFor(50),
+      'Destruction must not return while the callback is held');
+    lRelease.SetEvent;
+    Assert.AreEqual<TWaitResult>(wrSignaled, lDestroyDone.WaitFor(cTimeoutMs),
+      'Destruction must finish after the callback is released');
+    lDestroyer.WaitFor;
+    Assert.AreEqual('', lDestroyError);
+    Assert.AreEqual<Integer>(0, lCallbackTimedOut, 'Callback barrier timed out');
+    Assert.AreEqual<Integer>(7, lProcessed, 'The active callback must finish exactly once');
+  finally
+    lRelease.SetEvent;
+    if lDestroyer <> nil then
+    begin
+      lDestroyer.WaitFor;
+      lDestroyer.Free;
+    end else begin
+      lProcessor.Free;
+    end;
+    lDestroyDone.Free;
+    lDestroyStarted.Free;
+    lRelease.Free;
+    lEntered.Free;
   end;
 end;
 
