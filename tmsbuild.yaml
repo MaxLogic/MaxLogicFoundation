@@ -1,0 +1,20 @@
+# TMS Smart Setup definition. To build and register this library with Smart Setup, add this folder to "additional products folders" in tms.config.yaml.
+minimum required tmsbuild version: 2.1
+application:
+  id: maxlogic.foundation
+  name: MaxLogic Foundation
+  description: MaxLogic shared runtime library (MaxLogicFoundationR)
+  company name: MaxLogic
+  url: https://github.com/MaxLogic/MaxLogicFoundation
+supported frameworks:
+  vcl:
+    ide since: delphi12
+    platforms:
+      - win32intel
+packages:
+  - MaxLogicFoundationR: [runtime, vcl]
+package options:
+  package folders:
+    delphi12+: Package
+dependencies:
+  - jedi.jcl: JEDI Code Library
