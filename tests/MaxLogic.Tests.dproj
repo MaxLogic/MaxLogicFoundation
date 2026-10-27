@@ -82,7 +82,7 @@
         <DCC_N>false</DCC_N>
         <DCC_S>false</DCC_S>
         <DCC_ImageBase>00400000</DCC_ImageBase>
-        <SanitizedProjectName>MaxLogic_Tests</SanitizedProjectName>
+        <SanitizedProjectName Condition="'$(Platform)'!='Win32' and '$(Platform)'!='Win64'">MaxLogic_Tests</SanitizedProjectName>
         <VerInfo_Locale>1045</VerInfo_Locale>
         <VerInfo_Keys>CompanyName=;FileDescription=;FileVersion=1.0.0.0;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProductName=;ProductVersion=1.0.0.0;Comments=;CFBundleName=</VerInfo_Keys>
         <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;$(DCC_Namespace)</DCC_Namespace>
@@ -165,6 +165,7 @@
         <Manifest_File>(None)</Manifest_File>
         <AppDPIAwarenessMode>none</AppDPIAwarenessMode>
         <DCC_Define>madExcept;LeakChecking;$(DCC_Define)</DCC_Define>
+        <DCC_MapFile>3</DCC_MapFile>
     </PropertyGroup>
     <ItemGroup>
         <DelphiCompile Include="$(MainSource)">
@@ -193,6 +194,7 @@
         <DCCReference Include="unit\MaxLogic.Process.Tests.pas"/>
         <DCCReference Include="..\MaxLogic.Windows.Identity.pas"/>
         <DCCReference Include="unit\MaxLogic.Windows.Identity.Tests.pas"/>
+        <DCCReference Include="unit\MaxLogicDateUtilsTests.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
             <DependentOn>..\MaxLogicDefault.optset</DependentOn>
