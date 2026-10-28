@@ -489,7 +489,7 @@ begin
 
   Inc(fCurrentRowIndex);
 
-  if Self.EOF then
+  if fCurrentRowIndex > fRowCount then
   begin
     aRow := [];
     Result := False;
