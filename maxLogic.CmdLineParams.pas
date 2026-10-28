@@ -97,6 +97,7 @@ type
     fParams: TStringList;
     fSwitchPrefixes: TSwitchPrefixes;
 
+    class function ValueSeparatorPosition(const aParam: string): Integer; static;
     procedure RebuildDic;
     function IsSwitch(const aCmdParam: string; out aParamWithoutPrefix: string): boolean; overload;
     function IsSwitch(const aCmdParam: string): boolean; overload;
@@ -142,8 +143,7 @@ function maxCmdLineParams: iCmdLineparams;
 implementation
 
 uses
-  System.StrUtils,
-  maxLogic.StrUtils;
+  System.StrUtils;
 
 var
   GlobalMaxCmdLineParams: iCmdLineparams = nil;
@@ -195,7 +195,8 @@ begin
     {$ELSE}
     self.fSwitchPrefixes := [spDash, spDoubleDash];
     {$ENDIF}
-  end;
+  end else
+    fSwitchPrefixes := aSwitchPrefixes;
   fOrgCaseDic := TDictionary<string, integer>.Create;
   fLowerCaseDic := TDictionary<string, integer>.Create;
 
@@ -244,12 +245,25 @@ begin
   Result := find(aSwitch, True, i);
 end;
 
+class function TCmdLineParams.ValueSeparatorPosition(const aParam: string): Integer;
+var
+  lColonPos: Integer;
+  lEqualsPos: Integer;
+begin
+  lColonPos := Pos(':', aParam);
+  lEqualsPos := Pos('=', aParam);
+  if (lEqualsPos = 0) or ((lColonPos > 0) and (lColonPos < lEqualsPos)) then
+    Result := lColonPos
+  else
+    Result := lEqualsPos;
+end;
+
 function TCmdLineParams.find(const aSwitch: string; var aValue: string; aIgnoreCase: boolean): boolean;
 var
   i: integer;
   s: string;
-  lLeft, lRight: string;
   lPotentialValue: string;
+  lSeparatorPos: Integer;
   lTreatAsValue: Boolean;
 begin
   Result := find(aSwitch, aIgnoreCase, i);
@@ -260,11 +274,11 @@ begin
 
   s := fParams[i];
 
-  // Check for value separated by ':' or '=' within the same parameter string 's'
-  if maxLogic.StrUtils.SplitInHalfBy(s, ':', lLeft, lRight) or maxLogic.StrUtils.SplitInHalfBy(s, '=', lLeft, lRight) then
+  lSeparatorPos := ValueSeparatorPosition(s);
+  if lSeparatorPos > 0 then
   begin
-    aValue := lRight;
-    exit;
+    aValue := Copy(s, lSeparatorPos + 1, Length(s) - lSeparatorPos);
+    Exit;
   end;
 
   // If no separator, check the *next* parameter
@@ -378,7 +392,8 @@ end;
 procedure TCmdLineParams.RebuildDic;
 var
   s: string;
-  lLowerParam, lLeft, lRight: string;
+  lLowerParam: string;
+  lSeparatorPos: Integer;
 begin
   fOrgCaseDic.Clear;
   fLowerCaseDic.Clear;
@@ -388,9 +403,9 @@ begin
     if not IsSwitch(fParams[X], s) then
       Continue;
 
-    // store switch without value in case of a ":" or '=" value separation
-    if maxLogic.StrUtils.SplitInHalfBy(s, '=', lLeft, lRight) or maxLogic.StrUtils.SplitInHalfBy(s, ':', lLeft, lRight) then
-      s := lLeft;
+    lSeparatorPos := ValueSeparatorPosition(s);
+    if lSeparatorPos > 0 then
+      s := Copy(s, 1, lSeparatorPos - 1);
 
     s := s.Trim;
     if s = '' then

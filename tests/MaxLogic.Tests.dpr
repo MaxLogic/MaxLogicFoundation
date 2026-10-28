@@ -21,6 +21,8 @@ uses
   CancelToken.Tests in 'unit\CancelToken.Tests.pas',
   MaxLogic.BufferedFile in '..\MaxLogic.BufferedFile.pas',
   MaxLogic.BufferedFile.Tests in 'unit\MaxLogic.BufferedFile.Tests.pas',
+  maxLogic.CmdLineParams in '..\maxLogic.CmdLineParams.pas',
+  MaxLogic.CmdLineParams.Tests in 'unit\MaxLogic.CmdLineParams.Tests.pas',
   maxAsync in '..\maxAsync.pas',
   MaxLogic.Async.Tests in 'unit\MaxLogic.Async.Tests.pas',
   MaxLogic.AsyncLoop.Tests in 'unit\MaxLogic.AsyncLoop.Tests.pas',
