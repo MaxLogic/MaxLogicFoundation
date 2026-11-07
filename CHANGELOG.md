@@ -19,6 +19,8 @@ All notable changes to MaxLogicFoundation are documented here.
 
 ### Fixed
 
+- `maxLogic.Windows.Desktop.RetrieveCommandLine` reads the command line from the process (`NtQueryInformationProcess`, limited query right) instead of a WMI `Win32_Process` query. It no longer initializes COM or calls `CoInitializeSecurity`, and no longer keeps a WMI provider host busy. `CopyIconFromWindowHandle` uses `SendMessageTimeout` (500 ms, abort if hung), so a frozen window can no longer block the calling thread.
+
 - `maxConsoleRunner.TmaxConsoleRunner` (and the output-capturing `MaxLogic.ioUtils.ExecuteFile` overload) no longer loses the end of stdout/stderr: readers now drain the pipes until the child closes them, with a 5 s grace for pipes held by grandchild processes. The child gets an empty (`NUL`) stdin and inherits only its own std handles, so parallel runners no longer keep each other's pipes open.
 - `TmaxConsoleRunner.DecodeCommand` keeps a quoted exe path with spaces (e.g. `"C:\Program Files\...\tool.exe" args`) intact instead of cutting it at the first space.
 - `TmaxConsoleRunner.Execute` no longer leaks pipe handles when the process cannot be started.
