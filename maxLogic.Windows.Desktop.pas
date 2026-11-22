@@ -28,15 +28,26 @@ function RetrieveRelaunchCommand(const aWnd: HWND): string;
 implementation
 
 uses
-  System.SysUtils, System.Variants, System.Win.ComObj,
+  System.SysUtils,
   Winapi.ActiveX, Winapi.Messages, Winapi.PropSys;
 
 const
   cPROCESS_QUERY_LIMITED_INFORMATION = $1000;
   cGCLP_HICON = -14;
-  cRPC_C_AUTHN_LEVEL_DEFAULT = 0;
-  cRPC_C_IMP_LEVEL_IMPERSONATE = 3;
-  cEOAC_NONE = 0;
+  // A window that does not answer WM_GETICON within this time is treated as having no icon.
+  cIconMessageTimeoutMs = 500;
+  cProcessCommandLineInformation = 60;
+  cSTATUS_BUFFER_OVERFLOW = NTSTATUS($80000005);
+  cSTATUS_INFO_LENGTH_MISMATCH = NTSTATUS($C0000004);
+  cSTATUS_BUFFER_TOO_SMALL = NTSTATUS($C0000023);
+
+type
+  TUnicodeStringHeader = record
+    Length: Word;
+    MaximumLength: Word;
+    Buffer: PWideChar;
+  end;
+  PUnicodeStringHeader = ^TUnicodeStringHeader;
 
 var
   glProgramManager: HWND = 0;
@@ -46,6 +57,10 @@ var
 
 function QueryFullProcessImageName(hProcess: THandle; dwFlags: DWORD; lpExeName: PChar; var lpdwSize: DWORD): BOOL;
   stdcall; external kernel32 name 'QueryFullProcessImageNameW';
+
+function NtQueryInformationProcess(aProcessHandle: THandle; aProcessInformationClass: Integer;
+  aProcessInformation: Pointer; aProcessInformationLength: ULONG; aReturnLength: PULONG): NTSTATUS;
+  stdcall; external 'ntdll.dll';
 
 function IsIgnoredWindow(const aWnd: HWND): Boolean;
 begin
@@ -185,6 +200,18 @@ begin
   end;
 end;
 
+function RequestWindowIcon(const aHandle: THandle; const aIconType: WPARAM): HICON;
+var
+  lResult: DWORD_PTR;
+begin
+  lResult := 0;
+  // No SMTO_BLOCK: a UI-thread caller keeps answering sent messages while it waits.
+  if SendMessageTimeout(aHandle, WM_GETICON, aIconType, 0, SMTO_ABORTIFHUNG,
+    cIconMessageTimeoutMs, @lResult) = 0 then
+    Exit(0);
+  Result := HICON(lResult);
+end;
+
 function CopyIconFromWindowHandle(const aHandle: THandle; const aIcon: TIcon): Boolean;
 var
   lIcon: HICON;
@@ -194,10 +221,11 @@ begin
     Exit;
 
   lIcon := HICON(GetClassLongPtr(aHandle, cGCLP_HICON));
+  // A plain SendMessage to a frozen window would block our thread until that window recovers.
   if lIcon = 0 then
-    lIcon := HICON(SendMessage(aHandle, WM_GETICON, ICON_BIG, 0));
+    lIcon := RequestWindowIcon(aHandle, ICON_BIG);
   if lIcon = 0 then
-    lIcon := HICON(SendMessage(aHandle, WM_GETICON, ICON_SMALL, 0));
+    lIcon := RequestWindowIcon(aHandle, ICON_SMALL);
   if lIcon = 0 then
     Exit;
 
@@ -234,51 +262,50 @@ begin
   Result := GetForegroundWindow = aWnd;
 end;
 
-procedure InitializeComForCurrentThread(out aShouldUninitialize: Boolean);
-var
-  lResult: HRESULT;
-begin
-  aShouldUninitialize := False;
-  lResult := CoInitializeEx(nil, COINIT_MULTITHREADED);
-  if (lResult = S_OK) or (lResult = S_FALSE) then
-    aShouldUninitialize := True;
-end;
-
 function RetrieveCommandLine(const aPid: Cardinal): string;
 var
-  lComInited: Boolean;
-  lEnum: IEnumVariant;
-  lFetched: ULONG;
-  lItem: OleVariant;
-  lObjSet: OleVariant;
-  lServices: OleVariant;
-  lWql: string;
-  lLocator: OleVariant;
+  lBuffer: TBytes;
+  lHeader: PUnicodeStringHeader;
+  lProcess: THandle;
+  lReturnLength: ULONG;
+  lStatus: NTSTATUS;
+  lTry: Integer;
 begin
   Result := '';
   if aPid = 0 then
     Exit;
 
-  InitializeComForCurrentThread(lComInited);
+  // We read the command line from the process itself. A WMI Win32_Process query costs a provider host
+  // a full process enumeration per call, and the limited right also works for elevated processes.
+  lProcess := OpenProcess(cPROCESS_QUERY_LIMITED_INFORMATION, False, aPid);
+  if lProcess = 0 then
+    Exit;
   try
-    CoInitializeSecurity(nil, -1, nil, nil, cRPC_C_AUTHN_LEVEL_DEFAULT, cRPC_C_IMP_LEVEL_IMPERSONATE, nil, cEOAC_NONE,
-      nil);
-    lLocator := CreateOleObject('WbemScripting.SWbemLocator');
-    lServices := lLocator.ConnectServer('.', 'root\cimv2');
-    lWql := Format('SELECT CommandLine FROM Win32_Process WHERE ProcessId=%d', [aPid]);
-    lObjSet := lServices.ExecQuery(lWql, 'WQL', 0);
-    lEnum := IUnknown(lObjSet._NewEnum) as IEnumVariant;
-    lItem := Unassigned;
-    lFetched := 0;
-
-    if lEnum.Next(1, lItem, lFetched) = S_OK then
+    SetLength(lBuffer, 4096);
+    for lTry := 1 to 3 do
     begin
-      if not VarIsNull(lItem.CommandLine) then
-        Result := VarToStr(lItem.CommandLine);
+      lReturnLength := 0;
+      lStatus := NtQueryInformationProcess(lProcess, cProcessCommandLineInformation, @lBuffer[0],
+        ULONG(Length(lBuffer)), @lReturnLength);
+      if (lStatus = cSTATUS_INFO_LENGTH_MISMATCH) or (lStatus = cSTATUS_BUFFER_TOO_SMALL) or
+        (lStatus = cSTATUS_BUFFER_OVERFLOW) then
+      begin
+        if lReturnLength <= ULONG(Length(lBuffer)) then
+          Exit;
+        SetLength(lBuffer, lReturnLength);
+        Continue;
+      end;
+      if lStatus < 0 then
+        Exit;
+      if lReturnLength < SizeOf(TUnicodeStringHeader) then
+        Exit;
+      lHeader := PUnicodeStringHeader(@lBuffer[0]);
+      if (lHeader.Buffer <> nil) and (lHeader.Length > 0) then
+        SetString(Result, lHeader.Buffer, lHeader.Length div SizeOf(WideChar));
+      Exit;
     end;
   finally
-    if lComInited then
-      CoUninitialize;
+    CloseHandle(lProcess);
   end;
 end;
 
