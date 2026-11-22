@@ -47,6 +47,7 @@ type
     [Test] procedure MultiLine_Heredoc;
     [Test] procedure CommandSubstitution_Enabled;
     [Test] procedure CommandSubstitution_Disabled;
+    [Test] procedure CommandSubstitution_FullPreset_IsDisabled;
     [Test] procedure ProcessEnv_DoNotOverrideExisting;
     [Test] procedure ProcessEnv_EmptyValues_TreatedAsUnset;
     [Test] procedure ProcessEnv_OnResolveSymbol_Order;
@@ -917,6 +918,29 @@ begin
     end;
   finally
     RemoveDirRecursive(TempDir);
+  end;
+end;
+
+procedure TMaxLogicDotEnvTests.CommandSubstitution_FullPreset_IsDisabled;
+var
+  lTempDir, lEnvFile: string;
+  lDotEnv: TDotEnv;
+begin
+  lTempDir := MakeTempDir('cmd-full');
+  try
+    lEnvFile := BuildPath(lTempDir, ['.env']);
+    WriteText(lEnvFile, 'VALUE=$(echo dotenv)'#10);
+    lDotEnv := TDotEnv.Create;
+    try
+      // Commands need an explicit AllowCommandSubst, never a convenience preset.
+      lDotEnv.LoadFiles([lEnvFile], TDotEnvOptions.Full);
+      Assert.AreEqual('$(echo dotenv)', CollectValue(lDotEnv, 'VALUE'),
+        'The Full preset must not execute commands.' + sLineBreak + DumpDiag(lDotEnv));
+    finally
+      lDotEnv.Free;
+    end;
+  finally
+    RemoveDirRecursive(lTempDir);
   end;
 end;
 

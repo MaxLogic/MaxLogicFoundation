@@ -2706,8 +2706,8 @@ end;
 
 class function TDotEnvOptionsHelper.Full: TDotEnvOptions;
 begin
+  // AllowCommandSubst is not part of any preset: .env files can be writable by others, so callers opt in explicitly.
   Result:= [
-    TDotEnvOption.AllowCommandSubst,        // Enable $(...) command execution during value expansion.
     TDotEnvOption.SearchUserProfile,        // Windows: %USERPROFILE% (C:\Users\<name>); POSIX: $HOME (/home/<name>).
     TDotEnvOption.SearchUserConfig];        // Windows: %APPDATA%\<namespace>; POSIX: XDG config roots (namespace subdir).
 end;

@@ -4,6 +4,10 @@ All notable changes to MaxLogicFoundation are documented here.
 
 ## [Unreleased]
 
+### Security
+
+- `TDotEnvOptions.Full` no longer enables `$(...)` command execution. Callers that need it must pass `TDotEnvOption.AllowCommandSubst` explicitly.
+
 ### Added
 
 - Added native UTF8 RichIni storage, parsing, lookup and I/O through `TRichIniFileUtf8`, sharing document logic with the existing Unicode version.

@@ -265,7 +265,7 @@ CONF=$[ join(APP_DIR, 'cfg', 'app.json') ]  # absolute path
 
 ### Command substitution (opt-in)
 
-- Disabled by default. Enable with `AllowCommandSubst`.
+- Disabled by default, also in `TDotEnvOptions.Full`. Enable with `AllowCommandSubst`, and only when every searched folder (including parent folders) is writable only by trusted users.
 - Format: `$(command)`; stdout is captured and trimmed. Non-zero exit produces a `DekCommand` error.
 - Disabled: When `AllowCommandSubst` is not set, `$(...)` is left literal and a non-fatal `DekCommand` warning is recorded.
 - Capture: On Windows, stdout and stderr are merged; on POSIX, only stdout is captured. Non-zero exit yields an empty value and a `DekCommand` error. The trace includes `exec: ...` with the effective command line.
